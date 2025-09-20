@@ -1,8 +1,28 @@
-// src/utils/diffingUtils.ts
+/**
+ * @file This utility file provides functions for generating and analyzing diffs between code snippets,
+ * and applying those diffs as precise text edits within a VS Code document.
+ * It leverages the `diff-match-patch` library for efficient diffing and includes
+ * functionalities for summarizing file changes, analyzing the reasonableness of modifications,
+ * and parsing/applying standard diff hunks.
+ */
 import * as vscode from "vscode";
 import { diff_match_patch } from "diff-match-patch";
 import { DiffAnalysis } from "../types/codeGenerationTypes";
 
+/**
+ * Generates an array of precise VS Code TextEdits representing the differences
+ * between an original content string and a modified content string.
+ * This function uses a character-by-character diff algorithm to identify
+ * insertions, deletions, and equalities, translating them into `vscode.Range`
+ * and `newText` objects suitable for applying to a `vscode.TextDocument`.
+ *
+ * @param originalContent The full original content of the document as a string.
+ * @param modifiedContent The full modified content as a string, which will be diffed against `originalContent`.
+ * @param document The `vscode.TextDocument` object representing the file to which edits will be applied.
+ *                 This is used to correctly map character offsets to `vscode.Position` objects.
+ * @returns A promise that resolves to an array of objects, each containing a `vscode.Range`
+ *          and a `newText` string. An empty `newText` signifies a deletion.
+ */
 export async function generatePreciseTextEdits(
 	originalContent: string,
 	modifiedContent: string,
@@ -10,46 +30,35 @@ export async function generatePreciseTextEdits(
 ): Promise<{ range: vscode.Range; newText: string }[]> {
 	const dmp = new diff_match_patch();
 
-	// Compute the diffs between originalContent and modifiedContent
-	// The diff_main function returns an array of arrays. Each inner array has
-	// two elements: an operation code (DIFF_INSERT, DIFF_DELETE, DIFF_EQUAL)
-	// and the text associated with that operation.
 	const diffs = dmp.diff_main(originalContent, modifiedContent);
 
 	const edits: { range: vscode.Range; newText: string }[] = [];
-	let originalPosOffset = 0; // Tracks the current character offset in the original content
+	let originalPosOffset = 0;
 
 	for (const diff of diffs) {
 		const [type, text] = diff;
 
-		// DIFF_EQUAL (0): Text is present in both original and modified.
-		// No edit is needed; we just advance our position in the original content.
 		if (type === diff_match_patch.DIFF_EQUAL) {
+			// Text is present in both original and modified. No edit is needed.
 			originalPosOffset += text.length;
-		}
-		// DIFF_INSERT (1): Text was added in the modified content.
-		// We need to insert this text at the current position in the original document.
-		else if (type === diff_match_patch.DIFF_INSERT) {
+		} else if (type === diff_match_patch.DIFF_INSERT) {
+			// Text was added in the modified content. Insert this text.
 			const startPos = document.positionAt(originalPosOffset);
-			const endPos = document.positionAt(originalPosOffset); // For an insertion, the range is a single point
+			const endPos = document.positionAt(originalPosOffset); // Insertion point
 			edits.push({
 				range: new vscode.Range(startPos, endPos),
 				newText: text,
 			});
-			// For insertions, the originalPosOffset does NOT advance because
-			// the insertion happens *at* this point, it doesn't consume original text.
-		}
-		// DIFF_DELETE (-1): Text was removed from the original content.
-		// We need to delete this text from the original document.
-		else if (type === diff_match_patch.DIFF_DELETE) {
+			// originalPosOffset does not advance for insertions.
+		} else if (type === diff_match_patch.DIFF_DELETE) {
+			// Text was removed from the original content. Delete this text.
 			const startPos = document.positionAt(originalPosOffset);
 			const endPos = document.positionAt(originalPosOffset + text.length);
 			edits.push({
 				range: new vscode.Range(startPos, endPos),
 				newText: "", // Empty string signifies deletion
 			});
-			// For deletions, the originalPosOffset *does* advance by the length
-			// of the deleted text, as that portion of the original document has now been processed.
+			// originalPosOffset advances by the length of the deleted text.
 			originalPosOffset += text.length;
 		}
 	}
@@ -57,6 +66,21 @@ export async function generatePreciseTextEdits(
 	return edits;
 }
 
+/**
+ * Generates a comprehensive summary of changes between two versions of a file's content.
+ * This includes a human-readable summary message, lists of added and removed lines,
+ * and a formatted diff string. It also attempts to identify and categorize
+ * modified, added, and removed code entities (functions, classes, variables, etc.).
+ *
+ * @param oldContent The original content of the file.
+ * @param newContent The modified content of the file.
+ * @param filePath The path of the file being summarized, used for context in the summary message.
+ * @returns A promise that resolves to an object containing:
+ *          - `summary`: A concise string describing the changes, including entity modifications and line counts.
+ *          - `addedLines`: An array of strings, each representing a line added in the new content.
+ *          - `removedLines`: An array of strings, each representing a line removed from the old content.
+ *          - `formattedDiff`: A string representing the diff in a standard `+`/`-` format, excluding equal lines.
+ */
 export async function generateFileChangeSummary(
 	oldContent: string,
 	newContent: string,
@@ -69,12 +93,7 @@ export async function generateFileChangeSummary(
 }> {
 	const dmp = new diff_match_patch();
 
-	// 1. Convert the input strings (oldContent and newContent) from lines to a compact, character-based representation.
-	// This is crucial for efficient diffing on longer texts while preserving line integrity.
-	// The result `lineDiffResult` contains:
-	//   - `text1_chars`: a string representing oldContent mapped to unique characters.
-	//   - `text2_chars`: a string representing newContent mapped to unique characters.
-	//   - `line_array`: an array that maps the unique characters back to their original full lines.
+	// Convert content to character-based representation for efficient line-level diffing.
 	const lineDiffResult = dmp.diff_linesToChars_(oldContent, newContent);
 	const {
 		chars1: text1_chars,
@@ -82,57 +101,39 @@ export async function generateFileChangeSummary(
 		lineArray: line_array,
 	} = lineDiffResult;
 
-	// 2. Perform the actual diff operation on the character-based representations.
-	// This is a much faster operation for large files.
-	let diffs = dmp.diff_main(text1_chars, text2_chars, false); // `false` for checklines optimization (optional, but good practice)
+	// Perform the diff on character representations.
+	let diffs = dmp.diff_main(text1_chars, text2_chars, false);
 
-	// 3. Convert the character-level diffs back to line-level diffs using the original `line_array`.
-	// This transforms the diff objects to contain actual lines rather than characters.
+	// Convert character-level diffs back to line-level and apply semantic cleanup.
 	dmp.diff_charsToLines_(diffs, line_array);
-	// 4. Apply semantic cleanup to filter out trivial differences (e.g., purely whitespace changes,
-	// or minor reordering that doesn't change meaning). This is crucial for avoiding
-	// reporting changes for cosmetic-only modifications.
 	dmp.diff_cleanupSemantic(diffs);
 
 	let formattedDiffLines: string[] = [];
 	let addedLines: string[] = [];
 	let removedLines: string[] = [];
-	// totalInsertions and totalDeletions are not needed as we use addedLines.length and removedLines.length
-	// let totalInsertions = 0;
-	// let totalDeletions = 0;
 
 	for (const diff of diffs) {
 		const [type, text] = diff;
 
-		// Split the text into lines. If the `text` from dmp is an empty string,
-		// `split('\n')` returns `['']`. This `['']` does not represent an actual line
-		// to be displayed in the diff or counted. Otherwise, all lines from `split`
-		// are processed, including empty strings that result from actual blank lines or trailing newlines.
 		const lines = text.split("\n");
+		// Filter out empty strings that result from a trailing newline or initial empty `text`
 		const effectiveLines =
 			text === "" && lines.length === 1 && lines[0] === "" ? [] : lines;
 
 		if (type === diff_match_patch.DIFF_INSERT) {
-			// Ensure empty strings from split are filtered out for cleaner results in addedLines array
 			addedLines.push(...effectiveLines.filter((line) => line !== ""));
-			// Add to formattedDiffLines
 			effectiveLines.forEach((line) => formattedDiffLines.push(`+ ${line}`));
 		} else if (type === diff_match_patch.DIFF_DELETE) {
-			// Ensure empty strings from split are filtered out for cleaner results in removedLines array
 			removedLines.push(...effectiveLines.filter((line) => line !== ""));
-			// Add to formattedDiffLines
 			effectiveLines.forEach((line) => formattedDiffLines.push(`- ${line}`));
-		} else if (type === diff_match_patch.DIFF_EQUAL) {
-			// Add to formattedDiffLines
-			// Removed: effectiveLines.forEach((line) => formattedDiffLines.push(`  ${line}`));
 		}
+		// For DIFF_EQUAL, we intentionally don't add to formattedDiffLines to keep the diff concise.
 	}
 
 	const formattedDiff = formattedDiffLines.join("\n");
 	const addedContentFlat = addedLines.join("\n");
 	const removedContentFlat = removedLines.join("\n");
 
-	// Maps to store identified entities: type -> list of names (e.g., 'function' -> ['name1', 'name2'])
 	const addedEntities: Map<string, string[]> = new Map();
 	const removedEntities: Map<string, string[]> = new Map();
 
@@ -154,7 +155,7 @@ export async function generateFileChangeSummary(
 			}
 		};
 
-		// Helper to check if a name is already captured as a function/method
+		// Helper to check if a name is already captured as a function/method to avoid double counting
 		const isFunctionName = (name: string): boolean => {
 			return (
 				(targetMap.get("function")?.includes(name) ||
@@ -163,10 +164,6 @@ export async function generateFileChangeSummary(
 			);
 		};
 
-		// Regex for function declarations (e.g., `function name()`, `const name = () => {}`, class methods)
-		// Capture group 1: standalone function `function name(...)`
-		// Capture group 2: variable-assigned function `const name = (...) =>`
-		// Capture group 3: class method `methodName(...)`
 		const functionRegex =
 			/(?:(?:export|declare)\s+)?(?:async\s+)?function\s+(\w+)\s*\(|(?:\b(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:\([^)]*\)\s*=>|function\s*\(|$))|(?:\b(?:public|private|protected|static|async)?\s*(\w+)\s*\([^)]*\)\s*\{)/g;
 		while ((match = functionRegex.exec(content)) !== null) {
@@ -175,9 +172,8 @@ export async function generateFileChangeSummary(
 				addEntity(match[3] ? "method" : "function", name);
 			}
 		}
-		functionRegex.lastIndex = 0; // Reset regex for next use
+		functionRegex.lastIndex = 0;
 
-		// Regex for class declarations
 		const classRegex = /(?:(?:export|declare)\s+)?class\s+(\w+)/g;
 		while ((match = classRegex.exec(content)) !== null) {
 			const name = match[1];
@@ -187,20 +183,16 @@ export async function generateFileChangeSummary(
 		}
 		classRegex.lastIndex = 0;
 
-		// Regex for variable declarations (trying to avoid functions captured above)
-		// It attempts to match a variable name followed by `=`, but not immediately by `async` or `function`
 		const variableRegex =
 			/(?:(?:export|declare)\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?!async\s+)(?!function\s*)[^;,\n]*;?\s*(?:\n|$)/g;
 		while ((match = variableRegex.exec(content)) !== null) {
 			const name = match[1];
-			// Only add if not already identified as a function/method
 			if (name && !isFunctionName(name)) {
 				addEntity("variable", name);
 			}
 		}
 		variableRegex.lastIndex = 0;
 
-		// Regex for interface/type alias declarations
 		const interfaceTypeAliasRegex =
 			/(?:(?:export|declare)\s+)?(?:interface|type)\s+(\w+)/g;
 		while ((match = interfaceTypeAliasRegex.exec(content)) !== null) {
@@ -211,7 +203,6 @@ export async function generateFileChangeSummary(
 		}
 		interfaceTypeAliasRegex.lastIndex = 0;
 
-		// Regex for enum declarations
 		const enumRegex = /(?:(?:export|declare)\s+)?enum\s+(\w+)/g;
 		while ((match = enumRegex.exec(content)) !== null) {
 			const name = match[1];
@@ -221,8 +212,7 @@ export async function generateFileChangeSummary(
 		}
 		enumRegex.lastIndex = 0;
 
-		// Regex for import statements. Count each line that starts with 'import'.
-		const importLineRegex = /^\s*import\s+\S/gm; // Matches lines starting with 'import ' (and not just 'import')
+		const importLineRegex = /^\s*import\s+\S/gm;
 		let importStatementCount = 0;
 		while ((match = importLineRegex.exec(content)) !== null) {
 			importStatementCount++;
@@ -232,8 +222,7 @@ export async function generateFileChangeSummary(
 		}
 		importLineRegex.lastIndex = 0;
 
-		// Regex for export statements. Count each line that starts with 'export'.
-		const exportLineRegex = /^\s*export\s+\S/gm; // Matches lines starting with 'export '
+		const exportLineRegex = /^\s*export\s+\S/gm;
 		let exportStatementCount = 0;
 		while ((match = exportLineRegex.exec(content)) !== null) {
 			exportStatementCount++;
@@ -249,10 +238,7 @@ export async function generateFileChangeSummary(
 
 	const summaries: string[] = [];
 
-	// Helper function to get entity types and their names, considering modifications
-	// An entity is 'modified' if a name+type pair exists in both added and removed content.
-	// It's 'added' if it's in added but not in removed.
-	// It's 'removed' if it's in removed but not in added.
+	// Helper function to categorize entities as added, removed, or modified
 	const getProcessedEntities = (
 		added: Map<string, string[]>,
 		removed: Map<string, string[]>,
@@ -260,7 +246,6 @@ export async function generateFileChangeSummary(
 	): Map<string, string[]> => {
 		const result = new Map<string, string[]>();
 
-		// Determine modified and purely added
 		for (const [addedType, addedNames] of added.entries()) {
 			for (const addedName of addedNames) {
 				const isModified =
@@ -277,7 +262,6 @@ export async function generateFileChangeSummary(
 			}
 		}
 
-		// Determine purely removed
 		if (type === "removed") {
 			for (const [removedType, removedNames] of removed.entries()) {
 				for (const removedName of removedNames) {
@@ -312,7 +296,6 @@ export async function generateFileChangeSummary(
 		"removed"
 	);
 
-	// Helper to format grouped entities into summary strings
 	const formatGroup = (prefix: string, groupedMap: Map<string, string[]>) => {
 		const entries: string[] = [];
 		for (const [type, names] of groupedMap.entries()) {
@@ -321,15 +304,12 @@ export async function generateFileChangeSummary(
 			}
 
 			const formattedNames = names.map((name) => `\`${name}\``).join(", ");
-			// Determine pluralization for entity type
 			let typeDisplay = type;
 			if (names.length > 1 && !type.endsWith("s")) {
-				// Avoid double-pluralizing already plural names or counts
 				if (type.endsWith("statement")) {
-					// "import statement" -> "import statements"
 					typeDisplay += "s";
 				} else {
-					typeDisplay += "s"; // "function" -> "functions"
+					typeDisplay += "s";
 				}
 			}
 			entries.push(`${prefix} ${typeDisplay} ${formattedNames}`);
@@ -346,26 +326,22 @@ export async function generateFileChangeSummary(
 	const addedLineCount = addedLines.length;
 	const removedLineCount = removedLines.length;
 
-	// General summary if specific entities aren't found
 	if (finalSummary === "") {
 		if (addedLineCount > 0 && removedLineCount === 0) {
 			finalSummary = "added new content";
 		} else if (removedLineCount > 0 && addedLineCount === 0) {
 			finalSummary = "removed content";
 		} else if (addedLineCount > 0 && removedLineCount > 0) {
-			// Use total line changes for magnitude
 			if (addedLineCount + removedLineCount > 10) {
-				// Arbitrary threshold for "major changes" based on lines
 				finalSummary = "major changes detected";
 			} else {
 				finalSummary = "modified existing content";
 			}
 		} else {
-			finalSummary = "no significant changes"; // Fallback, should rarely happen if diffs exist
+			finalSummary = "no significant changes";
 		}
 	}
 
-	// Append quantitative summary of line changes
 	const lineSummaryParts: string[] = [];
 	if (addedLineCount > 0) {
 		lineSummaryParts.push(
@@ -383,7 +359,6 @@ export async function generateFileChangeSummary(
 		quantitativeSummary = ` (${lineSummaryParts.join(", ")})`;
 	}
 
-	// Prepend the file path and append quantitative summary
 	const summaryWithFilePath = `${filePath}: ${finalSummary}${quantitativeSummary}`;
 
 	return {
@@ -395,7 +370,17 @@ export async function generateFileChangeSummary(
 }
 
 /**
- * Analyze the diff between original and modified content
+ * Analyzes the diff between two content strings (original and modified) to provide
+ * insights into the nature and reasonableness of the changes. It calculates a change ratio
+ * and identifies potential issues, such as a large proportion of content being changed
+ * or all import statements being removed.
+ *
+ * @param original The original content string.
+ * @param modified The modified content string.
+ * @returns An object of type `DiffAnalysis` containing:
+ *          - `isReasonable`: A boolean indicating whether the changes appear reasonable based on heuristics.
+ *          - `issues`: An array of strings describing any identified issues with the changes.
+ *          - `changeRatio`: A number representing the ratio of lines changed relative to the original content length.
  */
 export function analyzeDiff(original: string, modified: string): DiffAnalysis {
 	const originalLines = original.split("\n");
@@ -440,8 +425,18 @@ export function analyzeDiff(original: string, modified: string): DiffAnalysis {
 }
 
 /**
- * Parse a diff hunk and convert it to VS Code text edits
- * Handles additions (+), deletions (-), and context lines
+ * Parses a standard Git-style diff hunk (e.g., lines starting with '+', '-', or ' ')
+ * and converts it into an array of VS Code `TextEdit` objects. This function correctly
+ * handles additions, deletions, and context lines, applying them to the appropriate
+ * positions within a `vscode.TextDocument`.
+ *
+ * @param diffHunk The string content of a single diff hunk, typically starting with `@@ -l,s +l,s @@`.
+ * @param document The `vscode.TextDocument` object to which these edits conceptually apply.
+ *                 This is used to resolve positions correctly.
+ * @param startLineOffset The starting line number in the `document` where the hunk is considered to begin.
+ *                        This helps in correctly mapping hunk lines to document lines. Defaults to 0.
+ * @returns An array of objects, each containing a `vscode.Range` and a `newText` string.
+ *          An empty `newText` signifies a deletion within the specified range.
  */
 export function parseDiffHunkToTextEdits(
 	diffHunk: string,
@@ -454,11 +449,10 @@ export function parseDiffHunkToTextEdits(
 	let currentLine = startLineOffset;
 	let inDeletion = false;
 	let deletionStart: vscode.Position | null = null;
-	let deletionEnd: vscode.Position | null = null;
 
 	for (const line of lines) {
 		if (line.startsWith("+")) {
-			// Addition: insert new text
+			// Addition: insert new text at the current line position.
 			const newText = line.substring(1) + "\n";
 			const insertPos = document.positionAt(
 				document.offsetAt(new vscode.Position(currentLine, 0))
@@ -468,44 +462,41 @@ export function parseDiffHunkToTextEdits(
 				range: new vscode.Range(insertPos, insertPos),
 				newText: newText,
 			});
-
-			// Don't increment currentLine for insertions
+			// currentLine does not increment for insertions as they don't consume original lines.
 		} else if (line.startsWith("-")) {
-			// Deletion: mark the range to delete
+			// Deletion: mark the beginning of a deletion range if not already in one.
 			if (!inDeletion) {
 				deletionStart = document.positionAt(
 					document.offsetAt(new vscode.Position(currentLine, 0))
 				);
 				inDeletion = true;
 			}
-
-			// Update deletion end position
-			deletionEnd = document.positionAt(
-				document.offsetAt(new vscode.Position(currentLine, 0)) +
-					document.lineAt(currentLine).text.length
-			);
-
+			// For deletions, we consume an original line.
 			currentLine++;
 		} else {
-			// Context line or unchanged line
-			if (inDeletion) {
-				// End the current deletion
-				if (deletionStart && deletionEnd) {
-					edits.push({
-						range: new vscode.Range(deletionStart, deletionEnd),
-						newText: "",
-					});
-				}
+			// Context line or unchanged line: If a deletion was in progress, finalize it.
+			if (inDeletion && deletionStart) {
+				// The deletion ends before the current context line.
+				const deletionEnd = document.positionAt(
+					document.offsetAt(new vscode.Position(currentLine, 0))
+				);
+				edits.push({
+					range: new vscode.Range(deletionStart, deletionEnd),
+					newText: "",
+				});
 				inDeletion = false;
 				deletionStart = null;
-				deletionEnd = null;
 			}
+			// For context lines, we consume an original line.
 			currentLine++;
 		}
 	}
 
-	// Handle any remaining deletion at the end
-	if (inDeletion && deletionStart && deletionEnd) {
+	// Handle any remaining deletion at the end of the hunk.
+	if (inDeletion && deletionStart) {
+		const deletionEnd = document.positionAt(
+			document.offsetAt(new vscode.Position(currentLine, 0))
+		);
 		edits.push({
 			range: new vscode.Range(deletionStart, deletionEnd),
 			newText: "",
@@ -516,8 +507,19 @@ export function parseDiffHunkToTextEdits(
 }
 
 /**
- * Apply diff hunks to a document
- * This is a robust version that handles edge cases and validates the edits
+ * Applies a given diff hunk to a `vscode.TextDocument` as a series of text edits.
+ * This function parses the diff hunk into VS Code `TextEdit` objects and then
+ * applies them to the active editor. It includes validation to ensure that the
+ * proposed edit ranges are within the document bounds and supports cancellation.
+ *
+ * @param document The `vscode.TextDocument` to which the diff hunk will be applied.
+ * @param diffHunk The string content of the diff hunk to apply.
+ * @param startLineOffset The starting line number in the `document` where the hunk is considered to begin.
+ *                        This helps in correctly mapping hunk lines to document lines. Defaults to 0.
+ * @param token An optional `vscode.CancellationToken` to allow for early cancellation of the operation.
+ * @returns A promise that resolves to an object indicating the success or failure of the operation:
+ *          - `success`: A boolean, `true` if the edits were applied successfully, `false` otherwise.
+ *          - `error`: An optional string containing an error message if the operation failed.
  */
 export async function applyDiffHunkToDocument(
 	document: vscode.TextDocument,
@@ -536,14 +538,17 @@ export async function applyDiffHunkToDocument(
 		// Validate edits before applying
 		for (const edit of edits) {
 			if (token?.isCancellationRequested) {
-				return { success: false, error: "" };
+				return { success: false, error: "Operation cancelled." };
 			}
 
 			// Check if the range is valid for this document
 			if (
-				edit.range.start.line >= document.lineCount ||
-				edit.range.end.line >= document.lineCount
+				edit.range.start.line > document.lineCount ||
+				(edit.range.end.line > document.lineCount &&
+					edit.range.start.line !== edit.range.end.line)
 			) {
+				// An insertion can happen at document.lineCount (end of file)
+				// A deletion range ending at document.lineCount (exclusive of next line) is also valid
 				return {
 					success: false,
 					error: `Edit range out of bounds: ${edit.range.start.line}-${edit.range.end.line} (document has ${document.lineCount} lines)`,
