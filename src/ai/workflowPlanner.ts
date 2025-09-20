@@ -78,6 +78,12 @@ export interface ExecutionPlan {
 
 // --- Type Guards ---
 
+/**
+ * Type guard to check if a given PlanStep is a CreateDirectoryStep.
+ *
+ * @param step The PlanStep object to check.
+ * @returns True if the step is a CreateDirectoryStep, false otherwise.
+ */
 export function isCreateDirectoryStep(
 	step: PlanStep
 ): step is CreateDirectoryStep {
@@ -88,6 +94,12 @@ export function isCreateDirectoryStep(
 	);
 }
 
+/**
+ * Type guard to check if a given PlanStep is a CreateFileStep.
+ *
+ * @param step The PlanStep object to check.
+ * @returns True if the step is a CreateFileStep, false otherwise.
+ */
 export function isCreateFileStep(step: PlanStep): step is CreateFileStep {
 	const potentialStep = step as CreateFileStep;
 	return (
@@ -101,6 +113,12 @@ export function isCreateFileStep(step: PlanStep): step is CreateFileStep {
 	);
 }
 
+/**
+ * Type guard to check if a given PlanStep is a ModifyFileStep.
+ *
+ * @param step The PlanStep object to check.
+ * @returns True if the step is a ModifyFileStep, false otherwise.
+ */
 export function isModifyFileStep(step: PlanStep): step is ModifyFileStep {
 	const potentialStep = step as ModifyFileStep;
 	return (
@@ -112,6 +130,12 @@ export function isModifyFileStep(step: PlanStep): step is ModifyFileStep {
 	);
 }
 
+/**
+ * Type guard to check if a given PlanStep is a RunCommandStep.
+ *
+ * @param step The PlanStep object to check.
+ * @returns True if the step is a RunCommandStep, false otherwise.
+ */
 export function isRunCommandStep(step: PlanStep): step is RunCommandStep {
 	return (
 		step.action === PlanStepAction.RunCommand &&
