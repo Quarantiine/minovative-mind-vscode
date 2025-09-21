@@ -273,6 +273,8 @@ export function initializeMessageBusHandler(
 			}
 
 			case "showGenericLoadingMessage": {
+				elements.statusArea.textContent = "";
+				elements.apiKeyStatusDiv.textContent = "";
 				console.log(
 					"[Webview] Received showGenericLoadingMessage. Displaying generic loading."
 				);
@@ -303,6 +305,8 @@ export function initializeMessageBusHandler(
 			}
 
 			case "aiResponseStart": {
+				elements.statusArea.textContent = "";
+				elements.apiKeyStatusDiv.textContent = "";
 				const startMessage = message as AiResponseStartMessage; // Cast message
 				setLoadingState(true, elements);
 				finalizeStreamingMessage(elements); // Modified: Replace resetStreamingAnimationState()
@@ -665,7 +669,7 @@ export function initializeMessageBusHandler(
 					if (modelUsageMap.size > 0) {
 						modelUsageMap.forEach((percentage, modelName) => {
 							const div = document.createElement("div");
-							div.textContent = `- ${modelName}: ${percentage.toFixed(2)}%`;
+							div.textContent = `${modelName}: ${percentage.toFixed(2)}%`;
 							elements.modelUsagePercentagesList.appendChild(div);
 						});
 					} else {
@@ -791,6 +795,7 @@ export function initializeMessageBusHandler(
 						updateStatus,
 						setLoadingState
 					);
+					appState.isAwaitingUserReview = true; // Added as per instructions.
 
 					if (!appState.isCancellationInProgress) {
 						setLoadingState(false, elements);
@@ -848,6 +853,7 @@ export function initializeMessageBusHandler(
 
 					if (elements.planConfirmationContainer) {
 						elements.planConfirmationContainer.style.display = "flex";
+						appState.isAwaitingUserReview = true; // Added as per instructions.
 						updateStatus(
 							elements,
 							"Pending plan confirmation restored. Review and confirm to proceed."
@@ -1011,6 +1017,9 @@ export function initializeMessageBusHandler(
 			case "reenableInput": {
 				console.log("Received reenableInput message. Resetting UI state.");
 				resetUIStateAfterCancellation(elements, setLoadingState);
+				appState.currentActiveOperationId = null;
+				appState.isRequestingWorkspaceFiles = false;
+				appState.hasRevertibleChanges = false;
 				resetCodeStreams();
 				break;
 			}
@@ -1188,6 +1197,9 @@ export function initializeMessageBusHandler(
 				);
 				finalizeStreamingMessage(elements);
 				resetUIStateAfterCancellation(elements, setLoadingState);
+				appState.currentActiveOperationId = null;
+				appState.isRequestingWorkspaceFiles = false;
+				appState.hasRevertibleChanges = false;
 				resetCodeStreams();
 				break;
 			}

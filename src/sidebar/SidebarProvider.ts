@@ -30,6 +30,10 @@ import { ContextRefresherService } from "../services/contextRefresherService";
 import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import * as crypto from "crypto"; // Import crypto for UUID generation
+import { z } from "zod";
+import { commitReviewSchema } from "../services/messageSchemas";
+
+type PendingCommitReviewDataType = z.infer<typeof commitReviewSchema>["value"];
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = "minovativeMindSidebarView";
@@ -55,10 +59,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		null;
 	public currentExecutionOutcome: sidebarTypes.ExecutionOutcome | undefined;
 	public currentAiStreamingState: sidebarTypes.AiStreamingState | null = null;
-	public pendingCommitReviewData: {
-		commitMessage: string;
-		stagedFiles: string[];
-	} | null = null;
+	public pendingCommitReviewData: PendingCommitReviewDataType | null = null;
 	public isGeneratingUserRequest: boolean = false;
 	public isCancellingOperation: boolean = false;
 	public isEditingMessageActive: boolean = false;
@@ -97,6 +98,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
 	// A flag to indicate if the webview is fully loaded and ready to receive messages.
 	private _isWebviewReadyForMessages: boolean = false;
+
+	private _windowStateChangeListener: vscode.Disposable | undefined;
 
 	constructor(
 		extensionUri: vscode.Uri,
@@ -215,6 +218,36 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 				this.apiKeyManager.loadKeysFromStorage();
 			}
 		});
+
+		// Register a listener for VS Code window state changes
+		this._windowStateChangeListener = vscode.window.onDidChangeWindowState(
+			(event) => {
+				if (event.focused === false) {
+					// VS Code window lost focus
+					if (
+						this.pendingPlanGenerationContext !== null ||
+						this.pendingCommitReviewData !== null
+					) {
+						console.log(
+							"[SidebarProvider] VS Code window lost focus, but user review (plan/commit) is pending. " +
+								"Not resetting UI to avoid premature input re-enabling."
+						);
+						// DO NOT send updateLoadingState({ value: false }) or reenableInput()
+						// in this specific scenario as per instructions.
+					} else {
+						// No user review is pending.
+						// The instruction is to *not* send specific messages *if* a review is pending.
+						// It does not instruct to send them if no review is pending.
+						// The current application logic should handle UI resets when operations genuinely complete.
+						console.log(
+							"[SidebarProvider] VS Code window lost focus, no user review pending. UI state remains as is."
+						);
+					}
+				}
+			},
+			this,
+			context.subscriptions
+		); // `this` ensures correct context for callback, `context.subscriptions` manages cleanup
 	}
 
 	/**
@@ -609,10 +642,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 * Restores UI state for a pending commit review.
 	 * @param commitReviewData The pending commit review data.
 	 */
-	private async _restorePendingCommitReviewState(commitReviewData: {
-		commitMessage: string;
-		stagedFiles: string[];
-	}): Promise<void> {
+	private async _restorePendingCommitReviewState(
+		commitReviewData: PendingCommitReviewDataType
+	): Promise<void> {
 		console.log(
 			"[SidebarProvider] Restoring pending commit review to webview."
 		);

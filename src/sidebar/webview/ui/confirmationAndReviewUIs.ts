@@ -562,7 +562,7 @@ export function handleConfirmPlanExecution(
 			value: appState.pendingPlanData,
 		});
 		updateStatus(elements, "Requesting plan execution...");
-		elements.planConfirmationContainer.style.display = "none";
+		hidePlanConfirmationUI(elements); // Call hidePlanConfirmationUI
 		appState.pendingPlanData = null;
 		appState.isPlanExecutionInProgress = true;
 		setLoadingState(true, elements);
@@ -587,6 +587,8 @@ export function handleCancelPlanExecution(
 	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
 ): void {
 	console.log("Cancel Plan button clicked.");
+	hideAllConfirmationAndReviewUIs(elements); // Call hideAllConfirmationAndReviewUIs at the beginning
+
 	// Prevent duplicate cancellation requests
 	if (appState.isCancellationInProgress) {
 		console.warn(

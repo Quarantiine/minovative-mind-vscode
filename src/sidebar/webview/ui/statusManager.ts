@@ -101,6 +101,10 @@ export function resetUIStateAfterCancellation(
 	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
 ): void {
 	console.log("Resetting UI state after cancellation");
+	elements.statusArea.textContent = "";
+	if (elements.apiKeyStatusDiv) {
+		elements.apiKeyStatusDiv.textContent = "";
+	}
 
 	// Re-enable all input controls
 	elements.chatInput.disabled = false;

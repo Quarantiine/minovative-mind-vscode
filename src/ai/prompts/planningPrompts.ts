@@ -192,7 +192,6 @@ Full Content (with conflicts):
 ${fullText}
 \`\`\``;
 		} else {
-			// Custom instruction
 			mainUserRequestDescription = `Request: Custom instruction ("${editorContext.instruction}").
 File: ${filePath}
 Language: ${languageId}
@@ -219,6 +218,10 @@ Instructions for Function Call:
 - \`url_context_string\`: Any provided URL context.
 
 Crucial Rules for \`generateExecutionPlan\` Tool:
+- **Holistic File Analysis**: Before generating any plan steps, FIRST analyze all required modifications for EACH file targeted by the user's request.
+- **Single Comprehensive \`modification_prompt\`**: For each file path requiring changes, construct EXACTLY ONE detailed \`modification_prompt\` that comprehensively describes ALL intended additions, deletions, refactorings, or other edits for that specific file.
+- **Enforce One \`ModifyFileStep\` Per File**: Generate PRECISELY ONE \`ModifyFileStep\` for any given file path within the \`ExecutionPlan\`. All changes for a file MUST be included in that single step's \`modification_prompt\`.
+- **Prevent Redundant Steps**: AVOID generating multiple, fragmented \`ModifyFileStep\` entries for the same file path within a single \`ExecutionPlan\`.
 - \`create_file\`: Provide *either* \`content\` *or* \`generate_prompt\`; never both or neither.
 - \`modify_file\`: Always provide a non-empty \`modification_prompt\`.
 - All \`path\` fields must be relative to workspace root, no \`..\` or leading \`/\`.

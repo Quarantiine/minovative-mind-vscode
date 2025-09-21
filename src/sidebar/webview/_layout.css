@@ -101,6 +101,10 @@
 	height: 100%;
 }
 
+#chat-container::-webkit-scrollbar {
+	width: 0px;
+}
+
 .section {
 	padding: var(--element-spacing) 0; /* Only vertical padding */
 	border-top: 1px solid var(--border-color);

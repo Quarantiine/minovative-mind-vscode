@@ -263,16 +263,59 @@ export class EnhancedCodeGenerator {
 				token
 			);
 
-			const cleanedRawContent = cleanCodeOutput(rawContent);
+			console.log(
+				`[EnhancedCodeGenerator] Raw AI response received for ${filePath}:\n${rawContent.substring(
+					0,
+					500
+				)}...`
+			); // Log first 500 chars
+
+			const extractedContent = this._extractTargetFileContent(
+				rawContent,
+				filePath
+			);
+
+			if (extractedContent === null) {
+				console.warn(
+					`[EnhancedCodeGenerator] No content extracted for target file ${filePath} from AI response.`
+				);
+				return {
+					isValid: false,
+					finalContent: rawContent, // Return raw content for debugging
+					issues: [
+						{
+							type: "other",
+							message: `AI output did not contain the expected file content for ${filePath}. It might have included content for other files or was malformed.`,
+							line: 1,
+							severity: "error",
+							code: "AI_CONTENT_EXTRACTION_FAILED",
+							source: "EnhancedCodeGenerator",
+						},
+					],
+					suggestions: [
+						"Refine your prompt to ensure the AI explicitly provides the content for the target file.",
+						"Instruct the AI to clearly mark the file content, e.g., with `// path/to/file.ts` followed by code.",
+					],
+				};
+			}
+
+			console.log(
+				`[EnhancedCodeGenerator] Successfully extracted content for ${filePath}:\n${extractedContent.substring(
+					0,
+					500
+				)}...`
+			);
+
+			const cleanedExtractedContent = cleanCodeOutput(extractedContent);
 
 			if (
-				cleanedRawContent.trim().length < 5 ||
-				isAIOutputLikelyErrorMessage(cleanedRawContent) ||
-				cleanedRawContent.trim() === "/"
+				cleanedExtractedContent.trim().length < 5 ||
+				isAIOutputLikelyErrorMessage(cleanedExtractedContent) ||
+				cleanedExtractedContent.trim() === "/"
 			) {
 				return {
 					isValid: false,
-					finalContent: cleanedRawContent, // Return raw content for debugging
+					finalContent: cleanedExtractedContent, // Return raw content for debugging
 					issues: [
 						{
 							type: "other",
@@ -291,7 +334,7 @@ export class EnhancedCodeGenerator {
 			}
 
 			return this.codeValidationService.checkPureCodeFormat(
-				cleanedRawContent,
+				cleanedExtractedContent,
 				false
 			);
 		} catch (error: any) {
@@ -419,6 +462,83 @@ export class EnhancedCodeGenerator {
 		if (onCodeChunkCallback) {
 			await onCodeChunkCallback(chunk);
 		}
+	}
+
+	/**
+	 * Extracts the content of a specific target file from a raw AI response,
+	 * handling various path indicator formats.
+	 * Returns null if the target file's content cannot be found.
+	 */
+	private _extractTargetFileContent(
+		rawResponse: string,
+		targetFilePath: string
+	): string | null {
+		console.log(
+			`[EnhancedCodeGenerator] Attempting to extract content for target file: ${targetFilePath}`
+		);
+		console.log(
+			`[EnhancedCodeGenerator] Raw AI response (first 200 chars): ${rawResponse.substring(
+				0,
+				200
+			)}...`
+		);
+
+		// Normalize target file path for robust matching (e.g., remove leading slash if present, ensure consistency)
+		const normalizedTargetFilePath = targetFilePath.startsWith("/")
+			? targetFilePath.substring(1)
+			: targetFilePath;
+
+		// Regex to find file path indicators and capture content until the next indicator or end of string.
+		// It handles:
+		// - `// path/to/file.ts`
+		// - `/* path/to/file.ts */`
+		// - `--- Relevant File: path/to/file.ts ---` (often followed by ```lang ... ```)
+		// - `Path: path/to/file.ts` (often followed by ```lang ... ```)
+		const regex = new RegExp(
+			`(?://\\s*|/\\*\\s*|--- Relevant File:\\s*|Path:\\s*)[\\s\\"\\']?(${normalizedTargetFilePath.replace(
+				/[.*+?^${}()|[\]\\]/g,
+				"\\$&"
+			)})[\\s\\"\\']?(?:\\s*\\*/)?(?:\\s*---)?(?:\\s*\\n)?\\s*(?:\\\`{3}[a-zA-Z]*\\n)?([\\s\\S]*?)(?=\\n(?:\\\`{3}|(?://|/\\*|--- Relevant File:|Path:)\\s*(?!\\\`{3}))|$)`,
+			"gm"
+		);
+
+		let match;
+		let extractedContent: string | null = null;
+		let bestMatchLength = -1;
+
+		while ((match = regex.exec(rawResponse)) !== null) {
+			const matchedFilePath = match[1];
+			const contentBlock = match[2].trim();
+
+			if (
+				matchedFilePath === normalizedTargetFilePath ||
+				matchedFilePath === targetFilePath // Try both normalized and original
+			) {
+				// If a closer match is found (e.g., a file path that is not just a prefix)
+				// Or if this is the first match, consider it.
+				// For simplicity, we'll take the longest content block for the target file,
+				// assuming it's the most complete.
+				if (contentBlock.length > bestMatchLength) {
+					extractedContent = contentBlock;
+					bestMatchLength = contentBlock.length;
+					console.log(
+						`[EnhancedCodeGenerator] Found potential content block for ${matchedFilePath}, length: ${contentBlock.length}`
+					);
+				}
+			}
+		}
+
+		if (extractedContent) {
+			console.log(
+				`[EnhancedCodeGenerator] Successfully extracted content for ${targetFilePath}.`
+			);
+		} else {
+			console.warn(
+				`[EnhancedCodeGenerator] Could not extract content for ${targetFilePath}.`
+			);
+		}
+
+		return extractedContent;
 	}
 
 	/**

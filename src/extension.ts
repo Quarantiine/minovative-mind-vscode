@@ -492,12 +492,12 @@ export async function activate(context: vscode.ExtensionContext) {
 				composedMessage = `/plan Please resolve the merge conflicts in ${displayFileName}. Provide the implementation solution before code. Here's the full file content with conflicts:\n\n\`\`\`${languageId}\n${fullText}\n\`\`\`\n. Highlevel thinking first. No coding yet.`;
 			} else if (instruction === "chat") {
 				if (originalSelection.isEmpty) {
-					composedMessage = `Message: ${userProvidedMessage} \n\nIn this project, focus on the conversation within the context of file \`${displayFileName}\`. Do not code.`;
+					composedMessage = `Message: ${userProvidedMessage} \n\nIn this project, focus on the conversation within the context of file \`${displayFileName}\`. \n\nDo not code.`;
 				} else {
 					composedMessage =
 						`Message: ${userProvidedMessage}\n\n` +
 						`In this project: From this file \`${displayFileName}\`, focus on the conversation. I've provided ${contextDescription}.\n\n` +
-						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`. Do not code.`;
+						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`. \n\nDo not code.`;
 				}
 			} else if (instruction === "custom prompt") {
 				if (originalSelection.isEmpty) {

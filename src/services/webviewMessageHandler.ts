@@ -15,7 +15,7 @@ import { scanWorkspace } from "../context/workspaceScanner";
 import { createAsciiTree } from "../utils/treeFormatter";
 
 export const PRE_PROMPT_MESSAGE =
-	"You are an expert software engineer. Your task is to provide production-ready code that is robust, maintainable, secure, clean, efficient, and follows industry best practices. No placeholders, no todo comments";
+	"You are an expert software engineer. Your task is to provide production-ready code that is robust, maintainable, secure, clean, efficient, and follows industry best practices. No placeholders, no todo comments, no basic code. Focus on implementing the following feature/enhancement from the message instructions below.";
 
 export async function handleWebviewMessage(
 	data: any,
@@ -561,12 +561,12 @@ export async function handleWebviewMessage(
 
 				try {
 					await vscode.commands.executeCommand("vscode.open", absoluteFileUri);
-					provider.postMessageToWebview({
-						type: "statusUpdate",
-						value: `File opened successfully: ${path.basename(
-							absoluteFileUri.fsPath
-						)}`,
-					});
+					// provider.postMessageToWebview({
+					// 	type: "statusUpdate",
+					// 	value: `File opened successfully: ${path.basename(
+					// 		absoluteFileUri.fsPath
+					// 	)}`,
+					// });
 				} catch (openError: any) {
 					const formattedError = formatUserFacingErrorMessage(
 						openError,
@@ -877,7 +877,7 @@ export async function handleWebviewMessage(
 					}
 
 					const header =
-						historyEntry.role === "user" ? "User message" : "AI message";
+						historyEntry.role === "user" ? "User message" : "Instructions";
 					const finalCombinedContent = `${PRE_PROMPT_MESSAGE}\n\n${header}: ${messageContentText}\n\nFile Tree:\n${fileTreeContent}\n\nFile Content:\n${allFileContents}`;
 
 					await vscode.env.clipboard.writeText(finalCombinedContent);

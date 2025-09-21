@@ -208,303 +208,119 @@ export async function selectRelevantFilesAI(
 
 	let contextPrompt = `User Request: "${userRequest}"\n`;
 
-	// Add heuristically pre-selected files to the context prompt for AI's awareness
 	if (preSelectedHeuristicFiles && preSelectedHeuristicFiles.length > 0) {
 		const heuristicPaths = preSelectedHeuristicFiles.map((uri) =>
 			path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/")
 		);
-		contextPrompt += `\nHeuristically Pre-selected Files (based on active file directory, direct dependencies, etc. These are strong candidates for relevance. You should critically evaluate these and discard any that are not directly essential.): ${heuristicPaths
-			.map((p) => `"${p}"`)
-			.join(", ")}\n`;
+		contextPrompt += `\nHeuristically Pre-selected Files (strong candidates, but critically evaluate them): ${heuristicPaths.join(
+			", "
+		)}\n`;
 	}
 
 	if (activeEditorContext) {
-		contextPrompt += `\nActive File: ${activeEditorContext.filePath}\n`;
-		if (
-			activeEditorContext.selectedText &&
-			activeEditorContext.selectedText.trim().length > 0
-		) {
-			const preview = activeEditorContext.selectedText.substring(0, 200);
-			contextPrompt += `Selected Text (preview): "${preview}"\n`;
+		const relativeActiveFilePath = path
+			.relative(projectRoot.fsPath, activeEditorContext.filePath)
+			.replace(/\\/g, "/");
+		contextPrompt += `\nActive File: ${relativeActiveFilePath}\n`;
+		if (activeEditorContext.selectedText?.trim()) {
+			contextPrompt += `Selected Text: "${activeEditorContext.selectedText.substring(
+				0,
+				200
+			)}"\n`;
 		}
+	}
 
-		// Feature activeSymbolDetailedInfo prominently if available
-		if (activeSymbolDetailedInfo && activeSymbolDetailedInfo.name) {
-			const symbolInfo = activeSymbolDetailedInfo;
-			contextPrompt += `\n--- Active Symbol Detailed Information ---\n`;
-			contextPrompt += `Symbol: "${symbolInfo.name}" (Type: ${
-				symbolInfo.kind || "Unknown"
-			})\n`;
-			if (symbolInfo.detail) {
-				contextPrompt += `Detail: ${symbolInfo.detail}\n`;
-				contextPrompt += `Detail: ${symbolInfo.detail}\n`;
+	if (activeSymbolDetailedInfo?.name) {
+		contextPrompt += `\n--- Active Symbol Detailed Information (Primary Context) ---\n`;
+		contextPrompt += `Symbol: "${activeSymbolDetailedInfo.name}" (Type: ${
+			activeSymbolDetailedInfo.kind !== undefined
+				? activeSymbolDetailedInfo.kind
+				: "Unknown"
+		})\n`;
+
+		const getRelativePath = (uri: vscode.Uri) =>
+			path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/");
+		const addPathsToPrompt = (label: string, uris: vscode.Uri[]) => {
+			const uniquePaths = [...new Set(uris.map(getRelativePath))];
+			if (uniquePaths.length > 0) {
+				contextPrompt += `${label}: ${uniquePaths.slice(0, 10).join(", ")}\n`;
 			}
-			if (symbolInfo.filePath) {
-				const relativeSymPath = path
-					.relative(projectRoot.fsPath, symbolInfo.filePath)
-					.replace(/\\/g, "/");
-				let lineNumberDisplay = "N/A";
-				const lineNumber = symbolInfo.fullRange?.start?.line;
-				if (typeof lineNumber === "number") {
-					lineNumberDisplay = (lineNumber + 1).toString();
-				}
-				contextPrompt += `File Location: ${relativeSymPath}:${lineNumberDisplay}\n`;
-			}
+		};
 
-			const MAX_RELATED_SYMBOL_FILES_PROMPT = 20; // Limit related files for prompt conciseness
-
-			// References (general references, fetched if activeSymbolDetailedInfo doesn't explicitly contain them)
-			try {
-				const activeFileUri = vscode.Uri.file(activeEditorContext.filePath);
-				const references = await SymbolService.findReferences(
-					activeFileUri,
-					activeEditorContext.selection.start, // Use selection start to find context for references
-					cancellationToken
-				);
-
-				if (references) {
-					const uniqueReferencePaths = new Set<string>();
-					for (const ref of references) {
-						if (ref.uri.fsPath !== activeFileUri.fsPath) {
-							// Exclude self
-							const relativeRefPath = path
-								.relative(projectRoot.fsPath, ref.uri.fsPath)
-								.replace(/\\/g, "/");
-							if (relativeFilePaths.includes(relativeRefPath)) {
-								// Only add if it's one of the scanned files
-								uniqueReferencePaths.add(relativeRefPath);
-							}
-						}
-						if (uniqueReferencePaths.size >= MAX_RELATED_SYMBOL_FILES_PROMPT) {
-							break;
-						}
-					}
-					if (uniqueReferencePaths.size > 0) {
-						contextPrompt += `General References in: ${Array.from(
-							uniqueReferencePaths
-						)
-							.map((p) => `"${p}"`)
-							.join(", ")}\n`;
-					}
-				}
-			} catch (error) {
-				console.error(
-					"[SmartContextSelector] Error finding general references for symbol:",
-					symbolInfo.name,
-					error
-				);
-			}
-
-			// Incoming Calls
-			if (symbolInfo.incomingCalls && symbolInfo.incomingCalls.length > 0) {
-				const uniqueIncomingCallPaths = new Set<string>();
-				for (const call of symbolInfo.incomingCalls) {
-					const relativeCallPath = path
-						.relative(projectRoot.fsPath, call.from.uri.fsPath)
-						.replace(/\\/g, "/");
-					if (
-						relativeFilePaths.includes(relativeCallPath) &&
-						relativeCallPath !== activeEditorContext?.documentUri?.fsPath
-					) {
-						uniqueIncomingCallPaths.add(relativeCallPath);
-					}
-					if (uniqueIncomingCallPaths.size >= MAX_RELATED_SYMBOL_FILES_PROMPT) {
-						break;
-					}
-				}
-				if (uniqueIncomingCallPaths.size > 0) {
-					contextPrompt += `This symbol has Incoming Calls from (files): ${Array.from(
-						uniqueIncomingCallPaths
-					)
-						.map((p) => `"${p}"`)
-						.join(", ")}\n`;
-				}
-			}
-
-			// Outgoing Calls
-			if (symbolInfo.outgoingCalls && symbolInfo.outgoingCalls.length > 0) {
-				const uniqueOutgoingCallPaths = new Set<string>();
-				for (const call of symbolInfo.outgoingCalls) {
-					const relativeCallPath = path
-						.relative(projectRoot.fsPath, call.to.uri.fsPath)
-						.replace(/\\/g, "/");
-					if (
-						relativeFilePaths.includes(relativeCallPath) &&
-						relativeCallPath !== activeEditorContext?.documentUri?.fsPath
-					) {
-						uniqueOutgoingCallPaths.add(relativeCallPath);
-					}
-					if (uniqueOutgoingCallPaths.size >= MAX_RELATED_SYMBOL_FILES_PROMPT) {
-						break;
-					}
-				}
-				if (uniqueOutgoingCallPaths.size > 0) {
-					contextPrompt += `This symbol has Outgoing Calls to (files): ${Array.from(
-						uniqueOutgoingCallPaths
-					)
-						.map((p) => `"${p}"`)
-						.join(", ")}\n`;
-				}
-			}
-
-			// Referenced Type Definitions (briefly)
-			if (
-				symbolInfo.referencedTypeDefinitions &&
-				symbolInfo.referencedTypeDefinitions.size > 0
-			) {
-				const typeDefPaths = Array.from(
-					symbolInfo.referencedTypeDefinitions.keys()
-				)
-					.filter((p) => relativeFilePaths.includes(p)) // Only include scanned files
-					.slice(0, MAX_RELATED_SYMBOL_FILES_PROMPT);
-				if (typeDefPaths.length > 0) {
-					contextPrompt += `This symbol references Types Defined in (files): ${typeDefPaths
-						.map((p) => `"${p}"`)
-						.join(", ")}\n`;
-				}
-			}
-			contextPrompt += `--- End Active Symbol Detailed Information ---\n`;
-		} else if (activeEditorSymbols && activeEditorContext.selection.start) {
-			// Fallback to simpler symbol references if detailed info is not available
-			const position = activeEditorContext.selection.start;
-			const activeFileUri = vscode.Uri.file(activeEditorContext.filePath);
-
-			const symbolAtCursor = activeEditorSymbols.find((symbol) =>
-				symbol.range.contains(position)
+		if (activeSymbolDetailedInfo.definition) {
+			const defUris = Array.isArray(activeSymbolDetailedInfo.definition)
+				? activeSymbolDetailedInfo.definition.map((d) => d.uri)
+				: [activeSymbolDetailedInfo.definition.uri];
+			addPathsToPrompt("Definition in", defUris);
+		}
+		if (activeSymbolDetailedInfo.implementations) {
+			addPathsToPrompt(
+				"Implementations in",
+				activeSymbolDetailedInfo.implementations.map((i) => i.uri)
 			);
-
-			if (symbolAtCursor) {
-				contextPrompt += `\nCursor is currently on symbol: "${
-					symbolAtCursor.name
-				}" (Type: ${vscode.SymbolKind[symbolAtCursor.kind]})\n`;
-				try {
-					const references = await SymbolService.findReferences(
-						activeFileUri,
-						symbolAtCursor.selectionRange.start,
-						cancellationToken
-					);
-
-					if (references) {
-						const relatedFilePaths: Set<string> = new Set();
-						const MAX_RELATED_FILES = 20;
-
-						for (const ref of references) {
-							if (ref.uri.fsPath !== activeFileUri.fsPath) {
-								// Exclude the active file itself
-								const relativePath = path
-									.relative(projectRoot.fsPath, ref.uri.fsPath)
-									.replace(/\\/g, "/");
-								// Ensure the path is one of the allScannedFiles to avoid hallucinating
-								if (relativeFilePaths.includes(relativePath)) {
-									relatedFilePaths.add(relativePath);
-								}
-								if (relatedFilePaths.size >= MAX_RELATED_FILES) {
-									break; // Limit the number of files
-								}
-							}
-						}
-
-						if (relatedFilePaths.size > 0) {
-							contextPrompt += `This symbol is referenced in the following related files: ${Array.from(
-								relatedFilePaths
-							)
-								.map((p) => `"${p}"`)
-								.join(", ")}\n`;
-						}
-					}
-				} catch (error) {
-					console.error(
-						"[SmartContextSelector] Error finding references for symbol:",
-						symbolAtCursor.name,
-						error
-					);
-					// Continue without symbol reference info if error occurs
-				}
+		}
+		if (activeSymbolDetailedInfo.incomingCalls) {
+			addPathsToPrompt(
+				"Incoming calls from",
+				activeSymbolDetailedInfo.incomingCalls.map((c) => c.from.uri)
+			);
+		}
+		if (activeSymbolDetailedInfo.outgoingCalls) {
+			addPathsToPrompt(
+				"Outgoing calls to",
+				activeSymbolDetailedInfo.outgoingCalls.map((c) => c.to.uri)
+			);
+		}
+		if (
+			activeSymbolDetailedInfo.referencedTypeDefinitions &&
+			activeSymbolDetailedInfo.referencedTypeDefinitions.size > 0
+		) {
+			const typeDefPaths = [
+				...activeSymbolDetailedInfo.referencedTypeDefinitions.keys(),
+			].slice(0, 10);
+			if (typeDefPaths.length > 0) {
+				contextPrompt += `References types defined in: ${typeDefPaths.join(
+					", "
+				)}\n`;
 			}
 		}
+		contextPrompt += `--- End Active Symbol Information ---\n`;
 	}
 
-	if (chatHistory.length > 0) {
-		contextPrompt += "\nRecent Chat History (condensed):\n";
-		// Include last 3-5 turns, or a summary
-		const recentHistory = chatHistory.slice(-3); // Example: last 3 turns
-		recentHistory.forEach((entry) => {
-			const messageText = entry.parts.map((p: any) => p.text).join(" ");
-			const preview =
-				messageText.length > 150
-					? messageText.substring(0, 150) + "..."
-					: messageText;
-			contextPrompt += `- ${entry.role}: ${preview}\n`;
-		});
-	}
-
-	let dependencyInfo = "";
-	if (fileDependencies && fileDependencies.size > 0) {
-		dependencyInfo += "\nInternal File Relationships:\n";
-		const MAX_DEPENDENCY_SECTION_CHARS = 100_000; // Limit for dependency section size
-		let currentLength = dependencyInfo.length;
-
-		for (const [sourceFile, importedFiles] of fileDependencies.entries()) {
-			const line = `- ${sourceFile} imports: ${importedFiles.join(", ")}\n`;
-			if (currentLength + line.length > MAX_DEPENDENCY_SECTION_CHARS) {
-				dependencyInfo += "(...truncated due to length limit)\n";
-				break;
-			}
-			dependencyInfo += line;
-			currentLength += line.length;
-		}
-	}
-
-	const fileListString = relativeFilePaths
-		.map((p) => {
-			let summary = fileSummaries?.get(p);
-			if (summary) {
-				summary = summary.replace(/\s+/g, " ").trim();
-				if (summary.length > MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION) {
-					summary =
-						summary.substring(0, MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION - 3) +
-						"...";
-				}
-				return `- "${p}" (Summary: ${summary})`;
-			}
-			return `- "${p}"`;
-		})
-		.join("\n");
-
-	// Optimize prompt length
-	const maxPromptLength = selectionOptions?.maxPromptLength ?? 50000;
-	const optimizedPrompt = optimizePrompt(
-		contextPrompt,
-		dependencyInfo,
-		fileListString,
-		maxPromptLength
-	);
+	const fileListString =
+		"--- Available Project Files ---\n" +
+		relativeFilePaths
+			.map((p) => {
+				const summary = fileSummaries?.get(p);
+				return `- "${p}"${
+					summary
+						? ` (Summary: ${summary.substring(0, 200).replace(/\s+/g, " ")}...)`
+						: ""
+				}`;
+			})
+			.join("\n");
 
 	const selectionPrompt = `
-	You are an AI assistant helping a developer focus on the most relevant parts of their codebase.
-	Based on the user's request, active editor context, chat history, and the provided project file information, please select a subset of files from the "Available Project Files" list that are most pertinent to fulfilling the user's request.
+You are an expert AI developer assistant. Your task is to select the most relevant files to help with a user's request.
 
-	-- Context Prompt --
-	${optimizedPrompt}
-	-- End Context Prompt --
+-- Context --
+${contextPrompt}
+-- End Context --
 
-	Instructions for your response:
-	1.  Analyze all the provided information to understand the user's goal.
-	2.  Review the 'Heuristically Pre-selected Files' if present. While these files are initial candidates based on proximity, **your critical task is to select *only* the most directly relevant and essential subset of files** from *all* available files (including and beyond the heuristically pre-selected ones) to address the user's request and provided diagnostics. **Actively discard any heuristically suggested files that do not directly contribute to solving the problem or fulfilling the request.** Prioritize files that are *essential* for the task over those that are merely peripherally related.
-	3.  If 'Active Symbol Detailed Information' is present, **this is paramount.** Pay extremely close attention to the symbol's definitions, implementations, general references, incoming/outgoing calls, and referenced type definitions. These relationships are the **most crucial indicators of file relevance**. Prioritize files that directly define, implement, or are fundamentally interconnected via the call hierarchy or type definitions to the active symbol.
-	4.  Carefully examine the 'Internal File Relationships' section if present, as it provides crucial context on how files relate to each other, forming logical modules or feature areas.
-	5.  For each file in the "Available Project Files" list, consider its path, its summary, and its relationship to the active file, active symbol, and other relevant files. Prioritize files whose summaries indicate high semantic similarity to the user's request or the problem domain, and files that are directly imported by the active file, or by other files you deem highly relevant.
-	6.  Return your selection as a JSON array of strings. Each string in the array must be an exact relative file path from the "Available Project Files" list.
-	7.  If no specific files from the list seem particularly relevant *beyond the heuristically pre-selected ones* (e.g., the request is very general or can be answered without looking at other files beyond the active one and its immediate module), return an empty JSON array \`[]\`
-	8.  Do NOT include any files not present in the "Available Project Files" list.
-	9.  Your entire response should be ONLY the JSON array. Do not include any other text, explanations, or markdown formatting.
+${fileListString}
 
-	JSON Array of selected file paths:
+-- Instructions --
+1.  **Analyze the Goal**: Understand the user's request and the provided context, especially the Active Symbol Information.
+2.  **Prioritize Functional Relationships**: The 'Active Symbol Detailed Information' is the most critical input. Files containing definitions, implementations, callers (incoming calls), or callees (outgoing calls) of the active symbol are extremely important. These represent the functional skeleton of the task.
+3.  **Use Summaries for Semantic Relevance**: Evaluate the file summaries. Select files whose purpose and abstractions are semantically related to the user's request, even if they aren't directly linked by symbols.
+4.  **Critically Evaluate Heuristics**: The 'Heuristically Pre-selected Files' are just suggestions. Your job is to be more precise. **Aggressively discard any file that is not absolutely essential** for the task. Focus on quality over quantity.
+5.  **Output Format**: Return a JSON array of strings, where each string is an exact relative file path from the "Available Project Files" list. Do not include files not in the list. Your entire response must be ONLY the JSON array.
+
+JSON Array of selected file paths:
 `;
 
 	console.log(
-		`[SmartContextSelector] Sending optimized prompt to AI for file selection (${selectionPrompt.length} chars):`,
-		selectionPrompt
+		`[SmartContextSelector] Sending prompt to AI for file selection (${selectionPrompt.length} chars)`
 	);
 
 	try {
@@ -516,10 +332,10 @@ export async function selectRelevantFilesAI(
 		const aiResponse = await aiModelCall(
 			selectionPrompt,
 			modelName,
-			undefined, // History is already part of the `selectionPrompt`
+			undefined,
 			"file_selection",
 			generationConfig,
-			undefined, // No stream callbacks for this call
+			undefined,
 			cancellationToken
 		);
 
@@ -528,103 +344,48 @@ export async function selectRelevantFilesAI(
 			aiResponse
 		);
 
-		let cleanedResponse = aiResponse.trim();
-
-		// Check for and remove "" at the start of the response
-		if (cleanedResponse.startsWith("")) {
-			cleanedResponse = cleanedResponse.substring("".length).trim();
-		}
-
-		// Check for and remove "" at the end of the response
-		if (cleanedResponse.endsWith("")) {
-			cleanedResponse = cleanedResponse
-				.substring(0, cleanedResponse.length - "".length)
-				.trim();
-		}
-
-		// Apply a final trim to ensure no leading/trailing whitespace remains
-		cleanedResponse = cleanedResponse.trim();
-
-		const selectedPaths: unknown = JSON.parse(cleanedResponse);
-		const aiSelectedFilesSet = new Set<vscode.Uri>();
-
+		const selectedPaths = JSON.parse(aiResponse.trim());
 		if (
 			!Array.isArray(selectedPaths) ||
 			!selectedPaths.every((p) => typeof p === "string")
 		) {
-			console.warn(
-				"[SmartContextSelector] AI did not return a valid JSON array of strings. Falling back to heuristics + active file. Response:",
-				selectedPaths
-			);
-			// Fallback logic for invalid AI response: combine pre-selected heuristics and active file
-			let fallbackResultFiles: vscode.Uri[] = Array.from(
-				preSelectedHeuristicFiles || []
-			); // Start with heuristics
-			if (
-				activeEditorContext?.documentUri &&
-				!fallbackResultFiles.some(
-					(uri) => uri.fsPath === activeEditorContext.documentUri.fsPath
-				)
-			) {
-				fallbackResultFiles.unshift(activeEditorContext.documentUri); // Add active file if not already present
-			}
-			const result = fallbackResultFiles; // Set result for caching and return
-
-			// Cache the fallback result
-			if (useCache) {
-				const cacheKey = generateAISelectionCacheKey(
-					userRequest,
-					allScannedFiles,
-					activeEditorContext,
-					preSelectedHeuristicFiles
-				);
-				aiSelectionCache.set(cacheKey, {
-					timestamp: Date.now(),
-					selectedFiles: result,
-					userRequest,
-					activeFile: activeEditorContext?.filePath,
-					fileCount: allScannedFiles.length,
-					heuristicFilesCount: preSelectedHeuristicFiles?.length || 0,
-				});
-			}
-
-			return result;
+			throw new Error("AI did not return a valid JSON array of strings.");
 		}
 
+		const projectFileSet = new Set(
+			relativeFilePaths.map((p) => p.toLowerCase())
+		);
+		const finalUris = new Set<vscode.Uri>();
+
+		// Add AI selected files
 		for (const selectedPath of selectedPaths as string[]) {
-			const normalizedSelectedPath = selectedPath.replace(/\\/g, "/");
-			// Find the original URI from allScannedFiles to preserve casing and ensure existence
-			const originalUri = allScannedFiles.find(
-				(uri) =>
-					path
-						.relative(projectRoot.fsPath, uri.fsPath)
-						.replace(/\\/g, "/")
-						.toLowerCase() === normalizedSelectedPath.toLowerCase()
-			);
-			if (originalUri) {
-				aiSelectedFilesSet.add(originalUri); // Add AI-selected files to the set
-			} else {
-				console.warn(
-					`[SmartContextSelector] AI selected a file not in the original scan or with altered path: ${selectedPath}`
+			const normalizedPath = selectedPath.replace(/\\/g, "/");
+			if (projectFileSet.has(normalizedPath.toLowerCase())) {
+				const originalUri = allScannedFiles.find(
+					(uri) =>
+						path
+							.relative(projectRoot.fsPath, uri.fsPath)
+							.replace(/\\/g, "/")
+							.toLowerCase() === normalizedPath.toLowerCase()
 				);
+				if (originalUri) {
+					finalUris.add(originalUri);
+				}
 			}
 		}
 
-		let finalResultFiles: vscode.Uri[] = Array.from(aiSelectedFilesSet);
+		let finalResultFiles = Array.from(finalUris);
 
-		// Add active editor's file if it exists and is NOT already in aiSelectedFilesSet
+		// Always include the active file if it exists
 		if (
 			activeEditorContext?.documentUri &&
 			!finalResultFiles.some(
-				// Use `some` for URI comparison by `fsPath`
 				(uri) => uri.fsPath === activeEditorContext.documentUri.fsPath
 			)
 		) {
-			finalResultFiles.unshift(activeEditorContext.documentUri); // Ensure active file is first
+			finalResultFiles.unshift(activeEditorContext.documentUri);
 		}
 
-		// Cache the successful result
-		const result = finalResultFiles; // Modified to use finalResultFiles
 		if (useCache) {
 			const cacheKey = generateAISelectionCacheKey(
 				userRequest,
@@ -634,7 +395,7 @@ export async function selectRelevantFilesAI(
 			);
 			aiSelectionCache.set(cacheKey, {
 				timestamp: Date.now(),
-				selectedFiles: result,
+				selectedFiles: finalResultFiles,
 				userRequest,
 				activeFile: activeEditorContext?.filePath,
 				fileCount: allScannedFiles.length,
@@ -642,48 +403,18 @@ export async function selectRelevantFilesAI(
 			});
 		}
 
-		// Return the final combined AI-selected and active files
-		return result;
+		return finalResultFiles;
 	} catch (error) {
 		console.error(
 			"[SmartContextSelector] Error during AI file selection:",
 			error
 		);
-		// In case of an error (API error, parsing error, etc.),
-		// fall back to the heuristically pre-selected files AND the active file.
-		let fallbackResultFiles: vscode.Uri[] = Array.from(
-			preSelectedHeuristicFiles || []
-		); // Start with heuristics
-		if (
-			activeEditorContext?.documentUri &&
-			!fallbackResultFiles.some(
-				// Use `some` for URI comparison by `fsPath`
-				(uri) => uri.fsPath === activeEditorContext.documentUri.fsPath
-			)
-		) {
-			fallbackResultFiles.unshift(activeEditorContext.documentUri); // Add active file if not already present
+		// Fallback to heuristics + active file on any error
+		const fallbackFiles = new Set(preSelectedHeuristicFiles || []);
+		if (activeEditorContext?.documentUri) {
+			fallbackFiles.add(activeEditorContext.documentUri);
 		}
-		const result = fallbackResultFiles; // Set result for caching and return
-
-		// Cache the error fallback result
-		if (useCache) {
-			const cacheKey = generateAISelectionCacheKey(
-				userRequest,
-				allScannedFiles,
-				activeEditorContext,
-				preSelectedHeuristicFiles
-			);
-			aiSelectionCache.set(cacheKey, {
-				timestamp: Date.now(),
-				selectedFiles: result,
-				userRequest,
-				activeFile: activeEditorContext?.filePath,
-				fileCount: allScannedFiles.length,
-				heuristicFilesCount: preSelectedHeuristicFiles?.length || 0,
-			});
-		}
-
-		return result;
+		return Array.from(fallbackFiles);
 	}
 }
 

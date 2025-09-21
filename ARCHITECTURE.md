@@ -107,15 +107,17 @@ A deeper analysis of the file structure, class responsibilities, and how differe
 
 #### 3. Advanced Context Building & AI-Driven Selection
 
-- **Responsibility**: Orchestrates the entire process of building semantic-aware and highly relevant contextual data for AI models, employing a multi-faceted approach to understand the codebase, including AI-driven file selection and sequential processing for large codebases.
+- **Responsibility**: Orchestrates the entire process of building highly relevant, semantic-aware contextual data for AI models. It prioritizes functional and semantic relationships between files over simple import chains, avoiding an increase in direct import dependency depth.
 - **Key Features**:
+  - **AI Prompt Engineering (`src/context/smartContextSelector.ts`)**: The AI-driven file selection mechanism is enhanced to focus on deeper semantic and functional relevance, moving beyond basic import statements. It leverages comprehensive symbol information and file content summaries to make more intelligent decisions.
+  - **Heuristic Pre-selection (`src/context/heuristicContextSelector.ts`)**: Improved heuristics provide a more accurate initial set of candidate files, which are then further refined by the AI.
+  - **Semantic Summarization (`src/context/fileContentProcessor.ts`)**: Files are intelligently summarized, capturing their core purpose and abstractions, making them more digestible and relevant for AI context building.
   - **Workspace Scanning and Project Type Detection**: Initiates with `scanWorkspace` and `detectProjectType` for foundational context.
   - **Comprehensive `activeSymbolDetailedInfo` Gathering**: Gathers detailed symbol information (definitions, implementations, references, call hierarchy) for precise AI modifications.
-  - **Refined AI-Driven File Selection**: Uses `selectRelevantFilesAI` for dynamic file identification, intelligent file summarization (`intelligentlySummarizeFileContent`), and a robust fallback mechanism.
   - **Sequential Project Context (`buildSequentialProjectContext`)**: Handles very large codebases by processing and summarizing files in batches using `SequentialContextService`.
   - **Performance Monitoring**: Monitors duration of operations and logs warnings for performance optimization.
   - **Context Assembly**: Integrates all collected data into a cohesive, token-optimized prompt string (`buildContextString`).
-- **Key Files**: `src/services/contextService.ts`, `src/context/workspaceScanner.ts`, `src/context/dependencyGraphBuilder.ts`, `src/context/smartContextSelector.ts`, `src/context/contextBuilder.ts`, `src/services/symbolService.ts`, `src/utils/diagnosticUtils.ts`, `src/context/fileContentProcessor.ts`, `src/services/sequentialContextService.ts`, `src/services/projectTypeDetector.ts`
+- **Key Files**: `src/context/smartContextSelector.ts`, `src/context/heuristicContextSelector.ts`, `src/context/fileContentProcessor.ts`, `src/services/contextService.ts`, `src/context/workspaceScanner.ts`, `src/context/dependencyGraphBuilder.ts`, `src/context/contextBuilder.ts`, `src/services/symbolService.ts`, `src/utils/diagnosticUtils.ts`, `src/services/sequentialContextService.ts`, `src/services/projectTypeDetector.ts`
 
 #### 4. URL Context Retrieval
 
@@ -262,10 +264,21 @@ A deeper analysis of the file structure, class responsibilities, and how differe
 
 #### 6. Command Execution Utility
 
-- **Responsibility**: Provides a robust and cancellable mechanism for executing external shell commands, critical for AI-driven workflows to interact with the file system beyond simple read/write.
-- **Key Features**: Captures stdout/stderr, returns exit codes, integrates with VS Code cancellation tokens, and tracks active child processes.
+- **Responsibility**: Provides a **secure**, **robust**, and **auditable** mechanism for executing external shell commands, critical for AI-driven workflows to interact with the file system and external tools.
+- **Key Features**:
+  - **Direct Command Execution**: Utilizes `child_process.spawn` for direct command invocation without `shell: true`, passing commands as an executable and an explicit argument array to prevent shell injection vulnerabilities.
+  - **Robust Security Validation**: A built-in, hardcoded security configuration within `PlanExecutorService` rigorously validates all commands before execution. This includes:
+    - **Executable Allowlisting**: Only predefined, safe executables (e.g., `git`, `npm`, `mkdir`) are permitted.
+    - **Path Restrictions**: Disallows absolute and relative paths for executables, enforcing execution via the system's `PATH` for trusted binaries.
+    - **Dangerous Command/Argument Blocking**: Explicitly blocks known dangerous operations such as `rm -rf`, `git reset --hard`, `npm exec`, and `npx` when they attempt to run arbitrary scripts without explicit user confirmation.
+    - **Shell Meta-character Prevention**: Actively prevents the interpretation of shell meta-characters (e.g., `&&`, `||`, `;`, `$(`, `` ` ``) in commands and arguments to guard against injection attacks.
+    - **High-Risk Executable Handling**: Powerful interpreters (e.g., `npx`, `node`, `python`, `bash`, `sh`) are either disallowed by default or require explicit user confirmation due to their potential for arbitrary code execution.
+  - **Hardcoded Security Policy**: The security rules are fixed internally within `PlanExecutorService`, providing a consistent and non-modifiable security posture, replacing any external configuration.
+  - **Improved User Prompts**: Enhanced prompts provide clearer warnings for high-risk commands and offer more granular user choices (Allow/Skip/Cancel) to ensure informed consent.
+  - **Real-time Terminal Output**: Pipes `stdout` and `stderr` to a dedicated VS Code terminal in real-time, providing transparency and detailed feedback during command execution.
+  - **Cancellation Integration**: Integrates with VS Code cancellation tokens for graceful termination of running processes, allowing users to stop long-running or unwanted commands.
 - **Key Interfaces**: `CommandResult`.
-- **Key Files**: `src/utils/commandExecution.ts` (`executeCommand` function)
+- **Key Files**: `src/utils/commandExecution.ts` (`executeCommand` function), `src/services/planExecutorService.ts` (`_handleRunCommandStep`, `_isCommandSafe` methods)
 
 ---
 

@@ -60,7 +60,8 @@ interface ContextBuildOptions {
 	enablePerformanceMonitoring?: boolean;
 	skipLargeFiles?: boolean;
 	maxFileSize?: number;
-	forceAISelectionRecalculation?: boolean; // New optional property
+	forceAISelectionRecalculation?: boolean;
+	operationId?: string; // Add operationId to ContextBuildOptions
 }
 
 export interface ActiveSymbolDetailedInfo {
@@ -103,6 +104,7 @@ export class ContextService {
 	private fileDependencies?: Map<string, string[]>;
 	private reverseFileDependencies?: Map<string, string[]>;
 	private areDependenciesComputed: boolean = false;
+	private lastProcessedOperationId: string | undefined; // Track the last operation ID
 
 	constructor(
 		settingsManager: SettingsManager,
@@ -808,6 +810,37 @@ export class ContextService {
 				true
 			);
 
+			// Get the current operation ID from options
+			const currentOperationId = options?.operationId;
+
+			// Determine if AI selection cache should be used for this specific call
+			let shouldUseAISelectionCache = options?.useAISelectionCache ?? true;
+
+			// If a new distinct operation ID is provided, or forceAISelectionRecalculation is true,
+			// force the AI selection to re-evaluate by disabling cache.
+			if (
+				currentOperationId &&
+				currentOperationId !== this.lastProcessedOperationId
+			) {
+				console.log(
+					`[ContextService] Detected new operation ID (${currentOperationId} vs ${this.lastProcessedOperationId}). Forcing AI selection recalculation.`
+				);
+				shouldUseAISelectionCache = false;
+				// Explicitly clear the workspace-wide AI selection cache.
+				clearAISelectionCache(rootFolder.uri.fsPath);
+			} else if (options?.forceAISelectionRecalculation === true) {
+				console.log(
+					`[ContextService] Forcing AI selection recalculation: clearing cache for workspace: ${rootFolder.uri.fsPath}`
+				);
+				shouldUseAISelectionCache = false;
+				clearAISelectionCache(rootFolder.uri.fsPath);
+			}
+
+			// Update the last processed operation ID
+			if (currentOperationId) {
+				this.lastProcessedOperationId = currentOperationId;
+			}
+
 			if (
 				currentQueryForSelection &&
 				smartContextEnabled &&
@@ -818,14 +851,6 @@ export class ContextService {
 					value: "Identifying relevant files",
 					showLoadingDots: true,
 				});
-
-				// Conditional check: if forceAISelectionRecalculation is true, clear the AI selection cache
-				if (options?.forceAISelectionRecalculation === true) {
-					console.log(
-						`[ContextService] Forcing AI selection recalculation: clearing cache for workspace: ${rootFolder.uri.fsPath}`
-					);
-					clearAISelectionCache(rootFolder.uri.fsPath);
-				}
 
 				try {
 					const selectionOptions: SelectRelevantFilesAIOptions = {
@@ -877,7 +902,7 @@ export class ContextService {
 						preSelectedHeuristicFiles: [], // Pass heuristicSelectedFiles
 						fileSummaries: fileSummariesForAI, // Pass the generated file summaries
 						selectionOptions: {
-							useCache: options?.useAISelectionCache ?? true, // Correctly propagates the useAISelectionCache option
+							useCache: shouldUseAISelectionCache, // Use the dynamically determined cache option
 							cacheTimeout: 5 * 60 * 1000, // 5 minutes
 							maxPromptLength: 50000,
 							enableStreaming: false,

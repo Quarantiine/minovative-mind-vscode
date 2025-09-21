@@ -226,7 +226,7 @@ function setLoadingState(
 	}
 
 	// Hide confirmation/error/review UIs if a new loading operation starts
-	if (loading && planConfirmationVisible) {
+	if (loading && planConfirmationVisible && !appState.isAwaitingUserReview) {
 		if (elements.planConfirmationContainer) {
 			elements.planConfirmationContainer.style.display = "none";
 		}
@@ -238,7 +238,7 @@ function setLoadingState(
 		);
 	}
 
-	if (loading && planParseErrorVisible) {
+	if (loading && planParseErrorVisible && !appState.isAwaitingUserReview) {
 		elements.planParseErrorContainer.style.display = "none";
 		if (elements.planParseErrorDisplay) {
 			elements.planParseErrorDisplay.textContent = "";
@@ -252,7 +252,7 @@ function setLoadingState(
 			false
 		);
 	}
-	if (loading && commitReviewVisible) {
+	if (loading && commitReviewVisible && !appState.isAwaitingUserReview) {
 		elements.commitReviewContainer.style.display = "none";
 		updateStatus(
 			elements,
@@ -261,7 +261,11 @@ function setLoadingState(
 		);
 	}
 	// Add conditional block to hide clear chat confirmation UI
-	if (loading && chatClearConfirmationVisible) {
+	if (
+		loading &&
+		chatClearConfirmationVisible &&
+		!appState.isAwaitingUserReview
+	) {
 		if (elements.chatClearConfirmationContainer) {
 			elements.chatClearConfirmationContainer.style.display = "none";
 		}

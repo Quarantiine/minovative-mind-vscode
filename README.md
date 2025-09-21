@@ -84,6 +84,7 @@ npx vsce package
 >
 > ```bash
 > npm install -g @vscode/vsce
+>
 > ```
 
 ### **Step 4: Install the Extension in VS Code**
@@ -151,11 +152,15 @@ My vision is to empower every developer with a powerful, free, and open-source A
 - [**`CODE_OF_CONDUCT.md`**](./CODE_OF_CONDUCT.md)
 - [**`LICENSE.md`**](./LICENSE.md)
 - [**`SECURITY.md`**](./SECURITY.md)
+- [**`TERMS_OF_USE.md`**](./TERMS_OF_USE.md)
+- [**`PRIVACY_POLICY.md`**](./PRIVACY_POLICY.md)
 - [**`GOOGLE_AI_POLICIES.md`**](./GOOGLE_AI_POLICIES.md)
 
+````txt
 _“This project makes API calls directly from your VS Code environment using your own Gemini API key. No data is stored, processed, or transmitted by third parties beyond Google’s API.”_
-
+```
 ---
 
 > Remember, Minovative Mind is designed to assist, not replace, the brilliance of human developers! Happy Coding!
 > Built by [Daniel Ward](https://github.com/Quarantiine), a USA based developer under Minovative (Minovative = minimal-innovative) Technologies [A DBA registered self-employed company in the US]
+````

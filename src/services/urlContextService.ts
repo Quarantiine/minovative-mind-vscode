@@ -8,6 +8,10 @@ export interface UrlContext {
 }
 
 export class UrlContextService {
+	// Cache to store URL contexts per operation.
+	// Key: `${operationId}::${url}`, Value: Promise<UrlContext>
+	private urlContextCache = new Map<string, Promise<UrlContext>>();
+
 	constructor() {}
 
 	/**
@@ -24,57 +28,81 @@ export class UrlContextService {
 	}
 
 	/**
-	 * Fetches content from a URL and returns context information
+	 * Fetches content from a URL and returns context information.
+	 * Results are cached per operationId to ensure re-evaluation for distinct operations
+	 * while providing performance benefits for repeated requests within the same operation.
 	 */
-	public async fetchUrlContext(url: string): Promise<UrlContext> {
-		try {
-			console.log(`[UrlContextService] Fetching content from: ${url}`);
-			// Use VS Code's built-in fetch capabilities
-			const response = await fetch(url, {
-				method: "GET",
-				headers: {
-					"User-Agent": "Minovative-Mind-VSCode-Extension/1.0",
-				},
-			});
+	public async fetchUrlContext(
+		url: string,
+		operationId: string
+	): Promise<UrlContext> {
+		const cacheKey = `${operationId}::${url}`;
 
-			if (!response.ok) {
-				return {
-					url,
-					error: `HTTP ${response.status}: ${response.statusText}`,
-				};
-			}
-
-			const contentType = response.headers.get("content-type") || "";
-			const isHtml = contentType.includes("text/html");
-			const isText =
-				contentType.includes("text/") ||
-				contentType.includes("application/json");
-
-			if (!isHtml && !isText) {
-				return {
-					url,
-					error: `Unsupported content type: ${contentType}`,
-				};
-			}
-
-			const content = await response.text();
-
-			if (isHtml) {
-				return this.parseHtmlContent(url, content);
-			} else {
-				return {
-					url,
-					content: this.truncateContent(content, 2000),
-					title: url,
-				};
-			}
-		} catch (error) {
-			console.log(`[UrlContextService] Error fetching ${url}:`, error);
-			return {
-				url,
-				error: error instanceof Error ? error.message : "Unknown error",
-			};
+		// Check if the URL context for this operation is already in the cache
+		if (this.urlContextCache.has(cacheKey)) {
+			console.log(
+				`[UrlContextService] Returning cached content for ${url} (Operation: ${operationId})`
+			);
+			return this.urlContextCache.get(cacheKey)!;
 		}
+
+		console.log(
+			`[UrlContextService] Fetching content from: ${url} (Operation: ${operationId})`
+		);
+
+		// Perform the fetch and cache the promise
+		const fetchPromise = (async (): Promise<UrlContext> => {
+			try {
+				// Use VS Code's built-in fetch capabilities
+				const response = await fetch(url, {
+					method: "GET",
+					headers: {
+						"User-Agent": "Minovative-Mind-VSCode-Extension/1.0",
+					},
+				});
+
+				if (!response.ok) {
+					return {
+						url,
+						error: `HTTP ${response.status}: ${response.statusText}`,
+					};
+				}
+
+				const contentType = response.headers.get("content-type") || "";
+				const isHtml = contentType.includes("text/html");
+				const isText =
+					contentType.includes("text/") ||
+					contentType.includes("application/json");
+
+				if (!isHtml && !isText) {
+					return {
+						url,
+						error: `Unsupported content type: ${contentType}`,
+					};
+				}
+
+				const content = await response.text();
+
+				if (isHtml) {
+					return this.parseHtmlContent(url, content);
+				} else {
+					return {
+						url,
+						content: this.truncateContent(content, 2000),
+						title: url,
+					};
+				}
+			} catch (error) {
+				console.log(`[UrlContextService] Error fetching ${url}:`, error);
+				return {
+					url,
+					error: error instanceof Error ? error.message : "Unknown error",
+				};
+			}
+		})();
+
+		this.urlContextCache.set(cacheKey, fetchPromise);
+		return fetchPromise;
 	}
 
 	/**
@@ -119,16 +147,20 @@ export class UrlContextService {
 	}
 
 	/**
-	 * Processes a message and extracts URL context for all URLs found
+	 * Processes a message and extracts URL context for all URLs found.
+	 * Always initiates processing for new operations by ensuring the cache key
+	 * includes the distinct operationId.
 	 */
 	public async processMessageForUrlContext(
-		message: string
+		message: string,
+		operationId: string
 	): Promise<UrlContext[]> {
 		const urls = this.extractUrls(message);
 		const contexts: UrlContext[] = [];
 
 		for (const url of urls) {
-			const context = await this.fetchUrlContext(url);
+			// Pass the operationId to fetchUrlContext to ensure context-aware caching
+			const context = await this.fetchUrlContext(url, operationId);
 			contexts.push(context);
 		}
 

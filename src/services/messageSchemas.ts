@@ -124,6 +124,7 @@ const commitReviewSchema = z.object({
 	value: z.object({
 		commitMessage: z.string(),
 		stagedFiles: z.array(z.string()),
+		fileChangeSummaries: z.array(z.string()).optional(),
 	}),
 }); // Based on usage
 
@@ -197,4 +198,5 @@ export {
 	openFileSchema,
 	newFeatureRequestSchema,
 	copyContextMessageSchema,
+	commitReviewSchema,
 };

@@ -190,19 +190,19 @@ export function initializeButtonEventListeners(
 		let statsString = `# Token Usage Statistics\n\n`;
 
 		// Overall Totals
-		statsString += `- Overall Totals:\n`;
-		statsString += `  - Total Input Tokens: ${stats.totalInput}\n`;
-		statsString += `  - Total Output Tokens: ${stats.totalOutput}\n`;
-		statsString += `  - Total Tokens: ${stats.total}\n`;
-		statsString += `  - Total Requests: ${stats.requestCount}\n`;
-		statsString += `  - Average Input Tokens/Request: ${stats.averageInput}\n`;
-		statsString += `  - Average Output Tokens/Request: ${stats.averageOutput}\n`;
+		statsString += `Overall Totals:\n`;
+		statsString += `- Total Input Tokens: ${stats.totalInput}\n`;
+		statsString += `- Total Output Tokens: ${stats.totalOutput}\n`;
+		statsString += `- Total Tokens: ${stats.total}\n`;
+		statsString += `- Total Requests: ${stats.requestCount}\n`;
+		statsString += `- Average Input Tokens/Request: ${stats.averageInput}\n`;
+		statsString += `- Average Output Tokens/Request: ${stats.averageOutput}\n`;
 
 		// Model Usage Percentages
 		if (stats.modelUsagePercentages && stats.modelUsagePercentages.length > 0) {
-			statsString += `\n- Model Usage Percentages:\n`;
+			statsString += `\nModel Usage Percentages:\n`;
 			for (const [modelName, percentage] of stats.modelUsagePercentages) {
-				statsString += `${modelName}: ${percentage.toFixed(2)}%\n`;
+				statsString += `- ${modelName}: ${percentage.toFixed(2)}%\n`;
 			}
 		} else {
 			statsString += `\nNo specific model usage data available.\n`;

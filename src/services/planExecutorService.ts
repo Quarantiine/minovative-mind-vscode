@@ -18,16 +18,22 @@ import {
 	RunCommandStep,
 } from "../ai/workflowPlanner";
 import { generateFileChangeSummary } from "../utils/diffingUtils";
-import { FileChangeEntry } from "../types/workflow";
 import { GitConflictResolutionService } from "./gitConflictResolutionService";
 import { applyAITextEdits, cleanCodeOutput } from "../utils/codeUtils";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import { UrlContextService } from "./urlContextService";
 import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
 import { executeCommand, CommandResult } from "../utils/commandExecution";
-import * as sidebarConstants from "../sidebar/common/sidebarConstants"; // Needed for DEFAULT_SIZE
+import * as sidebarConstants from "../sidebar/common/sidebarConstants";
+import {
+	CommandSecurityService,
+	ExecutableConfig,
+} from "./commandSecurityService"; // Added import
 
 export class PlanExecutorService {
+	private minovativeMindTerminal: vscode.Terminal | undefined;
+	private commandSecurityService: CommandSecurityService; // Added new property
+
 	constructor(
 		private provider: SidebarProvider,
 		private workspaceRootUri: vscode.Uri,
@@ -36,7 +42,32 @@ export class PlanExecutorService {
 		private enhancedCodeGenerator: EnhancedCodeGenerator,
 		private gitConflictResolutionService: GitConflictResolutionService,
 		private readonly MAX_TRANSIENT_STEP_RETRIES: number
-	) {}
+	) {
+		this.commandSecurityService = new CommandSecurityService(); // Initialize new property
+	}
+
+	private getOrCreateTerminal(): vscode.Terminal {
+		if (
+			this.minovativeMindTerminal &&
+			!this.minovativeMindTerminal.exitStatus
+		) {
+			return this.minovativeMindTerminal;
+		}
+
+		this.minovativeMindTerminal = vscode.window.terminals.find(
+			(t) => t.name === "Minovative Mind Commands"
+		);
+
+		if (!this.minovativeMindTerminal) {
+			this.minovativeMindTerminal = vscode.window.createTerminal({
+				name: "Minovative Mind Commands",
+				cwd: this.workspaceRootUri.fsPath,
+			});
+		}
+
+		this.minovativeMindTerminal.show(true);
+		return this.minovativeMindTerminal;
+	}
 
 	public async executePlan(
 		plan: ExecutionPlan,
@@ -48,13 +79,11 @@ export class PlanExecutorService {
 
 		const rootUri = this.workspaceRootUri;
 
-		// Notify webview that plan execution is starting - this will hide the stop button
 		this.postMessageToWebview({
 			type: "updateLoadingState",
 			value: true,
 		});
 
-		// Notify webview that plan execution has started
 		this.postMessageToWebview({
 			type: "planExecutionStarted",
 		});
@@ -98,7 +127,6 @@ export class PlanExecutorService {
 							originalRootInstruction
 						);
 
-						// If _executePlanSteps completes without throwing and token not cancelled, it's a success
 						if (!combinedToken.isCancellationRequested) {
 							this.provider.currentExecutionOutcome = "success";
 						} else {
@@ -130,7 +158,6 @@ export class PlanExecutorService {
 			this.provider.activeChildProcesses = [];
 			await this.provider.setPlanExecutionActive(false);
 
-			// 1. Determine the final outcome, defaulting to 'failed' if undefined.
 			let outcome: sidebarTypes.ExecutionOutcome;
 			if (this.provider.currentExecutionOutcome === undefined) {
 				outcome = "failed";
@@ -139,27 +166,22 @@ export class PlanExecutorService {
 					.currentExecutionOutcome as sidebarTypes.ExecutionOutcome;
 			}
 
-			// Use the provider's notification method to avoid duplicate notifications
 			await this.provider.showPlanCompletionNotification(
 				plan.planDescription || "Unnamed Plan",
 				outcome
 			);
 
-			// Notify webview that plan execution has ended - this will re-enable inputs and show stop button if needed
 			this.postMessageToWebview({
 				type: "updateLoadingState",
 				value: false,
 			});
 
-			// Notify webview that plan execution has ended
 			this.postMessageToWebview({
 				type: "planExecutionEnded",
 			});
 
-			// Centralized call to end user operation and re-enable inputs
 			await this.provider.endUserOperation(outcome);
 
-			// 2. Construct a planSummary string
 			let planSummary: string;
 			const baseDescription = plan.planDescription || "AI Plan Execution";
 			if (outcome === "success") {
@@ -167,33 +189,26 @@ export class PlanExecutorService {
 			} else if (outcome === "cancelled") {
 				planSummary = `${baseDescription} (Cancelled)`;
 			} else {
-				// outcome === 'failed'
 				planSummary = `${baseDescription} (Failed)`;
 			}
 
-			// 3. Call saveChangesAsLastCompletedPlan regardless of the outcome
 			this.provider.changeLogger.saveChangesAsLastCompletedPlan(planSummary);
 
-			// 4. Update the persistent storage with all completed plan change sets
 			await this.provider.updatePersistedCompletedPlanChangeSets(
 				this.provider.changeLogger.getCompletedPlanChangeSets()
 			);
 
-			// 5. Post the planExecutionFinished message
 			this.postMessageToWebview({
 				type: "planExecutionFinished",
 				hasRevertibleChanges: this.provider.completedPlanChangeSets.length > 0,
 			});
 
-			// 6. Crucially, clear the in-memory log buffer for the next operation AFTER saving the changes
 			this.provider.changeLogger.clear();
 
-			// This should remain at the end of the finally block
 			this.postMessageToWebview({ type: "resetCodeStreamingArea" });
 		}
 	}
 
-	// --- Moved private handler methods ---
 	private async _executePlanSteps(
 		steps: PlanStep[],
 		rootUri: vscode.Uri,
@@ -203,38 +218,108 @@ export class PlanExecutorService {
 		originalRootInstruction: string
 	): Promise<Set<vscode.Uri>> {
 		const affectedFileUris = new Set<vscode.Uri>();
-		const totalSteps = steps.length;
-		const { changeLogger } = this.provider; // Access changeLogger via provider
+		const { changeLogger } = this.provider;
+
+		// 1. Categorize all incoming PlanSteps
+		const createDirectorySteps: CreateDirectoryStep[] = [];
+		const createFileSteps: CreateFileStep[] = [];
+		const runCommandSteps: RunCommandStep[] = [];
+		const modifyFileStepsByPath = new Map<string, ModifyFileStep[]>();
+		const modifyFileOrder: string[] = []; // To preserve the order of first appearance
+
+		for (const step of steps) {
+			if (combinedToken.isCancellationRequested) {
+				throw new Error(ERROR_OPERATION_CANCELLED);
+			}
+
+			// Input Step Validation: Ensure `step` is a valid object before using type guards.
+			// This prevents errors if the steps array contains primitive types or malformed objects.
+			if (
+				typeof step !== "object" ||
+				step === null ||
+				typeof step.step !== "object" ||
+				step.step === null
+			) {
+				console.warn(
+					`Minovative Mind: Skipping invalid plan step (missing 'step' property or not an object): ${JSON.stringify(
+						step
+					)}`
+				);
+				continue; // Skip this invalid step to prevent further errors
+			}
+
+			if (isCreateDirectoryStep(step)) {
+				createDirectorySteps.push(step);
+			} else if (isCreateFileStep(step)) {
+				createFileSteps.push(step);
+			} else if (isRunCommandStep(step)) {
+				runCommandSteps.push(step);
+			} else if (isModifyFileStep(step)) {
+				if (!modifyFileStepsByPath.has(step.step.path)) {
+					modifyFileStepsByPath.set(step.step.path, []);
+					modifyFileOrder.push(step.step.path);
+				}
+				modifyFileStepsByPath.get(step.step.path)!.push(step);
+			}
+		}
+
+		// 2. Aggregate ModifyFileStep actions for each file path
+		const consolidatedModifyFileSteps: ModifyFileStep[] = [];
+		for (const filePath of modifyFileOrder) {
+			const fileModifications = modifyFileStepsByPath.get(filePath)!;
+			// Combine all modification prompts into a single comprehensive prompt
+			const consolidatedPrompt = fileModifications
+				.map((s) => s.step.modification_prompt)
+				.join("\n\n---\n\n"); // Use a clear separator for multiple instructions
+
+			// Create a new ModifyFileStep representing the consolidated changes
+			consolidatedModifyFileSteps.push({
+				step: {
+					action: PlanStepAction.ModifyFile,
+					path: filePath,
+					modification_prompt: consolidatedPrompt,
+					// A general description for the consolidated step
+					description: `Modifications for file: \`${filePath}\``,
+				},
+			});
+		}
+
+		// 3. Reorder the execution sequence
+		const orderedSteps: PlanStep[] = [
+			...createDirectorySteps,
+			...createFileSteps,
+			...consolidatedModifyFileSteps,
+			...runCommandSteps,
+		];
+
+		const totalOrderedSteps = orderedSteps.length;
 
 		let index = 0;
-		while (index < totalSteps) {
-			const step = steps[index];
+		while (index < totalOrderedSteps) {
+			const step = orderedSteps[index];
 			let currentStepCompletedSuccessfullyOrSkipped = false;
 			let currentTransientAttempt = 0;
 
-			// Move formatting utility call outside the inner retry loop
 			const relevantSnippets = await this._formatRelevantFilesForPrompt(
 				context.relevantFiles ?? [],
 				rootUri,
 				combinedToken
 			);
 
-			// Inner loop for auto-retries and user intervention for the *current* step
 			while (!currentStepCompletedSuccessfullyOrSkipped) {
 				if (combinedToken.isCancellationRequested) {
 					throw new Error(ERROR_OPERATION_CANCELLED);
 				}
 
-				// Start of detailedStepDescription logic
 				const detailedStepDescription = this._getStepDescription(
 					step,
 					index,
-					totalSteps,
+					totalOrderedSteps, // Use the new total
 					currentTransientAttempt
 				);
 				this._logStepProgress(
 					index + 1,
-					totalSteps,
+					totalOrderedSteps, // Use the new total
 					detailedStepDescription,
 					currentTransientAttempt,
 					this.MAX_TRANSIENT_STEP_RETRIES
@@ -247,7 +332,7 @@ export class PlanExecutorService {
 						await this._handleCreateFileStep(
 							step,
 							index,
-							totalSteps,
+							totalOrderedSteps, // Use the new total
 							rootUri,
 							context,
 							relevantSnippets,
@@ -256,23 +341,24 @@ export class PlanExecutorService {
 							combinedToken
 						);
 					} else if (isModifyFileStep(step)) {
+						// This will now handle the consolidated ModifyFileStep
 						await this._handleModifyFileStep(
 							step,
 							index,
-							totalSteps,
+							totalOrderedSteps, // Use the new total
 							rootUri,
 							context,
 							relevantSnippets,
 							affectedFileUris,
 							changeLogger,
-							this.provider.settingsManager, // Access settingsManager via provider
+							this.provider.settingsManager,
 							combinedToken
 						);
 					} else if (isRunCommandStep(step)) {
 						const commandSuccess = await this._handleRunCommandStep(
 							step,
 							index,
-							totalSteps,
+							totalOrderedSteps, // Use the new total
 							rootUri,
 							context,
 							progress,
@@ -280,9 +366,8 @@ export class PlanExecutorService {
 							combinedToken
 						);
 						if (!commandSuccess) {
-							// If command failed, re-throw to outer error handler
 							throw new Error(
-								`Command execution failed for '${step.command}'.`
+								`Command execution failed for '${step.step.command}'.`
 							);
 						}
 					}
@@ -304,7 +389,7 @@ export class PlanExecutorService {
 						rootUri,
 						detailedStepDescription,
 						index + 1,
-						totalSteps,
+						totalOrderedSteps, // Use the new total
 						currentTransientAttempt,
 						this.MAX_TRANSIENT_STEP_RETRIES
 					);
@@ -320,7 +405,7 @@ export class PlanExecutorService {
 						currentStepCompletedSuccessfullyOrSkipped = true;
 						this._logStepProgress(
 							index + 1,
-							totalSteps,
+							totalOrderedSteps, // Use the new total
 							`Step SKIPPED by user.`,
 							0,
 							0
@@ -329,14 +414,12 @@ export class PlanExecutorService {
 							`Minovative Mind: User chose to skip Step ${index + 1}.`
 						);
 					} else {
-						// 'cancel' or unknown
 						throw new Error(ERROR_OPERATION_CANCELLED);
 					}
 				}
-			} // End of inner `while (!currentStepCompletedSuccessfullyOrSkipped)` loop
-
+			}
 			index++;
-		} // End of outer `while (index < totalSteps)` loop
+		}
 		return affectedFileUris;
 	}
 
@@ -347,25 +430,25 @@ export class PlanExecutorService {
 		currentTransientAttempt: number
 	): string {
 		let detailedStepDescription: string;
-		if (step.description && step.description.trim() !== "") {
-			detailedStepDescription = step.description;
+		if (step.step.description && step.step.description.trim() !== "") {
+			detailedStepDescription = step.step.description;
 		} else {
-			switch (step.action) {
+			switch (step.step.action) {
 				case PlanStepAction.CreateDirectory:
 					if (isCreateDirectoryStep(step)) {
-						detailedStepDescription = `Creating directory: \`${step.path}\``;
+						detailedStepDescription = `Creating directory: \`${step.step.path}\``;
 					} else {
 						detailedStepDescription = `Creating directory`;
 					}
 					break;
 				case PlanStepAction.CreateFile:
 					if (isCreateFileStep(step)) {
-						if (step.generate_prompt) {
-							detailedStepDescription = `Creating file: \`${step.path}\``;
-						} else if (step.content) {
-							detailedStepDescription = `Creating file: \`${step.path}\` (with predefined content)`;
+						if (step.step.generate_prompt) {
+							detailedStepDescription = `Creating file: \`${step.step.path}\``;
+						} else if (step.step.content) {
+							detailedStepDescription = `Creating file: \`${step.step.path}\` (with predefined content)`;
 						} else {
-							detailedStepDescription = `Creating file: \`${step.path}\``;
+							detailedStepDescription = `Creating file: \`${step.step.path}\``;
 						}
 					} else {
 						detailedStepDescription = `Creating file`;
@@ -373,21 +456,21 @@ export class PlanExecutorService {
 					break;
 				case PlanStepAction.ModifyFile:
 					if (isModifyFileStep(step)) {
-						detailedStepDescription = `Modifying file: \`${step.path}\``;
+						detailedStepDescription = `Modifying file: \`${step.step.path}\``;
 					} else {
 						detailedStepDescription = `Modifying file`;
 					}
 					break;
 				case PlanStepAction.RunCommand:
 					if (isRunCommandStep(step)) {
-						detailedStepDescription = `Running command: \`${step.command}\``;
+						detailedStepDescription = `Running command: \`${step.step.command}\``;
 					} else {
 						detailedStepDescription = `Running command`;
 					}
 					break;
 				default:
 					detailedStepDescription = `Executing action: ${(
-						step.action as string
+						(step.step as any).action as string
 					).replace(/_/g, " ")}`;
 					break;
 			}
@@ -410,7 +493,6 @@ export class PlanExecutorService {
 		isError: boolean = false,
 		diffContent?: string
 	): void {
-		// Construct the message object to be sent to both history and webview
 		const appendMessage: sidebarTypes.AppendRealtimeModelMessage = {
 			type: "appendRealtimeModelMessage",
 			value: {
@@ -421,10 +503,8 @@ export class PlanExecutorService {
 			diffContent: diffContent,
 		};
 
-		// Use the internal helper to post to webview AND add to chat history
 		this._postChatUpdateForPlanExecution(appendMessage);
 
-		// Keep console logs for internal debugging, separate from UI/history updates
 		if (isError) {
 			console.error(`Minovative Mind: ${message}`);
 		} else {
@@ -458,8 +538,8 @@ export class PlanExecutorService {
 			errorMsg.includes("network issue") ||
 			errorMsg.includes("AI service unavailable") ||
 			errorMsg.includes("timeout") ||
-			errorMsg.includes("parsing failed") || // Added for streaming parsing errors
-			errorMsg.includes("overloaded") // Added for Gemini overload errors
+			errorMsg.includes("parsing failed") ||
+			errorMsg.includes("overloaded")
 		) {
 			isRetryableTransientError = true;
 		}
@@ -518,7 +598,7 @@ export class PlanExecutorService {
 		}
 
 		const formattedSnippets: string[] = [];
-		const maxFileSizeForSnippet = sidebarConstants.DEFAULT_SIZE; // Access sidebarConstants
+		const maxFileSizeForSnippet = sidebarConstants.DEFAULT_SIZE;
 
 		for (const relativePath of relevantFiles) {
 			if (token.isCancellationRequested) {
@@ -529,10 +609,8 @@ export class PlanExecutorService {
 			let fileContent: string | null = null;
 			let languageId = path.extname(relativePath).substring(1);
 			if (!languageId) {
-				// Fallback for files without extension (e.g., Dockerfile, LICENSE)
 				languageId = path.basename(relativePath).toLowerCase();
 			}
-			// Special handling for common files without extensions where syntax highlighting is helpful
 			if (languageId === "makefile") {
 				languageId = "makefile";
 			} else if (languageId === "dockerfile") {
@@ -552,12 +630,10 @@ export class PlanExecutorService {
 			try {
 				const fileStat = await vscode.workspace.fs.stat(fileUri);
 
-				// Skip directories
 				if (fileStat.type === vscode.FileType.Directory) {
 					continue;
 				}
 
-				// Skip files larger than maxFileSizeForSnippet
 				if (fileStat.size > maxFileSizeForSnippet) {
 					console.warn(
 						`[MinovativeMind] Skipping relevant file '${relativePath}' (size: ${fileStat.size} bytes) due to size limit for prompt inclusion.`
@@ -575,7 +651,6 @@ export class PlanExecutorService {
 				const contentBuffer = await vscode.workspace.fs.readFile(fileUri);
 				const content = Buffer.from(contentBuffer).toString("utf8");
 
-				// Basic heuristic for binary files: check for null characters
 				if (content.includes("\0")) {
 					console.warn(
 						`[MinovativeMind] Skipping relevant file '${relativePath}' as it appears to be binary.`
@@ -596,7 +671,6 @@ export class PlanExecutorService {
 						`[MinovativeMind] Relevant file not found: '${relativePath}'. Skipping.`
 					);
 				} else if (error.message.includes("is not a file")) {
-					// This can happen if fileUri points to a directory
 					console.warn(
 						`[MinovativeMind] Skipping directory '${relativePath}' as a relevant file.`
 					);
@@ -633,8 +707,7 @@ export class PlanExecutorService {
 			undefined,
 			message.isPlanStepUpdate
 		);
-		// This call is intentional to ensure the UI is fully consistent with the updated chat history after each step/status update during plan execution.
-		this.postMessageToWebview(message);
+
 		this.provider.chatHistoryManager.restoreChatHistoryToWebview();
 	}
 
@@ -644,12 +717,12 @@ export class PlanExecutorService {
 		changeLogger: SidebarProvider["changeLogger"]
 	): Promise<void> {
 		await vscode.workspace.fs.createDirectory(
-			vscode.Uri.joinPath(rootUri, step.path)
+			vscode.Uri.joinPath(rootUri, step.step.path)
 		);
 		changeLogger.logChange({
-			filePath: step.path,
+			filePath: step.step.path,
 			changeType: "created",
-			summary: `Created directory: '${step.path}'`,
+			summary: `Created directory: '${step.step.path}'`,
 			timestamp: Date.now(),
 		});
 	}
@@ -660,15 +733,15 @@ export class PlanExecutorService {
 		totalSteps: number,
 		rootUri: vscode.Uri,
 		context: sidebarTypes.PlanGenerationContext,
-		relevantSnippets: string, // Passed from outer loop
+		relevantSnippets: string,
 		affectedFileUris: Set<vscode.Uri>,
 		changeLogger: SidebarProvider["changeLogger"],
 		combinedToken: vscode.CancellationToken
 	): Promise<void> {
-		const fileUri = vscode.Uri.joinPath(rootUri, step.path);
-		let desiredContent: string | undefined = step.content;
+		const fileUri = vscode.Uri.joinPath(rootUri, step.step.path);
+		let desiredContent: string | undefined = step.step.content;
 
-		if (step.generate_prompt) {
+		if (step.step.generate_prompt) {
 			const generationContext = {
 				projectContext: context.projectContext,
 				relevantSnippets: relevantSnippets,
@@ -678,9 +751,8 @@ export class PlanExecutorService {
 
 			const generatedResult =
 				await this.enhancedCodeGenerator.generateFileContent(
-					// Use injected enhancedCodeGenerator
-					step.path,
-					step.generate_prompt,
+					step.step.path,
+					step.step.generate_prompt,
 					generationContext,
 					this.provider.settingsManager.getSelectedModelName(),
 					combinedToken
@@ -700,7 +772,7 @@ export class PlanExecutorService {
 				this._logStepProgress(
 					index + 1,
 					totalSteps,
-					`File \`${step.path}\` already has the desired content. Skipping.`,
+					`File \`${step.step.path}\` already has the desired content. Skipping.`,
 					0,
 					0
 				);
@@ -719,13 +791,13 @@ export class PlanExecutorService {
 				const { formattedDiff, summary } = await generateFileChangeSummary(
 					existingContent,
 					newContentAfterApply,
-					step.path
+					step.step.path
 				);
 
 				this._logStepProgress(
 					index + 1,
 					totalSteps,
-					`Modified file \`${step.path}\``,
+					`Modified file \`${step.step.path}\``,
 					0,
 					0,
 					false,
@@ -733,7 +805,7 @@ export class PlanExecutorService {
 				);
 
 				changeLogger.logChange({
-					filePath: step.path,
+					filePath: step.step.path,
 					changeType: "modified",
 					summary,
 					diffContent: formattedDiff,
@@ -759,20 +831,20 @@ export class PlanExecutorService {
 				const { formattedDiff, summary } = await generateFileChangeSummary(
 					"",
 					cleanedDesiredContent,
-					step.path
+					step.step.path
 				);
 
 				this._logStepProgress(
 					index + 1,
 					totalSteps,
-					`Created file \`${step.path}\``,
+					`Created file \`${step.step.path}\``,
 					0,
 					0,
 					false,
 					formattedDiff
 				);
 				changeLogger.logChange({
-					filePath: step.path,
+					filePath: step.step.path,
 					changeType: "created",
 					summary,
 					diffContent: formattedDiff,
@@ -793,13 +865,13 @@ export class PlanExecutorService {
 		totalSteps: number,
 		rootUri: vscode.Uri,
 		context: sidebarTypes.PlanGenerationContext,
-		relevantSnippets: string, // Passed from outer loop
+		relevantSnippets: string,
 		affectedFileUris: Set<vscode.Uri>,
 		changeLogger: SidebarProvider["changeLogger"],
 		settingsManager: SidebarProvider["settingsManager"],
 		combinedToken: vscode.CancellationToken
 	): Promise<void> {
-		const fileUri = vscode.Uri.joinPath(rootUri, step.path);
+		const fileUri = vscode.Uri.joinPath(rootUri, step.step.path);
 		const existingContent = Buffer.from(
 			await vscode.workspace.fs.readFile(fileUri)
 		).toString("utf-8");
@@ -811,11 +883,11 @@ export class PlanExecutorService {
 			activeSymbolInfo: undefined,
 		};
 
+		// The modification_prompt here will be the consolidated prompt from multiple steps
 		let modifiedContent = (
 			await this.enhancedCodeGenerator.modifyFileContent(
-				// Use injected enhancedCodeGenerator
-				step.path,
-				step.modification_prompt,
+				step.step.path,
+				step.step.modification_prompt,
 				existingContent,
 				modificationContext,
 				settingsManager.getSelectedModelName(),
@@ -847,7 +919,7 @@ export class PlanExecutorService {
 			await generateFileChangeSummary(
 				existingContent,
 				newContentAfterApply,
-				step.path
+				step.step.path
 			);
 
 		if (addedLines.length > 0 || removedLines.length > 0) {
@@ -858,13 +930,13 @@ export class PlanExecutorService {
 				context.editorContext &&
 				fileUri.toString() === context.editorContext.documentUri.toString()
 			) {
-				await this.gitConflictResolutionService.unmarkFileAsResolved(fileUri); // Use injected gitConflictResolutionService
+				await this.gitConflictResolutionService.unmarkFileAsResolved(fileUri);
 			}
 
 			this._logStepProgress(
 				index + 1,
 				totalSteps,
-				`Modified file \`${step.path}\``,
+				`Modified file \`${step.step.path}\``,
 				0,
 				0,
 				false,
@@ -872,7 +944,7 @@ export class PlanExecutorService {
 			);
 
 			changeLogger.logChange({
-				filePath: step.path,
+				filePath: step.step.path,
 				changeType: "modified",
 				summary,
 				diffContent: formattedDiff,
@@ -884,7 +956,7 @@ export class PlanExecutorService {
 			this._logStepProgress(
 				index + 1,
 				totalSteps,
-				`File \`${step.path}\` content is already as desired, no substantial modifications needed.`,
+				`File \`${step.step.path}\` content is already as desired, no substantial modifications needed.`,
 				0,
 				0
 			);
@@ -901,23 +973,120 @@ export class PlanExecutorService {
 		originalRootInstruction: string,
 		combinedToken: vscode.CancellationToken
 	): Promise<boolean> {
-		const userChoice = await vscode.window.showWarningMessage(
-			`The plan wants to run a command: \`${step.command}\`\n\nAllow?`,
-			{ modal: true },
+		const commandString = step.step.command.trim();
+
+		const { executable, args } =
+			CommandSecurityService.parseCommandArguments(commandString); // Refactored
+
+		let effectiveExecConfig: ExecutableConfig;
+		try {
+			effectiveExecConfig = await this.commandSecurityService.isCommandSafe(
+				// Refactored
+				executable,
+				args,
+				commandString
+			);
+		} catch (validationError: any) {
+			this._logStepProgress(
+				index + 1,
+				totalSteps,
+				`Command blocked: ${validationError.message}`,
+				0,
+				0,
+				true
+			);
+			if (
+				this.minovativeMindTerminal &&
+				!this.minovativeMindTerminal.exitStatus
+			) {
+				this.minovativeMindTerminal.sendText(
+					`\nERROR: Command Blocked - ${validationError.message}\n`,
+					true
+				);
+			}
+			throw new Error(`Command blocked: ${validationError.message}`);
+		}
+
+		const displayCommand = [
+			executable,
+			...args.map(CommandSecurityService.sanitizeArgumentForDisplay), // Refactored
+		].join(" ");
+
+		let promptMessage = `Command:\n[ \`${displayCommand}.\` ]`;
+		let modalPrompt = true;
+
+		if (
+			effectiveExecConfig.requiresExplicitConfirmation ||
+			effectiveExecConfig.isHighRisk
+		) {
+			promptMessage += `\n\n🚨 CRITICAL SECURITY ALERT: Are you absolutely sure you want to allow this?`;
+		} else {
+			promptMessage += `\n\n⚠️ WARNING: Please review it carefully. The plan wants to run the command above. Allow?`;
+		}
+
+		// Add console log before showing the warning message
+		console.log(
+			"Minovative Mind: About to display command execution prompt..."
+		);
+
+		const userChoice = await vscode.window.showInformationMessage(
+			promptMessage,
+			{ modal: modalPrompt },
 			"Allow",
 			"Skip"
 		);
+
+		// Add console log after capturing user choice
+		console.log(`Minovative Mind: User choice for command: 
+${displayCommand}
+ is: 
+${userChoice}`);
+
+		// Check for cancellation immediately after capturing userChoice
+		if (combinedToken.isCancellationRequested) {
+			throw new Error(ERROR_OPERATION_CANCELLED);
+		}
+
+		// Handle undefined userChoice (prompt dismissed)
+		if (userChoice === undefined) {
+			console.log(
+				"Minovative Mind: User prompt dismissed without selection; treating as skip."
+			);
+			this._logStepProgress(
+				index + 1,
+				totalSteps,
+				`Step SKIPPED by user (prompt dismissed).`,
+				0,
+				0
+			);
+			if (
+				this.minovativeMindTerminal &&
+				!this.minovativeMindTerminal.exitStatus
+			) {
+				this.minovativeMindTerminal.sendText(
+					`\necho --- Command SKIPPED (prompt dismissed) ---\n`,
+					true
+				);
+			}
+			return true;
+		}
+
 		if (userChoice === "Allow") {
+			const terminal = this.getOrCreateTerminal();
+			terminal.sendText(`${commandString}\n`);
+
 			try {
 				const commandResult: CommandResult = await executeCommand(
-					step.command,
+					executable,
+					args,
 					rootUri.fsPath,
 					combinedToken,
-					this.provider.activeChildProcesses // Access activeChildProcesses via provider
+					this.provider.activeChildProcesses,
+					terminal
 				);
 
 				if (commandResult.exitCode !== 0) {
-					const errorMessage = `Command \`${step.command}\` failed with exit code ${commandResult.exitCode}.
+					const errorMessage = `Command \`${displayCommand}\` failed with exit code ${commandResult.exitCode}.
                                     \n--- STDOUT ---\n${commandResult.stdout}
                                     \n--- STDERR ---\n${commandResult.stderr}`;
 
@@ -931,11 +1100,21 @@ export class PlanExecutorService {
 						errorMessage
 					);
 
+					if (
+						this.minovativeMindTerminal &&
+						!this.minovativeMindTerminal.exitStatus
+					) {
+						this.minovativeMindTerminal.sendText(
+							`\necho --- Command FAILED: ${displayCommand} (Exit Code: ${commandResult.exitCode}) ---\n`,
+							false
+						);
+					}
+
 					throw new Error(
-						`Command '${step.command}' failed. Output: ${errorMessage}`
+						`Command '${displayCommand}' failed. Output: ${errorMessage}`
 					);
 				} else {
-					const successMessage = `Command \`${step.command}\` executed successfully.
+					const successMessage = `Command \`${displayCommand}\` executed successfully.
                                     \n--- STDOUT ---\n${commandResult.stdout}
                                     \n--- STDERR ---\n${commandResult.stderr}`;
 
@@ -948,17 +1127,37 @@ export class PlanExecutorService {
 						false,
 						successMessage
 					);
+					if (
+						this.minovativeMindTerminal &&
+						!this.minovativeMindTerminal.exitStatus
+					) {
+						this.minovativeMindTerminal.sendText(
+							`\necho --- Command SUCCEEDED ---\n`,
+							false
+						);
+					}
 					return true;
 				}
 			} catch (commandExecError: any) {
 				if (commandExecError.message === ERROR_OPERATION_CANCELLED) {
 					throw commandExecError;
 				}
-				let detailedError = `Error executing command \`${step.command}\`: ${commandExecError.message}`;
+				let detailedError = `Error executing command \`${displayCommand}\`: ${commandExecError.message}`;
 				this._logStepProgress(index + 1, totalSteps, detailedError, 0, 0, true);
-				throw commandExecError; // Re-throw to be caught by the step retry loop
+
+				if (
+					this.minovativeMindTerminal &&
+					!this.minovativeMindTerminal.exitStatus
+				) {
+					this.minovativeMindTerminal.sendText(
+						`\nERROR: ${detailedError}\n`,
+						true
+					);
+				}
+				throw commandExecError;
 			}
 		} else {
+			// userChoice is "Skip"
 			this._logStepProgress(
 				index + 1,
 				totalSteps,
@@ -966,7 +1165,16 @@ export class PlanExecutorService {
 				0,
 				0
 			);
-			return true; // Command was skipped, consider it successfully handled for this step's flow
+			if (
+				this.minovativeMindTerminal &&
+				!this.minovativeMindTerminal.exitStatus
+			) {
+				this.minovativeMindTerminal.sendText(
+					`\necho --- Command SKIPPED ---\n`,
+					true
+				);
+			}
+			return true;
 		}
 	}
 }

@@ -65,7 +65,8 @@ export async function getHeuristicRelevantFiles(
 		sharedAncestorWeight: options?.sharedAncestorWeight ?? LOW_RELEVANCE, // New default value
 	};
 
-	const fileScores = new Map<vscode.Uri, number>();
+	const fileScores = new Map<string, number>();
+	const uriMap = new Map<string, vscode.Uri>();
 
 	// Pre-process symbol-related URIs for direct lookups
 	const symbolRelatedRelativePaths = new Set<string>(); // General set for any symbol relation
@@ -73,70 +74,51 @@ export async function getHeuristicRelevantFiles(
 	const typeDefinitionRelativePaths = new Set<string>();
 	const implementationRelativePaths = new Set<string>();
 	const referencedTypeDefinitionRelativePaths = new Set<string>();
-	const incomingCallRelativePaths = new Set<string>();
-	const outgoingCallRelativePaths = new Set<string>();
+	const callHierarchyRelativePaths = new Set<string>();
 
-	// Helper to add URI from a location to various symbol-related sets
-	const addUriToSymbolSets = (
+	const addUriToSet = (
 		location: vscode.Uri | vscode.Location | vscode.Location[] | undefined,
-		specificSet?: Set<string> // Optional specific set to add to
+		targetSet: Set<string>
 	) => {
 		if (!location) {
 			return;
 		}
-		let actualUris: vscode.Uri[] = [];
-		if (location instanceof vscode.Uri) {
-			actualUris = [location];
-		} else if ("uri" in location) {
-			// For vscode.Location
-			actualUris = [location.uri];
-		} else if (Array.isArray(location) && location.length > 0) {
-			// For vscode.Location[]
-			actualUris = location.map((loc) => loc.uri);
-		}
+		const uris = Array.isArray(location)
+			? location.map((l) => l.uri)
+			: [location instanceof vscode.Uri ? location : location.uri];
 
-		actualUris.forEach((uri) => {
-			if (uri && uri.scheme === "file") {
+		uris.forEach((uri) => {
+			if (uri?.scheme === "file") {
 				const relativePath = path
 					.relative(projectRoot.fsPath, uri.fsPath)
 					.replace(/\\/g, "/");
-				symbolRelatedRelativePaths.add(relativePath); // Add to general set
-				specificSet?.add(relativePath); // Add to specific set if provided
+				targetSet.add(relativePath);
+				symbolRelatedRelativePaths.add(relativePath);
 			}
 		});
 	};
 
 	if (activeSymbolDetailedInfo) {
-		addUriToSymbolSets(
-			activeSymbolDetailedInfo.definition,
-			definitionRelativePaths
-		);
-		addUriToSymbolSets(
+		addUriToSet(activeSymbolDetailedInfo.definition, definitionRelativePaths);
+		addUriToSet(
 			activeSymbolDetailedInfo.typeDefinition,
 			typeDefinitionRelativePaths
 		);
-		if (activeSymbolDetailedInfo.implementations) {
-			activeSymbolDetailedInfo.implementations.forEach((loc) =>
-				addUriToSymbolSets(loc, implementationRelativePaths)
-			);
-		}
-		if (activeSymbolDetailedInfo.referencedTypeDefinitions) {
-			for (const relativePath of activeSymbolDetailedInfo.referencedTypeDefinitions.keys()) {
-				// The key is already a relative path, so add directly
-				symbolRelatedRelativePaths.add(relativePath);
-				referencedTypeDefinitionRelativePaths.add(relativePath);
+		activeSymbolDetailedInfo.implementations?.forEach((loc) =>
+			addUriToSet(loc, implementationRelativePaths)
+		);
+		activeSymbolDetailedInfo.referencedTypeDefinitions?.forEach(
+			(_, relPath) => {
+				referencedTypeDefinitionRelativePaths.add(relPath);
+				symbolRelatedRelativePaths.add(relPath);
 			}
-		}
-		if (activeSymbolDetailedInfo.incomingCalls) {
-			activeSymbolDetailedInfo.incomingCalls.forEach((call) =>
-				addUriToSymbolSets(call.from.uri, incomingCallRelativePaths)
-			);
-		}
-		if (activeSymbolDetailedInfo.outgoingCalls) {
-			activeSymbolDetailedInfo.outgoingCalls.forEach((call) =>
-				addUriToSymbolSets(call.to.uri, outgoingCallRelativePaths)
-			);
-		}
+		);
+		activeSymbolDetailedInfo.incomingCalls?.forEach((call) =>
+			addUriToSet(call.from.uri, callHierarchyRelativePaths)
+		);
+		activeSymbolDetailedInfo.outgoingCalls?.forEach((call) =>
+			addUriToSet(call.to.uri, callHierarchyRelativePaths)
+		);
 	}
 
 	const activeFileRelativePath = activeEditorContext?.documentUri
@@ -145,12 +127,8 @@ export async function getHeuristicRelevantFiles(
 				.replace(/\\/g, "/")
 		: undefined;
 
-	const activeFileDirRelativePath = activeEditorContext?.filePath
-		? path
-				.dirname(
-					path.relative(projectRoot.fsPath, activeEditorContext.filePath)
-				)
-				.replace(/\\/g, "/")
+	const activeFileDir = activeFileRelativePath
+		? path.dirname(activeFileRelativePath)
 		: undefined;
 
 	for (const fileUri of allScannedFiles) {
@@ -161,14 +139,14 @@ export async function getHeuristicRelevantFiles(
 		const relativePath = path
 			.relative(projectRoot.fsPath, fileUri.fsPath)
 			.replace(/\\/g, "/");
+		uriMap.set(relativePath, fileUri);
 		let score = 0;
 
-		// 1. Prioritize active file with a very high boost
-		if (activeEditorContext?.documentUri?.fsPath === fileUri.fsPath) {
+		if (relativePath === activeFileRelativePath) {
 			score += ACTIVE_FILE_SCORE_BOOST;
 		}
 
-		// 2. Score based on specific symbol relationships
+		// Score based on specific symbol relationships
 		if (definitionRelativePaths.has(relativePath)) {
 			score += effectiveOptions.definitionWeight;
 		}
@@ -181,98 +159,74 @@ export async function getHeuristicRelevantFiles(
 		if (referencedTypeDefinitionRelativePaths.has(relativePath)) {
 			score += effectiveOptions.referencedTypeDefinitionWeight;
 		}
-		// Combine incoming and outgoing calls into one "call hierarchy" weight
-		if (
-			incomingCallRelativePaths.has(relativePath) ||
-			outgoingCallRelativePaths.has(relativePath)
-		) {
+		if (callHierarchyRelativePaths.has(relativePath)) {
 			score += effectiveOptions.callHierarchyWeight;
 		}
-
-		// 3. General symbol related boost (if it's related to any symbol)
 		if (symbolRelatedRelativePaths.has(relativePath)) {
 			score += effectiveOptions.generalSymbolRelatedBoost;
 		}
 
-		// 4. Score for direct dependencies
-		if (
-			activeFileRelativePath &&
-			fileDependencies?.has(activeFileRelativePath)
-		) {
-			const importedByActiveFile = fileDependencies.get(activeFileRelativePath);
-			if (importedByActiveFile?.includes(relativePath)) {
+		// Score based on dependencies
+		if (activeFileRelativePath) {
+			if (
+				fileDependencies?.get(activeFileRelativePath)?.includes(relativePath)
+			) {
 				score += effectiveOptions.directDependencyWeight;
 			}
-		}
-
-		// 5. Score for reverse dependencies
-		if (
-			activeFileRelativePath &&
-			reverseFileDependencies?.has(activeFileRelativePath)
-		) {
-			const importersOfActiveFile = reverseFileDependencies.get(
-				activeFileRelativePath
-			);
-			if (importersOfActiveFile?.includes(relativePath)) {
+			if (
+				reverseFileDependencies
+					?.get(activeFileRelativePath)
+					?.includes(relativePath)
+			) {
 				score += effectiveOptions.reverseDependencyWeight;
 			}
 		}
 
-		// 6. Score for files in the same directory
-		if (activeFileDirRelativePath) {
-			if (path.dirname(relativePath) === activeFileDirRelativePath) {
-				score += effectiveOptions.sameDirectoryWeight;
-			}
-			// 7. Score for files in neighbor directories (sibling directories)
+		// Score based on directory proximity
+		if (activeFileDir) {
 			const fileDir = path.dirname(relativePath);
-			const activeFileParentDir = path.dirname(activeFileDirRelativePath);
-			if (
-				activeFileParentDir !== "." && // Not root
-				fileDir !== activeFileDirRelativePath && // Not same directory
-				path.dirname(fileDir) === activeFileParentDir // Sibling directory
-			) {
-				score += effectiveOptions.neighborDirectoryWeight;
-			}
+			if (fileDir === activeFileDir) {
+				score += effectiveOptions.sameDirectoryWeight;
+			} else {
+				// Score neighbor directories
+				const activeParentDir = path.dirname(activeFileDir);
+				if (
+					activeParentDir !== "." &&
+					path.dirname(fileDir) === activeParentDir
+				) {
+					score += effectiveOptions.neighborDirectoryWeight;
+				}
 
-			// 8. Score for files sharing a significant common ancestor directory (e.g., within 2-3 levels up)
-			const activeFileComponents = activeFileDirRelativePath.split("/");
-			const fileComponents = fileDir.split("/");
-			let commonAncestorLength = 0;
-			for (
-				let i = 0;
-				i < Math.min(activeFileComponents.length, fileComponents.length);
-				i++
-			) {
-				if (activeFileComponents[i] === fileComponents[i]) {
-					commonAncestorLength++;
-				} else {
-					break;
+				// Score shared ancestor directories
+				const activePathParts = activeFileDir.split("/");
+				const filePathParts = fileDir.split("/");
+				let commonDepth = 0;
+				while (
+					commonDepth < activePathParts.length &&
+					commonDepth < filePathParts.length &&
+					activePathParts[commonDepth] === filePathParts[commonDepth]
+				) {
+					commonDepth++;
+				}
+				if (commonDepth > 0) {
+					score += effectiveOptions.sharedAncestorWeight * commonDepth;
 				}
 			}
-
-			// Apply shared ancestor weight if there's a significant common path, but not the same directory
-			if (commonAncestorLength > 0 && fileDir !== activeFileDirRelativePath) {
-				// The deeper the common ancestor, the higher the base weight might be.
-				// This is a simple linear scale; more complex logic could be applied.
-				score += effectiveOptions.sharedAncestorWeight * commonAncestorLength;
-			}
 		}
 
-		// Only add to map if score is greater than 0
 		if (score > 0) {
-			// Accumulate scores for a file if it matches multiple criteria
-			fileScores.set(fileUri, (fileScores.get(fileUri) || 0) + score);
+			fileScores.set(relativePath, (fileScores.get(relativePath) || 0) + score);
 		}
 	}
 
-	let resultFiles = Array.from(fileScores.entries())
-		.sort(([, scoreA], [, scoreB]) => scoreB - scoreA) // Sort by score descending
-		.map(([uri]) => uri); // Get back just the URIs
+	let sortedFiles = Array.from(fileScores.entries())
+		.sort(([, scoreA], [, scoreB]) => scoreB - scoreA)
+		.map(([relativePath]) => uriMap.get(relativePath) as vscode.Uri)
+		.filter(Boolean);
 
-	// Enforce overall total limit after sorting
-	if (resultFiles.length > effectiveOptions.maxHeuristicFilesTotal) {
-		resultFiles = resultFiles.slice(0, effectiveOptions.maxHeuristicFilesTotal);
+	if (sortedFiles.length > effectiveOptions.maxHeuristicFilesTotal) {
+		sortedFiles = sortedFiles.slice(0, effectiveOptions.maxHeuristicFilesTotal);
 	}
 
-	return resultFiles;
+	return sortedFiles;
 }

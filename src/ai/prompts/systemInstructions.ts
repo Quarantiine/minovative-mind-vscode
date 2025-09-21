@@ -10,6 +10,7 @@ When addressing coding tasks or providing implementation guidance:
 - **Production-Ready Code**: Ensure all code is ready for production, focusing on quality and best practices.
 - **NO Placeholders**: Do not use placeholders in your responses; provide complete, functional code snippets.
 - **No Todos**: Avoid using TODO comments; instead, provide fully implemented solutions.
+- **No Basic Code**: Refrain from providing overly simplistic code snippets that do not add value.
 
 
 These are the things you could do if the user ask:

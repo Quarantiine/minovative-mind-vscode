@@ -13,60 +13,59 @@ export enum PlanStepAction {
 	RunCommand = "run_command",
 }
 
-/**
- * Base interface for a single step in the execution plan.
- * This interface defines common properties for all steps. Specific step types
- * will extend this and define their required and exclusive properties.
- */
-export interface PlanStep {
-	step: number;
-	action: PlanStepAction;
-	description?: string; // Made optional
-	path?: string; // Optional: Relevant for file/directory actions (relative path from workspace root)
-	command?: string; // Optional: Relevant for run_command action (command line string)
-	generate_prompt?: string;
-}
+// --- Nested Detail Interfaces for Plan Steps ---
 
-// --- Specific Step Interfaces ---
-
-/**
- * Interface for a 'create_directory' step.
- */
-export interface CreateDirectoryStep extends PlanStep {
+interface CreateDirectoryStepDetails {
 	action: PlanStepAction.CreateDirectory;
 	path: string;
-	command?: undefined;
+	description?: string;
 }
 
-/**
- * Interface for a 'create_file' step.
- */
-export interface CreateFileStep extends PlanStep {
+interface CreateFileStepDetails {
 	action: PlanStepAction.CreateFile;
 	path: string;
 	content?: string;
 	generate_prompt?: string;
-	command?: undefined;
+	description?: string;
 }
 
-/**
- * Interface for a 'modify_file' step.
- */
-export interface ModifyFileStep extends PlanStep {
+interface ModifyFileStepDetails {
 	action: PlanStepAction.ModifyFile;
 	path: string;
 	modification_prompt: string;
-	command?: undefined;
+	description?: string;
+}
+
+interface RunCommandStepDetails {
+	action: PlanStepAction.RunCommand;
+	command: string;
+	description?: string;
+}
+
+// --- Wrapper Interfaces for each step type ---
+
+export interface CreateDirectoryStep {
+	step: CreateDirectoryStepDetails;
+}
+export interface CreateFileStep {
+	step: CreateFileStepDetails;
+}
+export interface ModifyFileStep {
+	step: ModifyFileStepDetails;
+}
+export interface RunCommandStep {
+	step: RunCommandStepDetails;
 }
 
 /**
- * Interface for a 'run_command' step.
+ * A union type representing any possible step in a plan.
+ * The structure is nested to group all step details under the 'step' property.
  */
-export interface RunCommandStep extends PlanStep {
-	action: PlanStepAction.RunCommand;
-	command: string;
-	path?: undefined;
-}
+export type PlanStep =
+	| CreateDirectoryStep
+	| CreateFileStep
+	| ModifyFileStep
+	| RunCommandStep;
 
 /**
  * Represents the overall structure of the execution plan.
@@ -76,41 +75,28 @@ export interface ExecutionPlan {
 	steps: PlanStep[];
 }
 
-// --- Type Guards ---
+// --- Type Guards (Updated for Nested Structure) ---
 
-/**
- * Type guard to check if a given PlanStep is a CreateDirectoryStep.
- *
- * @param step The PlanStep object to check.
- * @returns True if the step is a CreateDirectoryStep, false otherwise.
- */
-export function isCreateDirectoryStep(
-	step: PlanStep
-): step is CreateDirectoryStep {
+export function isCreateDirectoryStep(step: any): step is CreateDirectoryStep {
 	return (
-		step.action === PlanStepAction.CreateDirectory &&
-		typeof step.path === "string" &&
-		step.path.trim() !== ""
+		step?.step?.action === PlanStepAction.CreateDirectory &&
+		typeof step.step.path === "string" &&
+		step.step.path.trim() !== ""
 	);
 }
 
-/**
- * Type guard to check if a given PlanStep is a CreateFileStep.
- *
- * @param step The PlanStep object to check.
- * @returns True if the step is a CreateFileStep, false otherwise.
- */
-export function isCreateFileStep(step: PlanStep): step is CreateFileStep {
-	const potentialStep = step as CreateFileStep;
-	return (
-		potentialStep.action === PlanStepAction.CreateFile &&
-		typeof potentialStep.path === "string" &&
-		potentialStep.path.trim() !== "" &&
-		((typeof potentialStep.content === "string" &&
-			typeof potentialStep.generate_prompt === "undefined") ||
-			(typeof potentialStep.generate_prompt === "string" &&
-				typeof potentialStep.content === "undefined"))
-	);
+export function isCreateFileStep(step: any): step is CreateFileStep {
+	const details = step?.step;
+	if (!details || details.action !== PlanStepAction.CreateFile) {
+		return false;
+	}
+	const hasPath =
+		typeof details.path === "string" && details.path.trim() !== "";
+	const hasContent = typeof details.content === "string";
+	const hasGeneratePrompt = typeof details.generate_prompt === "string";
+
+	// A create file step must have a path and EITHER content OR a generate_prompt, but not both.
+	return hasPath && hasContent !== hasGeneratePrompt;
 }
 
 /**
@@ -122,25 +108,19 @@ export function isCreateFileStep(step: PlanStep): step is CreateFileStep {
 export function isModifyFileStep(step: PlanStep): step is ModifyFileStep {
 	const potentialStep = step as ModifyFileStep;
 	return (
-		potentialStep.action === PlanStepAction.ModifyFile &&
-		typeof potentialStep.path === "string" &&
-		potentialStep.path.trim() !== "" &&
-		typeof potentialStep.modification_prompt === "string" &&
-		potentialStep.modification_prompt.trim() !== ""
+		step?.step?.action === PlanStepAction.ModifyFile &&
+		typeof step.step.path === "string" &&
+		step.step.path.trim() !== "" &&
+		typeof step.step.modification_prompt === "string" &&
+		step.step.modification_prompt.trim() !== ""
 	);
 }
 
-/**
- * Type guard to check if a given PlanStep is a RunCommandStep.
- *
- * @param step The PlanStep object to check.
- * @returns True if the step is a RunCommandStep, false otherwise.
- */
-export function isRunCommandStep(step: PlanStep): step is RunCommandStep {
+export function isRunCommandStep(step: any): step is RunCommandStep {
 	return (
-		step.action === PlanStepAction.RunCommand &&
-		typeof step.command === "string" &&
-		step.command.trim() !== ""
+		step?.step?.action === PlanStepAction.RunCommand &&
+		typeof step.step.command === "string" &&
+		step.step.command.trim() !== ""
 	);
 }
 
@@ -154,6 +134,7 @@ export interface ParsedPlanResult {
 
 /**
  * Parses a JSON string or object into an ExecutionPlan and performs validation and sanitization.
+ * This function now transforms the flat step structure from the AI into the nested structure used internally.
  *
  * @param source The raw JSON string received from the AI, or a direct plan object.
  * @param workspaceRootUri The URI of the workspace root.
@@ -165,17 +146,16 @@ export async function parseAndValidatePlan(
 ): Promise<ParsedPlanResult> {
 	console.log("Attempting to parse and validate plan source:", source);
 
-	let potentialPlan: any; // Declared here to be accessible to both branches
+	let potentialPlan: any;
 
 	try {
 		if (typeof source === "object" && source !== null) {
-			potentialPlan = source; // Use object directly
+			potentialPlan = source;
 			console.log("Using direct object as potential plan.");
 		} else if (typeof source === "string") {
-			const jsonString = source; // Renamed for clarity within this branch
+			const jsonString = source;
 			console.log("Parsing plan from string JSON:", jsonString);
 
-			// --- 1. Clean Markdown Fences and Extract JSON Object ---
 			let cleanedString = jsonString
 				.replace(/```(json|typescript)?/g, "")
 				.replace(/```/g, "");
@@ -200,17 +180,7 @@ export async function parseAndValidatePlan(
 				lastBraceIndex + 1
 			);
 
-			// --- 2. Enhanced JSON String Sanitization ---
-			console.log(
-				"Original extracted JSON string for parsing:",
-				extractedJsonString
-			);
-
-			// This regex is more robust for matching string literals. It correctly handles escaped quotes
-			// and avoids matching content outside of valid JSON strings.
 			const stringLiteralRegex = /"((?:\\.|[^"\\])*)"/g;
-
-			// A map of control characters to their escaped representations.
 			const charToEscape: { [key: string]: string } = {
 				"\b": "\\b",
 				"\f": "\\f",
@@ -227,43 +197,28 @@ export async function parseAndValidatePlan(
 						const char = contentInsideQuotes[i];
 						const charCode = char.charCodeAt(0);
 
-						// If it's a known control character with a short escape, use it.
 						if (charToEscape[char]) {
 							processedContent += charToEscape[char];
-						}
-						// Check for other control characters (U+0000 to U+001F) that must be escaped.
-						else if (charCode >= 0 && charCode <= 0x1f) {
-							// Format to \uXXXX unicode escape sequence.
+						} else if (charCode >= 0 && charCode <= 0x1f) {
 							processedContent += `\\u${charCode
 								.toString(16)
 								.padStart(4, "0")}`;
-						}
-						// If it's not a control character, append it as is.
-						else {
+						} else {
 							processedContent += char;
 						}
 					}
-					// Return the processed content re-wrapped in quotes.
 					return `"${processedContent}"`;
 				}
 			);
 
-			console.log(
-				"Sanitized extracted JSON string for parsing:",
-				sanitizedJsonString
-			);
-			// --- End of Sanitization ---
-
 			potentialPlan = JSON.parse(sanitizedJsonString);
 		} else {
-			// Handle invalid source type (null, undefined, number, boolean, etc.)
 			const errorMsg =
 				"Invalid source provided for plan parsing. Must be a string or a non-null object.";
 			console.error(errorMsg, source);
 			return { plan: null, error: errorMsg };
 		}
 
-		// --- 3. Validate Plan Structure and Content ---
 		if (
 			typeof potentialPlan !== "object" ||
 			potentialPlan === null ||
@@ -276,7 +231,6 @@ export async function parseAndValidatePlan(
 			return { plan: null, error: errorMsg };
 		}
 
-		// Ensure the steps array is not empty
 		if (potentialPlan.steps.length === 0) {
 			const errorMsg =
 				"Plan validation failed: The generated plan contains an empty steps array. It must contain at least one step.";
@@ -285,90 +239,79 @@ export async function parseAndValidatePlan(
 		}
 
 		const ig = await loadGitIgnoreMatcher(workspaceRootUri);
-		const intermediateSteps: PlanStep[] = [];
+		const finalSteps: PlanStep[] = [];
 
 		for (let i = 0; i < potentialPlan.steps.length; i++) {
-			const step = potentialPlan.steps[i];
+			const flatStep = potentialPlan.steps[i];
 
-			// Base step validation
 			if (
-				typeof step !== "object" ||
-				step === null ||
-				typeof step.step !== "number" ||
-				step.step !== i + 1 ||
-				!step.action ||
-				!Object.values(PlanStepAction).includes(step.action) ||
-				(typeof step.description !== "string" &&
-					typeof step.description !== "undefined")
+				typeof flatStep !== "object" ||
+				flatStep === null ||
+				typeof flatStep.step !== "number" ||
+				!flatStep.action ||
+				!Object.values(PlanStepAction).includes(flatStep.action)
 			) {
 				const errorMsg = `Plan validation failed: Step ${
 					i + 1
-				} has an invalid structure or step number.`;
-				console.error(errorMsg, step);
+				} has an invalid structure or is missing required fields (step number, action).`;
+				console.error(errorMsg, flatStep);
 				return { plan: null, error: errorMsg };
 			}
 
-			// Path validation and .gitignore check
 			const actionsRequiringPath = [
 				PlanStepAction.CreateDirectory,
 				PlanStepAction.CreateFile,
 				PlanStepAction.ModifyFile,
 			];
-			let skipStep = false;
-
-			if (actionsRequiringPath.includes(step.action)) {
-				if (typeof step.path !== "string" || step.path.trim() === "") {
-					const errorMsg = `Plan validation failed: Step ${step.step} (${step.action}) requires a non-empty 'path'.`;
+			if (actionsRequiringPath.includes(flatStep.action)) {
+				if (typeof flatStep.path !== "string" || flatStep.path.trim() === "") {
+					const errorMsg = `Plan validation failed: Step ${flatStep.step} (${flatStep.action}) requires a non-empty 'path'.`;
 					return { plan: null, error: errorMsg };
 				}
-				// Ensure paths are relative, do not contain '..', and do not start with '/' (which path.isAbsolute typically handles on Unix-like systems)
-				if (path.isAbsolute(step.path) || step.path.includes("..")) {
-					const errorMsg = `Plan validation failed: Path for step ${step.step} must be relative and cannot contain '..'.`;
+				if (path.isAbsolute(flatStep.path) || flatStep.path.includes("..")) {
+					const errorMsg = `Plan validation failed: Path for step ${flatStep.step} must be relative and cannot contain '..'.`;
 					return { plan: null, error: errorMsg };
 				}
 
-				const relativePath = step.path.replace(/\\/g, "/");
+				const relativePath = flatStep.path.replace(/\\/g, "/");
 				if (
 					ig.ignores(relativePath) ||
-					(step.action === PlanStepAction.CreateDirectory &&
+					(flatStep.action === PlanStepAction.CreateDirectory &&
 						ig.ignores(relativePath + "/"))
 				) {
 					console.warn(
-						`Skipping step ${step.step} because its path '${step.path}' is ignored by .gitignore.`
+						`Skipping step ${flatStep.step} because its path '${flatStep.path}' is ignored by .gitignore.`
 					);
-					skipStep = true;
+					continue;
 				}
 			}
 
-			if (skipStep) {
-				continue;
-			}
-
-			// Action-specific validation
 			let actionSpecificError: string | null = null;
-			switch (step.action) {
+			switch (flatStep.action) {
 				case PlanStepAction.CreateDirectory:
-					if (!isCreateDirectoryStep(step)) {
-						actionSpecificError = "Invalid 'create_directory' step.";
-					}
 					break;
 				case PlanStepAction.CreateFile:
-					// Enforce mutual exclusivity of 'content' and 'generate_prompt'
-					if (!isCreateFileStep(step)) {
+					const hasContent = typeof flatStep.content === "string";
+					const hasPrompt = typeof flatStep.generate_prompt === "string";
+					if (hasContent === hasPrompt) {
 						actionSpecificError =
-							"Invalid 'create_file' step. Must have 'path' and either 'content' or 'generate_prompt' (mutually exclusive).";
+							"Invalid 'create_file' step. Must have either 'content' or 'generate_prompt', but not both or neither.";
 					}
 					break;
 				case PlanStepAction.ModifyFile:
-					// Enforce 'modification_prompt' is a non-empty string
-					if (!isModifyFileStep(step)) {
+					if (
+						typeof flatStep.modification_prompt !== "string" ||
+						flatStep.modification_prompt.trim() === ""
+					) {
 						actionSpecificError =
-							"Invalid 'modify_file' step. Must have 'path' and a non-empty 'modification_prompt'.";
+							"Invalid 'modify_file' step. Must have a non-empty 'modification_prompt'.";
 					}
 					break;
 				case PlanStepAction.RunCommand:
-					// Enforce 'command' is a non-empty string
-					if (!isRunCommandStep(step)) {
+					if (
+						typeof flatStep.command !== "string" ||
+						flatStep.command.trim() === ""
+					) {
 						actionSpecificError =
 							"Invalid 'run_command' step. Must have a non-empty 'command'.";
 					}
@@ -376,20 +319,15 @@ export async function parseAndValidatePlan(
 			}
 
 			if (actionSpecificError) {
-				const errorMsg = `Plan validation failed at step ${step.step}: ${actionSpecificError}`;
-				console.error(errorMsg, step);
+				const errorMsg = `Plan validation failed at step ${flatStep.step}: ${actionSpecificError}`;
+				console.error(errorMsg, flatStep);
 				return { plan: null, error: errorMsg };
 			}
 
-			// --- 4. Add all valid steps without consolidation ---
-			intermediateSteps.push(step);
+			// Transform the validated flat step into the nested structure used by the application
+			const { step: stepNumber, ...stepDetails } = flatStep;
+			finalSteps.push({ step: stepDetails as any });
 		}
-
-		// Re-number and finalize the steps
-		const finalSteps = intermediateSteps.map((step, index) => ({
-			...step,
-			step: index + 1,
-		}));
 
 		potentialPlan.steps = finalSteps;
 

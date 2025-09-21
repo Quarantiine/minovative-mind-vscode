@@ -137,7 +137,7 @@ export function createEnhancedGenerationPrompt(
 		"**Accuracy First**: Ensure all imports, types, and dependencies are *absolutely* correct and precisely specified. Verify module paths, type definitions, and API usage."
 	);
 	requirementsList.push(
-		"**Style Consistency**: Adhere *rigorously* to the project's existing coding patterns, conventions, and formatting. Maintain current indentation, naming, and structural choices."
+		"**Style Consistency**: Adhere * rigorously* to the project's existing coding patterns, conventions, and formatting. Maintain current indentation, naming, and structural choices."
 	);
 	requirementsList.push(
 		"**Error Prevention**: Generate code that will compile and run *without any errors or warnings*. Proactively anticipate and guard against common pitfalls beyond just the immediate task, such as null/undefined checks, any types in typescript, input validations, edge cases, or off-by-one errors."
@@ -150,6 +150,9 @@ export function createEnhancedGenerationPrompt(
 	);
 	requirementsList.push(
 		"**Security**: Implement secure coding practices meticulously, identifying and addressing potential vulnerabilities relevant to the language and context."
+	);
+	requirementsList.push(
+		"**Command Execution Format (RunCommandStep)**: For any `RunCommandStep` action, the `command` property MUST be an object `{ executable: string, args: string[], usesShell?: boolean }`. The `executable` should be the command name (e.g., 'npm', 'git') and `args` an array of its arguments (e.g., ['install', '--save-dev', 'package']). If a command *absolutely requires* `shell: true` (e.g., it uses shell-specific features like pipes, redirects, or environment variable expansion inherently for its functionality, and cannot be expressed directly via `executable` and `args`), you MUST explicitly include `usesShell: true` in the object. This flag triggers critical fallback security checks in `PlanExecutorService`. Always prefer `executable` and `args` without `usesShell: true` for security reasons, unless explicitly necessary."
 	);
 
 	// This prompt strictly targets technical problem-solving.
@@ -221,23 +224,26 @@ export function createEnhancedModificationPrompt(
 			"**Drastic Changes Allowed**: This request implies a major overhaul. You are explicitly permitted to make substantial changes to the existing structure, organization, and content. Extensive refactoring or re-implementation is permissible if it supports the requested overhaul."
 		);
 		requirementsList.push(
-			"**Flexible Imports**: You may update, remove, or add imports as necessary to support the new structure and content, prioritizing correctness and functionality over strict preservation of existing import order or exact set."
+			"**Advanced Dependency Management (Rewrite)**: When performing a rewrite, manage imports intelligently: add only strictly necessary new imports, remove all unused imports, and reorder imports for optimal clarity and consistency with project conventions. The goal is a clean, correct, and well-organized import block for the new structure, reflecting best practices."
 		);
 		requirementsList.push(
 			"**Consistent Style (New Code)**: Maintain internal code style (indentation, naming, formatting) for consistency within the *newly generated* sections, following modern best practices for the language."
 		);
+		requirementsList.push(
+			"**Production-Ready Output (Rewrite)**: The generated code, even if a complete overhaul, must be production-ready, robust, highly maintainable, and free of *any* compilation errors, warnings, or runtime issues. Ensure architectural soundness, scalability, and efficiency in the new design, adhering to modern best practices."
+		);
 	} else {
 		requirementsList.push(
-			"**Preserve Existing Structure**: Maintain the current file organization, structural patterns, and architectural design without unrelated refactoring. This is paramount for seamless integration."
+			"**Precise & Minimal Modification**: For non-rewrite operations, make precise, surgical, and targeted changes that directly address the instructions. Avoid any unnecessary refactoring, cosmetic-only alterations, or modifications to surrounding code not directly impacted by the task. The goal is seamless, minimal disruption, and zero unintended side effects, maintaining the existing file's stability."
 		);
 		requirementsList.push(
-			"**No Cosmetic-Only Changes**: Your output must represent a *functional or structural change*, strictly avoiding changes that are solely whitespace, comments, or minor formatting."
-		);
-		requirementsList.push(
-			"**Maintain Imports**: Maintain all *necessary* existing imports and add *only* strictly required new ones. Ensure import order is preserved unless a new logical grouping is absolutely essential for the requested modification."
+			"**Advanced Dependency Management**: Add only strictly necessary new imports. Actively identify and remove *all* unused imports from the entire file. Preserve the existing import order unless a logical reordering is *absolutely essential* for significantly improving clarity, resolving conflicts, or adhering to project-wide standards for a new block of code."
 		);
 		requirementsList.push(
 			"**Consistent Style (Existing Code)**: Strictly follow the existing code style, formatting, and conventions of the current file."
+		);
+		requirementsList.push(
+			"**Production-Ready Output (Incremental)**: All modifications must result in code that is production-ready, robust, highly maintainable, and free of *any* compilation errors, warnings, or runtime issues. Ensure changes integrate seamlessly, maintaining the stability and correctness of the existing codebase."
 		);
 	}
 
@@ -249,16 +255,16 @@ export function createEnhancedModificationPrompt(
 		"**Accuracy First**: Ensure all imports, types, and dependencies are *absolutely* correct and precisely specified. Verify module paths, type definitions, and API usage."
 	);
 	requirementsList.push(
-		"**Error Prevention**: Generate code that will compile and run *without any errors or warnings*. Proactively anticipate and guard against common pitfalls beyond just the immediate task, such as null/undefined checks, any types in typescript, input validations, edge cases, or off-by-one errors."
+		"**Error Prevention & Robustness**: Generate code that will compile and run *without any errors or warnings*. Proactively anticipate and guard against common pitfalls, such as null/undefined checks, `any` types in TypeScript (unless explicitly justified), input validations, edge cases, and off-by-one errors. Prioritize robust error handling."
 	);
 	requirementsList.push(
-		"**Best Practices**: Employ modern language features, established design patterns, and industry best practices to ensure high-quality, efficient, and robust code that is production-ready, maintainable, and clean."
+		"**Best Practices**: Employ modern language features, established design patterns, and industry best practices to ensure high-quality, efficient, and robust code that is maintainable and clean."
 	);
 	requirementsList.push(
 		"**Security**: Implement secure coding practices meticulously, identifying and addressing potential vulnerabilities relevant to the language and context."
 	);
 	requirementsList.push(
-		"**Production Readiness**: Stress robustness, maintainability, and adherence to best practices for all modifications."
+		"**Command Execution Format (RunCommandStep)**: For any `RunCommandStep` action, the `command` property MUST be an object `{ executable: string, args: string[], usesShell?: boolean }`. The `executable` should be the command name (e.g., 'npm', 'git') and `args` an array of its arguments (e.g., ['install', '--save-dev', 'package']). If a command *absolutely requires* `shell: true` (e.g., it uses shell-specific features like pipes, redirects, or environment variable expansion inherently for its functionality, and cannot be expressed directly via `executable` and `args`), you MUST explicitly include `usesShell: true` in the object. This flag triggers critical fallback security checks in `PlanExecutorService`. Always prefer `executable` and `args` without `usesShell: true` for security reasons, unless explicitly necessary."
 	);
 
 	// This prompt strictly targets technical problem-solving for file modifications.
