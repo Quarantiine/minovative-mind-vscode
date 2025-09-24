@@ -27,7 +27,10 @@ import {
 	DEFAULT_CONTEXT_CONFIG,
 } from "../context/contextBuilder";
 import * as SymbolService from "./symbolService";
-import { DiagnosticService } from "../utils/diagnosticUtils";
+import {
+	DiagnosticService,
+	FormatDiagnosticsOptions,
+} from "../utils/diagnosticUtils";
 import { intelligentlySummarizeFileContent } from "../context/fileContentProcessor"; // Import for file content summarization
 import { SequentialContextService } from "./sequentialContextService"; // Import sequential context service
 import {
@@ -530,14 +533,38 @@ export class ContextService {
 
 			if (editorContext?.documentUri) {
 				// If there's an active editor, always fetch and filter live diagnostics
+				const fileContentBytes = await vscode.workspace.fs.readFile(
+					editorContext.documentUri
+				);
+				const fileContent = Buffer.from(fileContentBytes).toString("utf8");
+
+				// Construct the FormatDiagnosticsOptions object.
+				// The 'token' property is optional in FormatDiagnosticsOptions, so directly using 'cancellationToken' is correct.
+				const formatOptions: FormatDiagnosticsOptions = {
+					fileContent: fileContent,
+					enableEnhancedDiagnosticContext:
+						this.settingsManager.getOptimizationSettings()
+							.enableEnhancedDiagnosticContext,
+					includeSeverities: [
+						vscode.DiagnosticSeverity.Error,
+						vscode.DiagnosticSeverity.Warning,
+						vscode.DiagnosticSeverity.Information,
+						vscode.DiagnosticSeverity.Hint,
+					],
+					requestType: "full",
+					token: cancellationToken, // Directly use cancellationToken as it's optional
+					selection: editorContext.selection,
+					maxTotalChars: undefined,
+					maxPerSeverity: undefined,
+					snippetContextLines: undefined,
+				};
+
+				// Update the call to use the constructed formatOptions object.
 				const diagnosticsForActiveFile =
 					await DiagnosticService.formatContextualDiagnostics(
 						editorContext.documentUri,
-						rootFolder.uri, // Pass workspace root for relative path formatting
-						editorContext.selection, // Pass selection if available
-						undefined, // maxTotalChars (use default)
-						undefined, // maxPerSeverity (use default)
-						cancellationToken // Pass cancellation token
+						rootFolder.uri,
+						formatOptions
 					);
 				if (diagnosticsForActiveFile) {
 					effectiveDiagnosticsString = diagnosticsForActiveFile;

@@ -49,6 +49,8 @@ const OPTIMIZATION_SETTINGS_KEYS = {
 		"optimization.heuristic.generalSymbolRelatedBoost",
 	DEPENDENCY_WEIGHT: "optimization.heuristic.dependencyWeight",
 	DIRECTORY_WEIGHT: "optimization.heuristic.directoryWeight",
+	ENABLE_ENHANCED_DIAGNOSTIC_CONTEXT:
+		"optimization.enableEnhancedDiagnosticContext",
 };
 
 // Default optimization settings
@@ -87,6 +89,7 @@ const DEFAULT_OPTIMIZATION_SETTINGS = {
 	generalSymbolRelatedBoost: 15,
 	dependencyWeight: 5,
 	directoryWeight: 1,
+	enableEnhancedDiagnosticContext: true,
 };
 
 export class SettingsManager {
@@ -247,6 +250,10 @@ export class SettingsManager {
 			directoryWeight: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.DIRECTORY_WEIGHT,
 				DEFAULT_OPTIMIZATION_SETTINGS.directoryWeight
+			),
+			enableEnhancedDiagnosticContext: this.getSetting(
+				OPTIMIZATION_SETTINGS_KEYS.ENABLE_ENHANCED_DIAGNOSTIC_CONTEXT,
+				DEFAULT_OPTIMIZATION_SETTINGS.enableEnhancedDiagnosticContext
 			),
 		};
 	}

@@ -25,14 +25,10 @@ import { UrlContextService } from "./urlContextService";
 import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
 import { executeCommand, CommandResult } from "../utils/commandExecution";
 import * as sidebarConstants from "../sidebar/common/sidebarConstants";
-import {
-	CommandSecurityService,
-	ExecutableConfig,
-} from "./commandSecurityService"; // Added import
+import { DiagnosticService } from "../utils/diagnosticUtils"; // Corrected import path for DiagnosticService
 
 export class PlanExecutorService {
-	private minovativeMindTerminal: vscode.Terminal | undefined;
-	private commandSecurityService: CommandSecurityService; // Added new property
+	private commandExecutionTerminals: vscode.Terminal[] = [];
 
 	constructor(
 		private provider: SidebarProvider,
@@ -42,32 +38,7 @@ export class PlanExecutorService {
 		private enhancedCodeGenerator: EnhancedCodeGenerator,
 		private gitConflictResolutionService: GitConflictResolutionService,
 		private readonly MAX_TRANSIENT_STEP_RETRIES: number
-	) {
-		this.commandSecurityService = new CommandSecurityService(); // Initialize new property
-	}
-
-	private getOrCreateTerminal(): vscode.Terminal {
-		if (
-			this.minovativeMindTerminal &&
-			!this.minovativeMindTerminal.exitStatus
-		) {
-			return this.minovativeMindTerminal;
-		}
-
-		this.minovativeMindTerminal = vscode.window.terminals.find(
-			(t) => t.name === "Minovative Mind Commands"
-		);
-
-		if (!this.minovativeMindTerminal) {
-			this.minovativeMindTerminal = vscode.window.createTerminal({
-				name: "Minovative Mind Commands",
-				cwd: this.workspaceRootUri.fsPath,
-			});
-		}
-
-		this.minovativeMindTerminal.show(true);
-		return this.minovativeMindTerminal;
-	}
+	) {}
 
 	public async executePlan(
 		plan: ExecutionPlan,
@@ -156,6 +127,10 @@ export class PlanExecutorService {
 		} finally {
 			this.provider.activeChildProcesses.forEach((cp) => cp.kill());
 			this.provider.activeChildProcesses = [];
+
+			// Dedicated terminals are not disposed automatically here; they persist.
+			// This allows users to review command output after the plan completes.
+
 			await this.provider.setPlanExecutionActive(false);
 
 			let outcome: sidebarTypes.ExecutionOutcome;
@@ -355,7 +330,7 @@ export class PlanExecutorService {
 							combinedToken
 						);
 					} else if (isRunCommandStep(step)) {
-						const commandSuccess = await this._handleRunCommandStep(
+						await this._handleRunCommandStep(
 							step,
 							index,
 							totalOrderedSteps, // Use the new total
@@ -365,11 +340,6 @@ export class PlanExecutorService {
 							originalRootInstruction,
 							combinedToken
 						);
-						if (!commandSuccess) {
-							throw new Error(
-								`Command execution failed for '${step.step.command}'.`
-							);
-						}
 					}
 					currentStepCompletedSuccessfullyOrSkipped = true;
 				} catch (error: any) {
@@ -687,8 +657,24 @@ export class PlanExecutorService {
 			}
 
 			if (fileContent !== null) {
+				const diagnostics = await DiagnosticService.formatContextualDiagnostics(
+					fileUri,
+					this.workspaceRootUri,
+					{
+						fileContent: fileContent,
+						enableEnhancedDiagnosticContext:
+							this.provider.settingsManager.getOptimizationSettings()
+								.enableEnhancedDiagnosticContext,
+						includeSeverities: [
+							vscode.DiagnosticSeverity.Information,
+							vscode.DiagnosticSeverity.Hint,
+						],
+						requestType: "hint_only",
+						token: token,
+					}
+				);
 				formattedSnippets.push(
-					`--- Relevant File: ${relativePath} ---\n\`\`\`${languageId}\n${fileContent}\n\`\`\`\n`
+					`--- Relevant File: ${relativePath} ---\n\`\`\`${languageId}\n${fileContent}\n\`\`\`\n${diagnostics}`
 				);
 			}
 		}
@@ -976,53 +962,22 @@ export class PlanExecutorService {
 		const commandString = step.step.command.trim();
 
 		const { executable, args } =
-			CommandSecurityService.parseCommandArguments(commandString); // Refactored
-
-		let effectiveExecConfig: ExecutableConfig;
-		try {
-			effectiveExecConfig = await this.commandSecurityService.isCommandSafe(
-				// Refactored
-				executable,
-				args,
-				commandString
-			);
-		} catch (validationError: any) {
-			this._logStepProgress(
-				index + 1,
-				totalSteps,
-				`Command blocked: ${validationError.message}`,
-				0,
-				0,
-				true
-			);
-			if (
-				this.minovativeMindTerminal &&
-				!this.minovativeMindTerminal.exitStatus
-			) {
-				this.minovativeMindTerminal.sendText(
-					`\nERROR: Command Blocked - ${validationError.message}\n`,
-					true
-				);
-			}
-			throw new Error(`Command blocked: ${validationError.message}`);
-		}
+			PlanExecutorService._parseCommandArguments(commandString);
 
 		const displayCommand = [
 			executable,
-			...args.map(CommandSecurityService.sanitizeArgumentForDisplay), // Refactored
+			...args.map(PlanExecutorService._sanitizeArgumentForDisplay),
 		].join(" ");
 
-		let promptMessage = `Command:\n[ \`${displayCommand}.\` ]`;
-		let modalPrompt = true;
+		const commandTerminal = vscode.window.createTerminal({
+			name: `echo Minovative Mind: Cmd ${index + 1}/${totalSteps}`,
+			cwd: rootUri.fsPath,
+		});
+		commandTerminal.show(true);
+		this.commandExecutionTerminals.push(commandTerminal); // Store the reference
 
-		if (
-			effectiveExecConfig.requiresExplicitConfirmation ||
-			effectiveExecConfig.isHighRisk
-		) {
-			promptMessage += `\n\n🚨 CRITICAL SECURITY ALERT: Are you absolutely sure you want to allow this?`;
-		} else {
-			promptMessage += `\n\n⚠️ WARNING: Please review it carefully. The plan wants to run the command above. Allow?`;
-		}
+		let promptMessage = `Command:\n[ \`${displayCommand}.\` ]`;
+		promptMessage += `\n\n⚠️ WARNING: Please review it carefully. The plan wants to run the command above. Allow?`;
 
 		// Add console log before showing the warning message
 		console.log(
@@ -1031,7 +986,7 @@ export class PlanExecutorService {
 
 		const userChoice = await vscode.window.showInformationMessage(
 			promptMessage,
-			{ modal: modalPrompt },
+			{ modal: true },
 			"Allow",
 			"Skip"
 		);
@@ -1059,21 +1014,11 @@ ${userChoice}`);
 				0,
 				0
 			);
-			if (
-				this.minovativeMindTerminal &&
-				!this.minovativeMindTerminal.exitStatus
-			) {
-				this.minovativeMindTerminal.sendText(
-					`\necho --- Command SKIPPED (prompt dismissed) ---\n`,
-					true
-				);
-			}
 			return true;
 		}
 
 		if (userChoice === "Allow") {
-			const terminal = this.getOrCreateTerminal();
-			terminal.sendText(`${commandString}\n`);
+			commandTerminal.sendText(`${displayCommand}`, true);
 
 			try {
 				const commandResult: CommandResult = await executeCommand(
@@ -1082,79 +1027,58 @@ ${userChoice}`);
 					rootUri.fsPath,
 					combinedToken,
 					this.provider.activeChildProcesses,
-					terminal
+					commandTerminal // Pass the dedicated terminal
 				);
 
-				if (commandResult.exitCode !== 0) {
-					const errorMessage = `Command \`${displayCommand}\` failed with exit code ${commandResult.exitCode}.
-                                    \n--- STDOUT ---\n${commandResult.stdout}
-                                    \n--- STDERR ---\n${commandResult.stderr}`;
-
+				if (commandResult.exitCode === 0) {
 					this._logStepProgress(
 						index + 1,
 						totalSteps,
-						`Command execution error.`,
+						`Command completed successfully: \`${displayCommand}\`.`,
 						0,
 						0,
-						true,
-						errorMessage
+						false
 					);
-
-					if (
-						this.minovativeMindTerminal &&
-						!this.minovativeMindTerminal.exitStatus
-					) {
-						this.minovativeMindTerminal.sendText(
-							`\necho --- Command FAILED: ${displayCommand} (Exit Code: ${commandResult.exitCode}) ---\n`,
-							false
-						);
-					}
-
-					throw new Error(
-						`Command '${displayCommand}' failed. Output: ${errorMessage}`
-					);
-				} else {
-					const successMessage = `Command \`${displayCommand}\` executed successfully.
-                                    \n--- STDOUT ---\n${commandResult.stdout}
-                                    \n--- STDERR ---\n${commandResult.stderr}`;
-
-					this._logStepProgress(
-						index + 1,
-						totalSteps,
-						`Command executed.`,
-						0,
-						0,
-						false,
-						successMessage
-					);
-					if (
-						this.minovativeMindTerminal &&
-						!this.minovativeMindTerminal.exitStatus
-					) {
-						this.minovativeMindTerminal.sendText(
-							`\necho --- Command SUCCEEDED ---\n`,
-							false
-						);
-					}
-					return true;
-				}
-			} catch (commandExecError: any) {
-				if (commandExecError.message === ERROR_OPERATION_CANCELLED) {
-					throw commandExecError;
-				}
-				let detailedError = `Error executing command \`${displayCommand}\`: ${commandExecError.message}`;
-				this._logStepProgress(index + 1, totalSteps, detailedError, 0, 0, true);
-
-				if (
-					this.minovativeMindTerminal &&
-					!this.minovativeMindTerminal.exitStatus
-				) {
-					this.minovativeMindTerminal.sendText(
-						`\nERROR: ${detailedError}\n`,
+					commandTerminal.sendText(
+						`\necho --- Command (${
+							index + 1
+						}/${totalSteps}) Completed Successfully --- \n\n`,
 						true
 					);
+					return true;
+				} else {
+					const errorMessage = `Command failed with exit code ${commandResult.exitCode}: \`${displayCommand}\`.`;
+					this._logStepProgress(
+						index + 1,
+						totalSteps,
+						`ERROR: ${errorMessage}`,
+						0,
+						0,
+						true
+					);
+					commandTerminal.sendText(
+						`\necho --- Command (${index + 1}/${totalSteps}) Failed --- \n`,
+						true
+					);
+					throw new Error("RunCommandStep failed with non-zero exit code.");
 				}
-				throw commandExecError;
+			} catch (commandSpawnError: any) {
+				const errorMessage = `Failed to execute command '${displayCommand}': ${commandSpawnError.message}`;
+				console.error(`Minovative Mind: ${errorMessage}`, commandSpawnError);
+				commandTerminal.sendText(`\necho ERROR: ${errorMessage}\n`, true);
+				commandTerminal.sendText(
+					`\necho --- Command (${index + 1}/${totalSteps}) Failed --- \n`,
+					true
+				);
+				this._logStepProgress(
+					index + 1,
+					totalSteps,
+					`ERROR: ${errorMessage}`,
+					0,
+					0,
+					true
+				);
+				throw new Error("RunCommandStep failed during spawning or execution.");
 			}
 		} else {
 			// userChoice is "Skip"
@@ -1165,16 +1089,59 @@ ${userChoice}`);
 				0,
 				0
 			);
-			if (
-				this.minovativeMindTerminal &&
-				!this.minovativeMindTerminal.exitStatus
-			) {
-				this.minovativeMindTerminal.sendText(
-					`\necho --- Command SKIPPED ---\n`,
-					true
-				);
-			}
+			commandTerminal.sendText(
+				`\necho --- Command (${index + 1}/${totalSteps}) Skipped --- \n\n`,
+				true
+			);
 			return true;
 		}
+	}
+
+	private static _parseCommandArguments(commandString: string): {
+		executable: string;
+		args: string[];
+	} {
+		const parts = [];
+		let inQuote = false;
+		let currentPart = "";
+
+		for (let i = 0; i < commandString.length; i++) {
+			const char = commandString[i];
+
+			if (char === '"' || char === `'`) {
+				inQuote = !inQuote;
+				if (!inQuote && currentPart !== "") {
+					parts.push(currentPart);
+					currentPart = "";
+				}
+			} else if (char === " " && !inQuote) {
+				if (currentPart !== "") {
+					parts.push(currentPart);
+					currentPart = "";
+				}
+			} else {
+				currentPart += char;
+			}
+		}
+
+		if (currentPart !== "") {
+			parts.push(currentPart);
+		}
+
+		if (parts.length === 0) {
+			return { executable: "", args: [] };
+		}
+
+		const [executable, ...args] = parts;
+		return { executable, args };
+	}
+
+	private static _sanitizeArgumentForDisplay(arg: string): string {
+		// For display purposes, we might want to truncate very long arguments
+		// or replace sensitive information. For now, we return as is.
+		if (arg.length > 100) {
+			return `${arg.substring(0, 97)}...`;
+		}
+		return arg;
 	}
 }

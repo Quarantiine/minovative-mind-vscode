@@ -37,7 +37,7 @@ export interface RequiredDomElements {
 
 	editingIndicator: HTMLElement | null;
 	cancelEditButton: HTMLButtonElement | null;
-	editMessageHelpText: HTMLElement | null; // Added this property
+	editMessageHelpText: HTMLElement | null;
 
 	chatInputControlsWrapper: HTMLDivElement;
 	commandSuggestionsContainer: HTMLDivElement;
@@ -46,9 +46,9 @@ export interface RequiredDomElements {
 	tokenUsageContainer: HTMLDivElement;
 	tokenUsageDisplay: HTMLDivElement;
 	tokenUsageToggle: HTMLButtonElement;
-	copyStatsButton: HTMLButtonElement; // NEW: Copy token statistics button
+	copyStatsButton: HTMLButtonElement;
 	revertChangesButton: HTMLButtonElement;
-	modelUsagePercentagesList: HTMLDivElement; // NEW: Display for model usage percentages
+	modelUsagePercentagesList: HTMLDivElement;
 
 	// Clear chat confirmation
 	chatClearConfirmationContainer: HTMLDivElement | null;
@@ -68,7 +68,7 @@ export interface PendingPlanData {
 	originalRequest?: string;
 	originalInstruction?: string;
 	relevantFiles?: string[];
-	textualPlanExplanation?: string; // ADDED
+	textualPlanExplanation?: string;
 }
 
 export interface PendingCommitReviewData {
@@ -129,8 +129,9 @@ export interface WebviewAppState {
 	isPlanExecutionInProgress: boolean;
 	hasRevertibleChanges: boolean;
 	totalKeys: number;
+	activeIndex: number; // Tracks the index of the currently active API key
 	isTokenUsageVisible: boolean;
-	lastFormattedTokenStats: FormattedTokenStatistics | null; // NEW: Store last formatted token stats
+	lastFormattedTokenStats: FormattedTokenStatistics | null;
 	nextMessageIndex: number;
 	selectedImages: ImageUploadState[];
 	allWorkspaceFiles: string[];

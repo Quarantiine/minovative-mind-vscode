@@ -293,7 +293,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			this.extensionUri,
 			sidebarConstants.MODEL_DETAILS, // Changed from AVAILABLE_GEMINI_MODELS to MODEL_DETAILS
 			this.settingsManager.getSelectedModelName(),
-			logoUri
+			logoUri,
+			this.workspaceRootUri
 		);
 
 		const fileUri = vscode.Uri.parse("file://"); // This seems like a placeholder URI for the webview's internal loading

@@ -74,6 +74,7 @@ export async function handleWebviewMessage(
 		"requestWorkspaceFiles", // Allow workspace file requests during background operations
 		"operationCancelledConfirmation", // Allowed to update UI state after cancellation
 		"copyContextMessage", // Allowed during background operations
+		"setApiActiveKey", // Allow API key switching
 	];
 
 	if (
@@ -319,6 +320,10 @@ export async function handleWebviewMessage(
 				await provider.apiKeyManager.addApiKey(validatedData.value.trim());
 				break;
 
+			case "setApiActiveKey":
+				await provider.apiKeyManager.setActiveKey(validatedData.value);
+				break;
+
 			case "requestDeleteConfirmation":
 				const result = await vscode.window.showWarningMessage(
 					"Are you sure you want to delete the active API key?",
@@ -327,7 +332,16 @@ export async function handleWebviewMessage(
 					"No"
 				);
 				if (result === "Yes") {
-					await provider.apiKeyManager.deleteActiveApiKey();
+					const activeIndex = provider.apiKeyManager.getActiveApiKeyIndex();
+					if (activeIndex !== -1) {
+						await provider.apiKeyManager.deleteApiKey(activeIndex);
+					} else {
+						provider.postMessageToWebview({
+							type: "statusUpdate",
+							value: "Error: No active API key to delete.",
+							isError: true,
+						});
+					}
 				} else {
 					provider.postMessageToWebview({
 						type: "statusUpdate",

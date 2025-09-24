@@ -13,12 +13,12 @@ import {
 	AiStreamingState,
 	PersistedPlanData,
 	PlanExecutionFinishedMessage,
-	ChatMessage, // Import ChatMessage for type casting
-	ModelInfo, // Import ModelInfo for type casting
+	ChatMessage,
+	ModelInfo,
 	AiResponseStartMessage,
 	AiResponseChunkMessage,
 	AiResponseEndMessage,
-	FormattedTokenStatistics, // Import FormattedTokenStatistics
+	FormattedTokenStatistics,
 } from "../../common/sidebarTypes";
 import {
 	stopTypingAnimation,
@@ -285,20 +285,6 @@ export function initializeMessageBusHandler(
 					existingLoadingMsg.remove();
 				}
 
-				// Append a new AI message element. By passing an empty string for text,
-				// appendMessage will automatically trigger the typing animation to show "Generating..." dots.
-				// appendMessage(
-				// 	elements,
-				// 	"Model",
-				// 	"", // Empty string to signify starting stream/generation
-				// 	"ai-message",
-				// 	true, // Treat as a history-backed message for consistent styling and buttons (even if not yet in history)
-				// 	undefined, // diffContent
-				// 	undefined, // relevantFiles
-				// 	undefined, // messageIndexForHistory
-				// 	undefined, // isRelevantFilesExpandedForHistory
-				// 	false // isPlanExplanationForRender
-				// );
 				// Ensure UI controls are disabled while loading
 				setLoadingState(true, elements);
 				break;
@@ -961,6 +947,7 @@ export function initializeMessageBusHandler(
 					};
 
 					appState.totalKeys = updateData.totalKeys;
+					appState.activeIndex = updateData.activeIndex; // Update the active index in the app state
 					appState.isApiKeySet = updateData.activeIndex !== -1;
 
 					if (

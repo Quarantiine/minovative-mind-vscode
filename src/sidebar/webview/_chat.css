@@ -287,7 +287,7 @@
 	color: var(--vscode-editor-foreground); /* Text color */
 	white-space: nowrap; /* Prevent file path from wrapping */
 	text-overflow: ellipsis; /* Add ellipsis if path is too long */
-	overflow: hidden; /* Hide overflowed text */
+	overflow: hidden;
 	max-width: 100%; /* Ensure it doesn't exceed parent width */
 	flex-shrink: 0; /* Don't shrink when wrapped */
 	cursor: pointer; /* Now directly clickable */
@@ -331,4 +331,42 @@
 .message-text-content.editing-textarea:focus {
 	border-color: var(--vscode-focusBorder);
 	box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+}
+
+.project-name {
+	font-weight: bold;
+	display: flex;
+	align-items: start;
+	justify-content: center;
+	margin-right: 10px;
+	padding: 0px 5px;
+	height: var(--icon-button-size);
+	border: 1px solid var(--vscode-button-border);
+	border-radius: var(--border-radius);
+
+	background-color: var(--vscode-input-background); /* Keep dark background */
+	border-color: var(--border-color);
+	color: var(--vscode-button-secondaryForeground);
+	opacity: 0.6; /* Slightly faded */
+	cursor: default; /* Indicate non-clickable */
+
+	user-select: none;
+	font-size: 0.8em; /* Adjust icon size slightly if needed */
+	white-space: nowrap; /* Prevent wrapping */
+	text-overflow: ellipsis; /* Add ellipsis if too long */
+	overflow: hidden;
+
+	flex-direction: column;
+	gap: 2px;
+}
+
+.project-name-title {
+	font-size: 0.8em;
+	font-weight: 300;
+}
+
+.chat-controls {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
 }

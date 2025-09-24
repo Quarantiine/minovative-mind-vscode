@@ -291,12 +291,13 @@ export class AIRequestService {
 							-4
 						)}. Pausing for ${(currentDelay / 1000).toFixed(0)} seconds.`
 					);
+					// Dispatch new aiRetryNotification message
 					this.postMessageToWebview({
-						type: "statusUpdate",
-						value: `API quota limit hit. Pausing for ${(
-							currentDelay / 1000
-						).toFixed(0)} seconds before retrying with the same API key.`,
-						isError: true,
+						type: "aiRetryNotification",
+						value: {
+							currentDelay: currentDelay / 1000, // Convert to seconds for UI
+							reason: "API Quota Exceeded. Retrying automatically.",
+						},
 					});
 					await new Promise((resolve) => setTimeout(resolve, currentDelay));
 					if (token?.isCancellationRequested) {

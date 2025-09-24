@@ -7,7 +7,11 @@ import * as sidebarTypes from "./sidebar/common/sidebarTypes";
 import { hasMergeConflicts, getMergeConflictRanges } from "./utils/mergeUtils"; // Added import for mergeUtils
 import { CodeSelectionService } from "./services/codeSelectionService";
 import { getSymbolsInDocument } from "./services/symbolService";
-import { DiagnosticService } from "./utils/diagnosticUtils";
+// Import FormatDiagnosticsOptions type here
+import {
+	DiagnosticService,
+	FormatDiagnosticsOptions,
+} from "./utils/diagnosticUtils";
 import { DEFAULT_FLASH_LITE_MODEL } from "./sidebar/common/sidebarConstants";
 
 /**
@@ -453,14 +457,40 @@ export async function activate(context: vscode.ExtensionContext) {
 
 			// 5. Implement Context Gathering and Formatting:
 			if (instruction === "/fix") {
+				// Read the active editor's file content
+				const fileContentBytes = await vscode.workspace.fs.readFile(
+					documentUri
+				);
+				const fileContent = Buffer.from(fileContentBytes).toString("utf-8");
+
+				// Retrieve optimization settings
+				const optimizationSettings =
+					sidebarProvider.settingsManager.getOptimizationSettings();
+				const enableEnhancedDiagnosticContext =
+					optimizationSettings.enableEnhancedDiagnosticContext;
+
+				// Construct FormatDiagnosticsOptions object
+				// Annotate with FormatDiagnosticsOptions type
+				const formatOptions: FormatDiagnosticsOptions = {
+					fileContent: fileContent,
+					enableEnhancedDiagnosticContext: enableEnhancedDiagnosticContext,
+					includeSeverities: [vscode.DiagnosticSeverity.Error],
+					// Set requestType to a valid literal type, e.g., "full"
+					requestType: "full",
+					// Set optional properties to undefined if not used
+					token: undefined,
+					selection: undefined,
+					maxTotalChars: undefined,
+					maxPerSeverity: undefined,
+					snippetContextLines: undefined,
+				};
+
+				// The call to DiagnosticService.formatContextualDiagnostics expects three arguments:
+				// documentUri, workspaceRootUri, and formatOptions.
 				diagnosticsString = await DiagnosticService.formatContextualDiagnostics(
 					documentUri,
 					sidebarProvider.workspaceRootUri!,
-					undefined, // Get diagnostics for the entire file (undefined selection)
-					undefined, // Use default maxTotalChars
-					undefined, // Use default maxPerSeverity
-					undefined, // No cancellation token available here from a central operation
-					[vscode.DiagnosticSeverity.Error] // Only errors
+					formatOptions
 				);
 			}
 			// For /merge, mergeConflictString is already set above if conflicts exist.
@@ -485,7 +515,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			}
 
 			if (instruction === "/fix") {
-				composedMessage = `/plan Please fix the following code errors in ${displayFileName}:\n\n${
+				composedMessage = `/plan ONLY fix the following code errors in ${displayFileName}:\n\n${
 					diagnosticsString || "No errors found."
 				}\n\n---\n\nHighlevel thinking first. No coding yet.`;
 			} else if (instruction === "/merge") {

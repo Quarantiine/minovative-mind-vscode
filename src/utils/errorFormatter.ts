@@ -4,6 +4,7 @@ import {
 	ERROR_OPERATION_CANCELLED,
 	ERROR_STREAM_PARSING_FAILED,
 	ERROR_SERVICE_UNAVAILABLE,
+	ERROR_QUOTA_EXCEEDED, // Added ERROR_QUOTA_EXCEEDED
 } from "../ai/gemini";
 
 /**
@@ -69,6 +70,8 @@ export function formatUserFacingErrorMessage(
 	} else if (message.includes(ERROR_SERVICE_UNAVAILABLE)) {
 		message =
 			"AI service temporarily overloaded: The AI service is currently experiencing high load (overloaded) - Please wait...AI Retrying again.";
+	} else if (message.includes(ERROR_QUOTA_EXCEEDED)) {
+		message = "API Quota Exceeded. Retrying automatically.";
 	} else if (
 		message.includes("SAFETY") ||
 		message.includes("safety policy") ||

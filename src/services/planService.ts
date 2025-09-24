@@ -77,10 +77,7 @@ export class PlanService {
 	// --- CHAT-INITIATED PLAN ---
 	public async handleInitialPlanRequest(userRequest: string): Promise<void> {
 		const { apiKeyManager, changeLogger } = this.provider;
-		const modelName = this.provider.settingsManager.getSetting<string>(
-			sidebarConstants.MODEL_SELECTION_STORAGE_KEY,
-			sidebarConstants.DEFAULT_FLASH_MODEL
-		); // Use selected model for initial plan generation
+		const modelName = this.provider.settingsManager.getSelectedModelName(); // Use selected model for initial plan generation
 		const apiKey = apiKeyManager.getActiveApiKey();
 
 		// Start a new user operation, which creates a new cancellation token source and operation ID
@@ -329,10 +326,7 @@ export class PlanService {
 		isMergeOperation: boolean = false
 	): Promise<sidebarTypes.PlanGenerationResult> {
 		const { apiKeyManager, changeLogger } = this.provider;
-		const modelName = this.provider.settingsManager.getSetting<string>(
-			sidebarConstants.MODEL_SELECTION_STORAGE_KEY,
-			sidebarConstants.DEFAULT_FLASH_LITE_MODEL
-		); // Use selected model for editor-initiated plan generation
+		const modelName = this.provider.settingsManager.getSelectedModelName(); // Use selected model for editor-initiated plan generation
 		const apiKey = apiKeyManager.getActiveApiKey();
 
 		// Start a new user operation, which creates a new cancellation token source and operation ID

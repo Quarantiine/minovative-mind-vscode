@@ -1,0 +1,229 @@
+# This file defines the expected structure of AI-generated execution plans.
+# It provides a canonical JSON schema reference and few-shot examples for
+# both initial plan generation and subsequent plan correction based on observed issues.
+
+# The `jsonFormatDescription` section provides a human-readable, canonical JSON schema
+# that outlines the expected structure for an AI-generated execution plan.
+# This serves as a primary reference for the AI to understand the required output format.
+jsonFormatDescription: |
+  {
+      "planDescription": "Brief summary of the overall goal of the execution plan.",
+      "steps": [ # An array of individual steps that constitute the execution plan.
+          {
+              "step": 1, # The sequential number of the step (1-indexed).
+              "action": "create_directory" | "create_file" | "modify_file" | "run_command", # The type of operation to perform for this step.
+              "description": "Description of step (always required). A clear, concise explanation of what this step achieves.",
+              "path": "relative/path/to/target", # REQUIRED for 'create_directory', 'create_file', 'modify_file' actions.
+                                                  # This is the relative path to the file or directory being acted upon.
+                                                  # Must be a non-empty string (e.g., 'src/components/button.ts').
+              "content": "...", # REQUIRED for 'create_file' when the exact content is known. Exclusive with 'generate_prompt'.
+                                 # The full content of the new file to be created.
+              "generate_prompt": "...", # REQUIRED for 'create_file' when content needs to be AI-generated. Exclusive with 'content'.
+                                         # A prompt for the AI to generate the content of the new file.
+              "modification_prompt": "...", # REQUIRED for 'modify_file'. Instructions on how to modify the existing file's content.
+                                             # This prompt guides the AI to perform specific changes.
+              "command": "..." # REQUIRED for 'run_command'. The shell command string to execute.
+                                # Example: "npm install some-package --save-dev"
+          }
+      ]
+  }
+
+# The `fewShotExamples` array provides concrete execution plan examples.
+# These examples illustrate various `action` types (create_file, modify_file, run_command, create_directory)
+# and demonstrate how different parameters (content, generate_prompt, modification_prompt, command) are used.
+fewShotExamples:
+  - title: "A simple file creation with explicit content"
+    plan:
+      planDescription: "Create a configuration file."
+      steps:
+        - step: 1
+          action: "create_file"
+          description: "Create a basic config.json file."
+          path: "src/config.json"
+          content: |
+            {
+              "setting": "default"
+            }
+
+  - title: "Modifying a file and running a command"
+    plan:
+      planDescription: "Add analytics tracking and install dependency."
+      steps:
+        - step: 1
+          action: "modify_file"
+          description: "Add analytics tracking code to index.html."
+          path: "public/index.html"
+          modification_prompt: "In the <head> section, add a script tag to load 'analytics.js'."
+        - step: 2
+          action: "run_command"
+          description: "Install the 'analytics-lib' package."
+          command: "npm install analytics-lib --save-dev"
+
+  - title: "Modifying a TypeScript file using a modification prompt"
+    plan:
+      planDescription: "Implement a new utility function."
+      steps:
+        - step: 1
+          action: "modify_file"
+          description: "Add a new function 'formatDate' to the existing utils.ts file."
+          path: "src/utils.ts"
+          modification_prompt: "Add a public function 'formatDate' that takes a Date object and returns a string in 'YYYY-MM-DD' format. Use existing helper functions if available, otherwise implement date formatting logic."
+
+  - title: "Creating a directory and a file with AI-generated content"
+    plan:
+      planDescription: "Set up a new component directory and create a component file."
+      steps:
+        - step: 1
+          action: "create_directory"
+          description: "Create a directory for the new button component."
+          path: "src/components/Button"
+        - step: 2
+          action: "create_file"
+          description: "Create the main TypeScript file for the Button component."
+          path: "src/components/Button/Button.tsx"
+          generate_prompt: "Generate a basic React functional component in TypeScript named 'Button' that accepts children and props for handling click events. Include necessary imports."
+
+  - title: "Running multiple commands and modifying a file"
+    plan:
+      planDescription: "Update dependencies and apply formatting."
+      steps:
+        - step: 1
+          action: "run_command"
+          description: "Update all npm dependencies."
+          command: "npm update"
+        - step: 2
+          action: "run_command"
+          description: "Run code formatter across the project."
+          command: "npx prettier --write ."
+        - step: 3
+          action: "modify_file"
+          description: "Update version number in package.json (optional)."
+          path: "package.json"
+          modification_prompt: "Increase the patch version in the 'version' field of this package.json file."
+
+  - title: "Creating a file with content from a prompt and adding a simple configuration file"
+    plan:
+      planDescription: "Add a new service and update its configuration."
+      steps:
+        - step: 1
+          action: "create_file"
+          description: "Create a new API service file."
+          path: "src/services/apiService.js"
+          generate_prompt: "Write a JavaScript service using async/await and fetch API to make GET and POST requests to a configurable endpoint."
+        - step: 2
+          action: "create_file"
+          description: "Create a configuration file for the API service."
+          path: "src/config/api.config.json"
+          content: |
+            {
+              "apiUrl": "https://api.example.com/v1"
+            }
+
+  - title: "Create a test file for an existing component in a nested directory"
+    plan:
+      planDescription: "Create a test file for an existing UI component."
+      steps:
+        - step: 1
+          action: "create_file"
+          description: "Create 'MyComponent.test.tsx' within the 'src/components/MyComponent' directory."
+          path: "src/components/MyComponent/MyComponent.test.tsx"
+          generate_prompt: "Generate a basic Jest/React Testing Library test file for a functional React component located at 'src/components/MyComponent/MyComponent.tsx'. The component is named 'MyComponent'."
+
+  - title: "Create a new Next.js API route."
+    plan:
+      planDescription: "Create a new Next.js API endpoint."
+      steps:
+        - step: 1
+          action: "create_file"
+          description: "Create a new API route file for '/api/users'."
+          path: "pages/api/users.ts"
+          generate_prompt: "Generate a basic Next.js API route in TypeScript at 'pages/api/users.ts' that responds with a list of mock users for a GET request."
+
+  - title: "Create a new Next.js UI page."
+    plan:
+      planDescription: "Add a new Next.js dashboard page."
+      steps:
+        - step: 1
+          action: "create_file"
+          description: "Create a new Next.js page component for the dashboard."
+          path: "pages/dashboard/index.tsx"
+          generate_prompt: "Generate a simple Next.js functional component for a dashboard page in TypeScript. Include a basic layout and a welcome message."
+
+  - title: "Modify `next.config.js` or `package.json` for Next.js configuration."
+    plan:
+      planDescription: "Update Next.js configuration to enable experimental features."
+      steps:
+        - step: 1
+          action: "modify_file"
+          description: "Modify the 'next.config.js' file to enable the 'output: standalone' experimental feature."
+          path: "next.config.js"
+          modification_prompt: "Update the 'next.config.js' file to add `output: 'standalone'` to the configuration object if it's not already present, ensuring the module export structure remains valid."
+
+# The `jsonSchemaReference` section provides a direct TypeScript interface representation
+# of the `ExecutionPlan` and `PlanStep` structures. This serves as a definitive type
+# definition for developers and validation tools, ensuring strict adherence to the schema.
+jsonSchemaReference: |
+  interface ExecutionPlan {
+    planDescription: string;
+    steps: PlanStep[];
+  }
+
+  interface PlanStep {
+    step: number; // 1-indexed, sequential
+    action: "create_directory" | "create_file" | "modify_file" | "run_command";
+    description: string;
+    // File/Directory Operations:
+    path?: string; // REQUIRED for 'create_directory', 'create_file', 'modify_file'. Must be a non-empty, relative string (e.g., 'src/components/button.ts'). DO NOT leave this empty, null, or undefined.
+    // 'create_file' specific:
+    content?: string; // Exclusive with 'generate_prompt'. Full content of the new file.
+    generate_prompt?: string; // Exclusive with 'content'. A prompt to generate file content.
+    // 'modify_file' specific:
+    modification_prompt?: string; // REQUIRED for 'modify_file'. Instructions on how to modify the file's content.
+    // 'run_command' specific:
+    command?: string; // REQUIRED for 'run_command'. The command string to execute.
+  }
+
+# The `fewShotCorrectionExamples` array provides specific examples demonstrating how the AI
+# can generate corrective plans for common coding issues. These examples cover scenarios
+# like syntax errors, missing imports, and type mismatches, guiding the AI in formulating
+# precise solutions to diagnostic feedback.
+fewShotCorrectionExamples:
+  - title: "Simple syntax fix in an existing file"
+    plan:
+      planDescription: "Fix a syntax error in utils.ts"
+      steps:
+        - step: 1
+          action: "modify_file"
+          description: "Correct missing semicolon and adjust function call in utils.ts as per diagnostic."
+          path: "src/utils.ts"
+          modification_prompt: "The file src/utils.ts has a syntax error: 'Expected ;'. Add a semicolon at the end of line 10. Also, ensure the 'calculateSum' function call on line 15 passes the correct number of arguments as indicated by the 'Expected 2 arguments, but got 1.' diagnostic."
+
+  - title: "Adding a missing import"
+    plan:
+      planDescription: "Add missing 'useState' import to MyComponent.tsx"
+      steps:
+        - step: 1
+          action: "modify_file"
+          description: "Add missing 'useState' import from 'react' to MyComponent.tsx to resolve 'useState is not defined' error."
+          path: "src/components/MyComponent.tsx"
+          modification_prompt: "Add 'useState' to the React import statement in src/components/MyComponent.tsx so it becomes 'import React, { useState } from 'react';' to resolve the 'useState is not defined' error."
+
+  - title: "Resolving a type error in TypeScript"
+    plan:
+      planDescription: "Correct type mismatch in userSlice.ts"
+      steps:
+        - step: 1
+          action: "modify_file"
+          description: "Adjust the type definition for 'user' state in userSlice.ts from 'string' to 'UserInterface' to match expected object structure."
+          path: "src/store/userSlice.ts"
+          modification_prompt: "In src/store/userSlice.ts, change the type of the 'user' property in the initial state from 'string' to 'UserInterface' (assuming UserInterface is already defined or will be imported). Ensure the default value for 'user' is a valid UserInterface object or null as appropriate."
+
+  - title: "Creating a new file to fix a missing module error"
+    plan:
+      planDescription: "Create a new utility file for common functions"
+      steps:
+        - step: 1
+          action: "create_file"
+          description: "Create 'src/utils/mathUtils.ts' as it is missing, which causes 'Module not found' error."
+          path: "src/utils/mathUtils.ts"
+          generate_prompt: "Generate a TypeScript file 'src/utils/mathUtils.ts' that exports a function named 'add' which takes two numbers and returns their sum, and a function named 'subtract' which takes two numbers and returns their difference."

@@ -1,6 +1,22 @@
 import * as vscode from "vscode";
 import * as path from "path";
 
+/**
+ * Options for formatting contextual diagnostics.
+ */
+export interface FormatDiagnosticsOptions {
+	fileContent: string;
+	enableEnhancedDiagnosticContext: boolean;
+	includeSeverities: vscode.DiagnosticSeverity[];
+	// Changed from "full" | "selection" to "full" | "hint_only" to resolve type incompatibility.
+	requestType: "full" | "hint_only";
+	token?: vscode.CancellationToken;
+	selection?: vscode.Range;
+	maxTotalChars?: number;
+	maxPerSeverity?: number;
+	snippetContextLines?: SnippetContextLines;
+}
+
 async function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -20,6 +36,14 @@ export function getSeverityName(severity: vscode.DiagnosticSeverity): string {
 	}
 }
 
+/**
+ * Defines the context lines for code snippets.
+ */
+export interface SnippetContextLines {
+	before: number;
+	after: number;
+}
+
 export class DiagnosticService {
 	/**
 	 * Retrieves all diagnostics for a given URI.
@@ -35,89 +59,70 @@ export class DiagnosticService {
 	 *
 	 * @param documentUri The URI of the document to get diagnostics for.
 	 * @param workspaceRoot The root URI of the workspace for relative paths.
-	 * @param selection An optional vscode.Range representing the user's text selection.
-	 * @param maxTotalChars The maximum character length for the output string.
-	 * @param maxPerSeverity The maximum number of diagnostics to include per severity level when no selection.
-	 * @param token An optional CancellationToken to allow for early cancellation of the operation.
+	 * @param options Configuration for diagnostic formatting.
 	 * @returns A formatted string of diagnostics, or undefined if no relevant diagnostics.
 	 */
 	public static async formatContextualDiagnostics(
 		documentUri: vscode.Uri,
 		workspaceRoot: vscode.Uri,
-		selection?: vscode.Range,
-		maxTotalChars: number = 25000,
-		maxPerSeverity: number = 25,
-		token?: vscode.CancellationToken, // Make token optional
-		// Specify which severities to include. Defaults to all.
-		includeSeverities: vscode.DiagnosticSeverity[] = [
-			vscode.DiagnosticSeverity.Error,
-			vscode.DiagnosticSeverity.Warning,
-			vscode.DiagnosticSeverity.Information,
-			vscode.DiagnosticSeverity.Hint,
-		]
+		options: FormatDiagnosticsOptions
 	): Promise<string | undefined> {
 		const allDiagnostics = DiagnosticService.getDiagnosticsForUri(documentUri);
 		if (!allDiagnostics || allDiagnostics.length === 0) {
 			return undefined;
 		}
 
-		let fileContentLines: string[] | undefined;
-		try {
-			// Read the content of the document URI asynchronously
-			// Removed '{ signal: token.signal }' as it's not supported by vscode.workspace.fs.readFile
-			const fileBuffer = await vscode.workspace.fs.readFile(documentUri);
-			fileContentLines = Buffer.from(fileBuffer)
-				.toString("utf8")
-				.split(/\r?\n/);
-		} catch (error: any) {
-			if (token?.isCancellationRequested) {
-				// Use optional chaining
-				// Propagate cancellation if it occurred during file read
-				throw new Error("Operation cancelled during file content read.");
-			}
-			// Handle specific FileSystemErrors or other errors gracefully
-			if (error instanceof vscode.FileSystemError) {
-				if (
-					error.code === "FileNotFound" ||
-					error.code === "EntryIsDirectory"
-				) {
-					console.warn(
-						`[DiagnosticService] Skipping code snippet for '${documentUri.fsPath}': ${error.message}`
-					);
-				} else {
-					console.error(
-						`[DiagnosticService] Error reading file content for snippet '${documentUri.fsPath}': ${error.message}`
-					);
-				}
-			} else {
-				console.error(
-					`[DiagnosticService] Unexpected error reading file content for snippet '${documentUri.fsPath}': ${error.message}`
-				);
-			}
-			// If file cannot be read, fileContentLines remains undefined, and snippet generation will be skipped.
-			fileContentLines = undefined;
+		const fileContentLines = options.fileContent.split(/\r?\n/);
+
+		const actualMaxTotalChars = options.maxTotalChars ?? 25000;
+		const actualMaxPerSeverity = options.maxPerSeverity ?? 25;
+		const actualSnippetContextLines = options.snippetContextLines ?? {
+			before: 3,
+			after: 3,
+		};
+
+		// Determine effective filtering and limits based on options.requestType
+		let effectiveIncludeSeverities = new Set(options.includeSeverities);
+		let effectiveMaxPerSeverity = actualMaxPerSeverity;
+		let effectiveMaxPerSeverityInfo = actualMaxPerSeverity / 2;
+		let effectiveMaxPerSeverityHint = actualMaxPerSeverity / 4;
+
+		if (options.requestType === "hint_only") {
+			// Focus on Information and Hints, potentially with higher limits for them.
+			effectiveIncludeSeverities = new Set([
+				...(options.includeSeverities.includes(
+					vscode.DiagnosticSeverity.Information
+				)
+					? [vscode.DiagnosticSeverity.Information]
+					: []),
+				...(options.includeSeverities.includes(vscode.DiagnosticSeverity.Hint)
+					? [vscode.DiagnosticSeverity.Hint]
+					: []),
+			]);
+			effectiveMaxPerSeverity = Math.max(actualMaxPerSeverity, 30);
+			effectiveMaxPerSeverityInfo = Math.max(effectiveMaxPerSeverityInfo, 15);
+			effectiveMaxPerSeverityHint = Math.max(effectiveMaxPerSeverityHint, 10);
+		} else if (options.requestType === "full") {
+			// This is the comprehensive mode, similar to 'general' or 'explain' previously.
+			// The defaults or explicit options.includeSeverities apply.
+			effectiveMaxPerSeverity = Math.max(actualMaxPerSeverity, 30);
+			effectiveMaxPerSeverityInfo = Math.max(effectiveMaxPerSeverityInfo, 10);
+			effectiveMaxPerSeverityHint = Math.max(effectiveMaxPerSeverityHint, 5);
 		}
 
 		let filteredDiagnostics: vscode.Diagnostic[] = [];
 
-		if (selection) {
+		if (options.selection) {
 			// Scenario 1: User has a selection - prioritize diagnostics within selection
 			filteredDiagnostics = allDiagnostics.filter(
 				(d) =>
-					selection?.intersection(d.range) &&
-					includeSeverities.includes(d.severity)
+					options.selection?.intersection(d.range) &&
+					effectiveIncludeSeverities.has(d.severity)
 			);
-			// Sort by severity (Error > Warning > Info > Hint) and then by line number
-			filteredDiagnostics.sort((a, b) => {
-				if (a.severity !== b.severity) {
-					return a.severity - b.severity; // Lower severity value means higher priority (Error=0, Warning=1...)
-				}
-				return a.range.start.line - b.range.start.line;
-			});
 		} else {
-			// Scenario 2: No selection (whole file) - filter by includeSeverities
+			// Scenario 2: No selection (whole file) - filter by effectiveIncludeSeverities
 			const relevantDiagnostics = allDiagnostics.filter((d) =>
-				includeSeverities.includes(d.severity)
+				effectiveIncludeSeverities.has(d.severity)
 			);
 
 			const errors = relevantDiagnostics.filter(
@@ -133,28 +138,53 @@ export class DiagnosticService {
 				(d) => d.severity === vscode.DiagnosticSeverity.Hint
 			);
 
-			// Sort each group by line number
-			errors.sort((a, b) => a.range.start.line - b.range.start.line);
-			warnings.sort((a, b) => a.range.start.line - b.range.start.line);
-			infos.sort((a, b) => a.range.start.line - b.range.start.line);
-			hints.sort((a, b) => a.range.start.line - b.range.start.line);
+			// Sort each group by line number, then character position
+			const sortFn = (a: vscode.Diagnostic, b: vscode.Diagnostic) => {
+				const lineDiff = a.range.start.line - b.range.start.line;
+				if (lineDiff !== 0) {
+					return lineDiff;
+				}
+				return a.range.start.character - b.range.start.character;
+			};
+			errors.sort(sortFn);
+			warnings.sort(sortFn);
+			infos.sort(sortFn);
+			hints.sort(sortFn);
 
-			// Combine: All errors, then limited warnings (if included), then limited infos (if included), etc.
+			// Combine: All errors, then limited warnings, then limited infos, etc.
 			filteredDiagnostics.push(...errors);
-			if (includeSeverities.includes(vscode.DiagnosticSeverity.Warning)) {
-				filteredDiagnostics.push(...warnings.slice(0, maxPerSeverity));
+			if (effectiveIncludeSeverities.has(vscode.DiagnosticSeverity.Warning)) {
+				filteredDiagnostics.push(...warnings.slice(0, effectiveMaxPerSeverity));
 			}
-			if (includeSeverities.includes(vscode.DiagnosticSeverity.Information)) {
-				filteredDiagnostics.push(...infos.slice(0, maxPerSeverity / 2)); // Half as many infos
+			if (
+				effectiveIncludeSeverities.has(vscode.DiagnosticSeverity.Information)
+			) {
+				filteredDiagnostics.push(
+					...infos.slice(0, effectiveMaxPerSeverityInfo)
+				);
 			}
-			if (includeSeverities.includes(vscode.DiagnosticSeverity.Hint)) {
-				filteredDiagnostics.push(...hints.slice(0, maxPerSeverity / 4)); // Even fewer hints
+			if (effectiveIncludeSeverities.has(vscode.DiagnosticSeverity.Hint)) {
+				filteredDiagnostics.push(
+					...hints.slice(0, effectiveMaxPerSeverityHint)
+				);
 			}
 		}
 
 		if (filteredDiagnostics.length === 0) {
 			return undefined;
 		}
+
+		// Final sorting of combined diagnostics: severity (Error > Warning > Info > Hint), then line, then character
+		filteredDiagnostics.sort((a, b) => {
+			if (a.severity !== b.severity) {
+				return a.severity - b.severity; // Lower severity value means higher priority (Error=0, Warning=1...)
+			}
+			const lineDiff = a.range.start.line - b.range.start.line;
+			if (lineDiff !== 0) {
+				return lineDiff;
+			}
+			return a.range.start.character - b.range.start.character;
+		});
 
 		let diagnosticsString = "--- Relevant Diagnostics ---\n";
 		let currentLength = diagnosticsString.length;
@@ -163,9 +193,7 @@ export class DiagnosticService {
 			.replace(/\\/g, "/");
 
 		for (const diag of filteredDiagnostics) {
-			if (token?.isCancellationRequested) {
-				// Use optional chaining
-				// Stop adding diagnostics if cancellation is requested
+			if (options.token?.isCancellationRequested) {
 				diagnosticsString += `... (${
 					filteredDiagnostics.length - filteredDiagnostics.indexOf(diag)
 				} more diagnostics truncated due to cancellation)\n`;
@@ -174,18 +202,41 @@ export class DiagnosticService {
 
 			let diagLine = `- [${getSeverityName(diag.severity)}] ${relativePath}:${
 				diag.range.start.line + 1
-			}:${diag.range.start.character + 1} - ${diag.message}`; // No newline here yet, add after snippet
+			}:${diag.range.start.character + 1} - ${diag.message}`;
+
+			if (diag.code) {
+				diagLine += ` (Code: ${
+					typeof diag.code === "object" ? diag.code.value : diag.code
+				})`;
+			}
+			if (diag.source) {
+				diagLine += ` (Source: ${diag.source})`;
+			}
+			diagLine += "\n"; // Add newline for the diagnostic message itself
 
 			let codeSnippetString = "";
 			if (fileContentLines && fileContentLines.length > 0) {
-				// Calculate snippet lines, ensuring bounds are respected
-				const snippetStartLine = Math.max(0, diag.range.start.line - 5);
+				const diagnosticSpan = diag.range.end.line - diag.range.start.line;
+
+				// Dynamically adjust snippet context based on span
+				let linesBefore = actualSnippetContextLines.before;
+				let linesAfter = actualSnippetContextLines.after;
+
+				// If it's a multi-line issue, ensure we capture the full span plus a buffer
+				if (diagnosticSpan > 0) {
+					linesBefore = Math.max(linesBefore, 1); // At least 1 line before
+					linesAfter = Math.max(linesAfter, 1); // At least 1 line after
+				}
+
+				const snippetStartLine = Math.max(
+					0,
+					diag.range.start.line - linesBefore
+				);
 				const snippetEndLine = Math.min(
 					fileContentLines.length - 1,
-					diag.range.end.line + 5
+					diag.range.end.line + linesAfter
 				);
 
-				// Ensure snippetEndLine is not less than snippetStartLine (e.g., for very short files or diagnostics at line 0)
 				const actualSnippetEndLine = Math.max(snippetStartLine, snippetEndLine);
 
 				const snippetLines = fileContentLines.slice(
@@ -193,17 +244,14 @@ export class DiagnosticService {
 					actualSnippetEndLine + 1
 				);
 
-				// Determine markdown language ID based on file extension
 				let languageId = path
 					.extname(documentUri.fsPath)
 					.substring(1)
 					.toLowerCase();
 				if (!languageId) {
-					// Fallback for files without extension (e.g., Dockerfile, LICENSE)
 					languageId = path.basename(documentUri.fsPath).toLowerCase();
 				}
 
-				// Map common extensions/filenames to widely recognized markdown language IDs
 				const languageMap: { [key: string]: string } = {
 					ts: "typescript",
 					js: "javascript",
@@ -230,7 +278,6 @@ export class DiagnosticService {
 					sql: "sql",
 					dockerfile: "dockerfile",
 					makefile: "makefile",
-					// Specific files without common extensions
 					gitignore: "ignore",
 					eslintignore: "ignore",
 					prettierignore: "ignore",
@@ -249,28 +296,64 @@ export class DiagnosticService {
 				};
 				languageId = languageMap[languageId] || "plaintext";
 
-				// Format each snippet line with padded line numbers for alignment
 				const maxLineNumLength = String(actualSnippetEndLine + 1).length;
-				const formattedSnippetLines = snippetLines
-					.map((line, index) => {
-						const currentLineNum = snippetStartLine + index + 1; // 1-indexed line number
-						const paddedLineNum = String(currentLineNum).padStart(
-							maxLineNumLength,
-							" "
-						);
-						return `${paddedLineNum}: ${line}`;
-					})
-					.join("\n");
+				const formattedSnippetLines: string[] = [];
 
-				codeSnippetString = `\n  Code snippet:\n\`\`\`${languageId}\n${formattedSnippetLines}\n\`\`\`\n`;
+				for (let i = 0; i < snippetLines.length; i++) {
+					const currentFileContentLineNum = snippetStartLine + i; // 0-indexed line number in original file
+					const displayLineNum = currentFileContentLineNum + 1; // 1-indexed for display
+					const lineContent = snippetLines[i];
+					const paddedLineNum = String(displayLineNum).padStart(
+						maxLineNumLength,
+						" "
+					);
+
+					let highlightedLine = `${paddedLineNum}: ${lineContent}`;
+					let markerLine = "";
+
+					const isDiagnosticLine =
+						currentFileContentLineNum >= diag.range.start.line &&
+						currentFileContentLineNum <= diag.range.end.line;
+
+					if (isDiagnosticLine) {
+						let startChar = 0;
+						let endChar = lineContent.length;
+
+						if (currentFileContentLineNum === diag.range.start.line) {
+							startChar = diag.range.start.character;
+						}
+						if (currentFileContentLineNum === diag.range.end.line) {
+							endChar = diag.range.end.character;
+						}
+
+						// If startChar is beyond endChar (e.g., empty diagnostic range), adjust
+						if (startChar > endChar) {
+							startChar = endChar;
+						}
+
+						// Create a marker line if there's an actual range to highlight on this line
+						if (endChar > startChar) {
+							const markerPadding = " ".repeat(
+								maxLineNumLength + 2 + startChar
+							); // +2 for ": "
+							const marker = "^".repeat(endChar - startChar);
+							markerLine = `${markerPadding}${marker} <-- ISSUE\n`;
+						}
+					}
+					formattedSnippetLines.push(highlightedLine);
+					if (markerLine) {
+						formattedSnippetLines.push(markerLine);
+					}
+				}
+
+				codeSnippetString = `Code snippet (${relativePath}, Line ${
+					snippetStartLine + 1
+				}):\n\`\`\`${languageId}\n${formattedSnippetLines.join("")}\n\`\`\`\n`; // Join with empty string because newlines are already in `formattedSnippetLines`
 			}
 
-			// Append the code snippet to the diagnostic line
 			diagLine += codeSnippetString;
-			diagLine += "\n"; // Add the newline character at the very end of the full diagnostic entry
 
-			// Check if adding this diagnostic (with its snippet) would exceed the total character limit
-			if (currentLength + diagLine.length > maxTotalChars) {
+			if (currentLength + diagLine.length > actualMaxTotalChars) {
 				diagnosticsString += `... (${
 					filteredDiagnostics.length - filteredDiagnostics.indexOf(diag)
 				} more diagnostics truncated)\n`;
@@ -290,7 +373,7 @@ export class DiagnosticService {
 	 * @param uri The URI of the document to monitor.
 	 * @param token A CancellationToken to abort the waiting.
 	 * @param timeoutMs The maximum time to wait in milliseconds. Defaults to 10000ms (10 seconds).
-	 * @param checkIntervalMs The interval between checks in milliseconds. Defaults to 500ms.
+	 * @param checkIntervalMs The base interval between checks in milliseconds. Defaults to 500ms.
 	 * @param requiredStableChecks The number of consecutive checks without change required for stability. Defaults to 10.
 	 * @returns A Promise that resolves when diagnostics stabilize or timeout/cancellation occurs.
 	 */
@@ -303,27 +386,26 @@ export class DiagnosticService {
 	): Promise<void> {
 		console.log(
 			`[DiagnosticService] Waiting for diagnostics to stabilize for ${uri.fsPath} ` +
-				`with timeoutMs=${timeoutMs}, checkIntervalMs=${checkIntervalMs}, ` +
+				`with timeoutMs=${timeoutMs}, baseCheckIntervalMs=${checkIntervalMs}, ` +
 				`requiredStableChecks=${requiredStableChecks}...`
 		);
 		const startTime = Date.now();
 		let lastDiagnosticsString: string | undefined;
 		let stableCount = 0;
+		let consecutiveUnstableChecks = 0;
+		const maxJitter = checkIntervalMs * 0.2; // 20% jitter
+		const maxBackoffDelay = 5000; // Max 5 seconds additional backoff per unstable check
 
 		while (Date.now() - startTime < timeoutMs) {
-			// Check for cancellation request
 			if (token?.isCancellationRequested) {
 				console.log(
 					`[DiagnosticService] Waiting for diagnostics cancelled for ${uri.fsPath}.`
 				);
-				return; // Exit if cancelled
+				return;
 			}
 
-			// Retrieve current diagnostics for the URI
 			const currentDiagnostics = vscode.languages.getDiagnostics(uri);
 
-			// Sort diagnostics for consistent stringification.
-			// This ensures that the order of diagnostics doesn't affect the stability check.
 			currentDiagnostics.sort((a, b) => {
 				const cmpSeverity = a.severity - b.severity;
 				if (cmpSeverity !== 0) {
@@ -340,41 +422,60 @@ export class DiagnosticService {
 				return a.message.localeCompare(b.message);
 			});
 
-			// Stringify the diagnostics for reliable comparison.
-			// Include essential properties like severity, message, range, and code.
 			const currentDiagnosticsString = JSON.stringify(
 				currentDiagnostics.map((d) => ({
 					severity: d.severity,
 					message: d.message,
 					range: d.range,
-					code: d.code, // Include code property for more robust comparison
+					code: d.code,
+					source: d.source, // Include source for more robust comparison
 				}))
 			);
 
-			// Check if diagnostics have stabilized
 			if (lastDiagnosticsString === currentDiagnosticsString) {
 				stableCount++;
-				// If diagnostics have remained the same for the required number of checks, consider them stable
+				console.log(
+					`[DiagnosticService] Diagnostics stable (${stableCount}/${requiredStableChecks}) for ${uri.fsPath}.`
+				);
 				if (stableCount >= requiredStableChecks) {
 					console.log(
 						`[DiagnosticService] Diagnostics stabilized for ${
 							uri.fsPath
 						} after ${Date.now() - startTime}ms.`
 					);
-					return; // Stability achieved
+					return;
 				}
+				consecutiveUnstableChecks = 0; // Reset unstable counter on stability
 			} else {
-				stableCount = 0; // Reset counter if diagnostics changed
+				console.log(
+					`[DiagnosticService] Diagnostics changed for ${uri.fsPath}. Resetting stability counter.`
+				);
+				stableCount = 0;
+				consecutiveUnstableChecks++;
 			}
 
-			// Update the last diagnostics string for the next iteration
 			lastDiagnosticsString = currentDiagnosticsString;
 
-			// Wait for the specified interval before the next check
-			await sleep(checkIntervalMs); // Assuming sleep is available in scope
+			let actualCheckInterval = checkIntervalMs;
+
+			// Implement exponential backoff with jitter
+			if (consecutiveUnstableChecks > 0) {
+				const backoffFactor = Math.pow(1.2, consecutiveUnstableChecks - 1); // Exponential increase
+				const jitter = Math.random() * maxJitter;
+				actualCheckInterval = Math.min(
+					checkIntervalMs * backoffFactor + jitter,
+					checkIntervalMs + maxBackoffDelay // Cap the total backoff
+				);
+			}
+
+			console.log(
+				`[DiagnosticService] Next check for ${
+					uri.fsPath
+				} in ${actualCheckInterval.toFixed(0)}ms.`
+			);
+			await sleep(actualCheckInterval);
 		}
 
-		// If the loop finishes due to timeout, log a warning
 		console.warn(
 			`[DiagnosticService] Timeout (${timeoutMs}ms) waiting for diagnostics to stabilize for ${uri.fsPath}. Diagnostics might not be fully up-to-date.`
 		);

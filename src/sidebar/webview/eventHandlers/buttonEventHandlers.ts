@@ -117,14 +117,21 @@ export function initializeButtonEventListeners(
 
 	// Previous Key Button
 	prevKeyButton.addEventListener("click", () => {
-		postMessageToExtension({ type: "switchToPrevKey" });
-		updateApiKeyStatus(elements, "Switching key..."); // Pass elements
+		if (appState.totalKeys > 1) {
+			const newIndex =
+				(appState.activeIndex - 1 + appState.totalKeys) % appState.totalKeys;
+			postMessageToExtension({ type: "setApiActiveKey", value: newIndex });
+			updateApiKeyStatus(elements, "Switching key...");
+		}
 	});
 
 	// Next Key Button
 	nextKeyButton.addEventListener("click", () => {
-		postMessageToExtension({ type: "switchToNextKey" });
-		updateApiKeyStatus(elements, "Switching key..."); // Pass elements
+		if (appState.totalKeys > 1) {
+			const newIndex = (appState.activeIndex + 1) % appState.totalKeys;
+			postMessageToExtension({ type: "setApiActiveKey", value: newIndex });
+			updateApiKeyStatus(elements, "Switching key...");
+		}
 	});
 
 	// Delete Key Button
@@ -202,7 +209,9 @@ export function initializeButtonEventListeners(
 		if (stats.modelUsagePercentages && stats.modelUsagePercentages.length > 0) {
 			statsString += `\nModel Usage Percentages:\n`;
 			for (const [modelName, percentage] of stats.modelUsagePercentages) {
-				statsString += `- ${modelName}: ${percentage.toFixed(2)}%\n`;
+				statsString += `- ${modelName} (with Thinking Mode): ${percentage.toFixed(
+					2
+				)}%\n`;
 			}
 		} else {
 			statsString += `\nNo specific model usage data available.\n`;

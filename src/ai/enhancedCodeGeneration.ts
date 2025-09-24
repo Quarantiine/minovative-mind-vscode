@@ -59,7 +59,12 @@ export class EnhancedCodeGenerator {
 		modelName: string,
 		token?: vscode.CancellationToken,
 		generationConfig?: GenerationConfig // New parameter
-	): Promise<{ content: string; validation: CodeValidationResult }> {
+	): Promise<{
+		content: string;
+		validation: CodeValidationResult;
+		actualPath: string;
+	}> {
+		// Modified return type
 		const languageId = getLanguageId(path.extname(filePath));
 		const streamId = crypto.randomUUID();
 
@@ -90,16 +95,25 @@ export class EnhancedCodeGenerator {
 				return {
 					content: initialResult.finalContent,
 					validation: initialResult,
+					actualPath: initialResult.actualPath || filePath, // Return actualPath
 				};
 			}
 			const validation = await this.codeValidationService.validateCode(
-				filePath,
+				initialResult.actualPath || filePath, // Validate with the actual path
 				initialResult.finalContent
 			);
-			const result = { content: validation.finalContent, validation };
+			const result = {
+				content: validation.finalContent,
+				validation,
+				actualPath: initialResult.actualPath || filePath,
+			}; // Modified return
 			this.postMessageToWebview({
 				type: "codeFileStreamEnd",
-				value: { streamId, filePath, success: true },
+				value: {
+					streamId,
+					filePath: initialResult.actualPath || filePath,
+					success: true,
+				}, // Use actualPath
 			});
 			return result;
 		} catch (error: any) {
@@ -118,7 +132,7 @@ export class EnhancedCodeGenerator {
 					type: "codeFileStreamEnd",
 					value: {
 						streamId,
-						filePath,
+						filePath, // Cannot reliably get actualPath here, use initial for error logging
 						success: false,
 						error: error instanceof Error ? error.message : String(error),
 					},
@@ -242,8 +256,9 @@ export class EnhancedCodeGenerator {
 		streamId: string,
 		token?: vscode.CancellationToken,
 		onCodeChunkCallback?: (chunk: string) => Promise<void> | void,
-		generationConfig?: GenerationConfig // New parameter
-	): Promise<CodeValidationResult> {
+		generationConfig?: GenerationConfig
+	): Promise<CodeValidationResult & { actualPath?: string }> {
+		// Modified return type
 		const enhancedPrompt = createEnhancedGenerationPrompt(
 			filePath,
 			generatePrompt,
@@ -270,6 +285,7 @@ export class EnhancedCodeGenerator {
 				)}...`
 			); // Log first 500 chars
 
+			let finalPath = filePath;
 			const extractedContent = this._extractTargetFileContent(
 				rawContent,
 				filePath
@@ -277,7 +293,7 @@ export class EnhancedCodeGenerator {
 
 			if (extractedContent === null) {
 				console.warn(
-					`[EnhancedCodeGenerator] No content extracted for target file ${filePath} from AI response.`
+					`[EnhancedCodeGenerator] No content extracted for target file ${finalPath} from AI response.` // Use finalPath
 				);
 				return {
 					isValid: false,
@@ -285,7 +301,7 @@ export class EnhancedCodeGenerator {
 					issues: [
 						{
 							type: "other",
-							message: `AI output did not contain the expected file content for ${filePath}. It might have included content for other files or was malformed.`,
+							message: `AI output did not contain the expected file content for ${finalPath}. It might have included content for other files or was malformed.`,
 							line: 1,
 							severity: "error",
 							code: "AI_CONTENT_EXTRACTION_FAILED",
@@ -296,14 +312,15 @@ export class EnhancedCodeGenerator {
 						"Refine your prompt to ensure the AI explicitly provides the content for the target file.",
 						"Instruct the AI to clearly mark the file content, e.g., with `// path/to/file.ts` followed by code.",
 					],
+					actualPath: finalPath,
 				};
 			}
 
 			console.log(
-				`[EnhancedCodeGenerator] Successfully extracted content for ${filePath}:\n${extractedContent.substring(
+				`[EnhancedCodeGenerator] Successfully extracted content for ${finalPath}:\n${extractedContent.substring(
 					0,
 					500
-				)}...`
+				)}...` // Use finalPath
 			);
 
 			const cleanedExtractedContent = cleanCodeOutput(extractedContent);
@@ -330,13 +347,15 @@ export class EnhancedCodeGenerator {
 						"Refine your prompt. The AI might be confused by the request or existing file context.",
 						"Ensure the AI is instructed to provide the full file content, not just a snippet or placeholder.",
 					],
+					actualPath: finalPath,
 				};
 			}
 
-			return this.codeValidationService.checkPureCodeFormat(
+			const validationResult = this.codeValidationService.checkPureCodeFormat(
 				cleanedExtractedContent,
 				false
 			);
+			return { ...validationResult, actualPath: finalPath }; // NEW: Include finalPath
 		} catch (error: any) {
 			// Re-throw the error to be handled by the PlanExecutorService's retry logic.
 			// This prevents silent failures where an empty file is created.
@@ -492,13 +511,14 @@ export class EnhancedCodeGenerator {
 		// It handles:
 		// - `// path/to/file.ts`
 		// - `/* path/to/file.ts */`
-		// - `--- Relevant File: path/to/file.ts ---` (often followed by ```lang ... ```)
-		// - `Path: path/to/file.ts` (often followed by ```lang ... ```)
+		// - `--- Relevant File: path/to/file.ts ---` (often followed by lang ... )
+		// - `Path: path/to/file.ts` (often followed by lang ... )
+		// Also ensure it can handle the Suggested Path before the content
 		const regex = new RegExp(
-			`(?://\\s*|/\\*\\s*|--- Relevant File:\\s*|Path:\\s*)[\\s\\"\\']?(${normalizedTargetFilePath.replace(
+			`(?://\\s*|/\\*\\s*|--- Relevant File:\\s*|Path:\\s*|Suggested Path:\\s*)[\\s\"\\']?(${normalizedTargetFilePath.replace(
 				/[.*+?^${}()|[\]\\]/g,
 				"\\$&"
-			)})[\\s\\"\\']?(?:\\s*\\*/)?(?:\\s*---)?(?:\\s*\\n)?\\s*(?:\\\`{3}[a-zA-Z]*\\n)?([\\s\\S]*?)(?=\\n(?:\\\`{3}|(?://|/\\*|--- Relevant File:|Path:)\\s*(?!\\\`{3}))|$)`,
+			)})[\\s\"\\']?(?:\\s*\\*/)?(?:\\s*---)?(?:\\s*\\n)?\\s*(?:\\\`{3}[a-zA-Z]*\\n)?([\\s\\S]*?)(?=\\n(?:\\\`{3}|(?://|/\\*|--- Relevant File:|Path:|Suggested Path:)\\s*(?!\\\`{3}))|$)`,
 			"gm"
 		);
 
@@ -508,7 +528,26 @@ export class EnhancedCodeGenerator {
 
 		while ((match = regex.exec(rawResponse)) !== null) {
 			const matchedFilePath = match[1];
-			const contentBlock = match[2].trim();
+			let contentBlock = match[2].trim();
+
+			// Strip leading/trailing code fences if present from content block
+			// A more robust check for a fence might be needed here, as AI can be inconsistent.
+			// If the content starts with '```' and ends with '```', assume it's a fenced block.
+			// The regex for extraction already tries to exclude them, but as a fallback.
+			if (contentBlock.startsWith("```") && contentBlock.endsWith("```")) {
+				const lines = contentBlock.split("\n");
+				// Check if the first line starts with '```' (possibly with language) and last line is '```'
+				if (
+					lines.length >= 2 &&
+					lines[0].startsWith("```") &&
+					lines[lines.length - 1].trim() === "```"
+				) {
+					contentBlock = lines
+						.slice(1, lines.length - 1)
+						.join("\n")
+						.trim();
+				}
+			}
 
 			if (
 				matchedFilePath === normalizedTargetFilePath ||

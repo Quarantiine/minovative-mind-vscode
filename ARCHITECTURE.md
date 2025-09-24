@@ -1,6 +1,6 @@
 # The Holy Grail of AI agents: Minovative Mind, an Integrated AI-Driven Development & Automation Platform for VS Code
 
-A deeper analysis of the file structure, class responsibilities, and how different components interact, here is a more comprehensive breakdown of the systems that work together in this project. This results in approximately **7** core, distinct systems:
+A deeper analysis of the file structure, class responsibilities, and how different components interact, here is a more comprehensive breakdown of the systems that work together in this project. This results in approximately **6** core, distinct systems:
 
 ## In a nutshell, Minovative Mind is powered by
 
@@ -10,33 +10,62 @@ A deeper analysis of the file structure, class responsibilities, and how differe
 
 ---
 
-## The [Creator](https://github.com/Quarantiine) himself intelligently vibe coded these systems below mostly using the AI agent itself to build the monolithic application you see below
+### Context Management (Project Understanding)
 
-### Core Extension (Foundation)
+- **Responsibility**: Gathers, processes, and synthesizes all relevant contextual data from the user's project and external sources to provide AI models with a deep and accurate understanding of the codebase and task at hand.
+- **Uses AI**: Yes (for smart context selection and sequential context processing/summarization)
 
-- **Responsibility**: Handles the main VS Code extension lifecycle, including activation, deactivation, and registration of top-level commands that initiate workflows. It serves as the entry point and orchestrator for the extension's overall functionality, providing core commands and user interaction mechanisms.
-- **Uses AI**: No (Indirectly, by prefilling prompts for AI services)
+#### 1. Workspace File Scanning
 
-#### 1. VS Code Extension Core
+- **Responsibility**: Efficiently scans the VS Code workspace to discover and identify relevant project files and directories, respecting `.gitignore` rules and applying configurable filters. It also utilizes caching for performance.
+- **Enhancement Note**: The scanned workspace files are now presented through a rich, interactive 'Open File List' UI in the sidebar, complete with search, filtering, and keyboard navigation, significantly improving user discoverability and file selection workflows.
+- **Key Files**: `src/context/workspaceScanner.ts` (`scanWorkspace`, `clearScanCache`, `getScanCacheStats`)
 
-- **Responsibility**: Manages the core lifecycle of the VS Code extension, including activation, deactivation, and registration of main commands.
-- **Key Files**: `src/extension.ts`
+#### 2. Code & Project Structure Analysis
 
-#### 2. Expanded `modifySelection` Command Workflow
+- **Responsibility**: Provides deep insights into the project's codebase, including extracting document symbols, fetching and formatting diagnostic information, detecting project type, and building dependency graphs.
+- **Key Components**:
+  - **Document Symbols**: `src/services/symbolService.ts` (retrieves detailed symbol information).
+  - **Diagnostic Information**: `src/utils/diagnosticUtils.ts` (retrieves and formats real-time diagnostic data).
+  - **Project Type Detection**: `src/services/projectTypeDetector.ts` (analyzes manifests and file structures).
+  - **Dependency Graph**: `src/context/dependencyGraphBuilder.ts` (analyzes import/export statements).
+- **Key Files**: `src/services/symbolService.ts`, `src/utils/diagnosticUtils.ts`, `src/services/projectTypeDetector.ts`, `src/context/dependencyGraphBuilder.ts`
 
-- **Responsibility**: Provides a streamlined interface for various AI-driven code modifications, accessible via `ctrl+m` or the editor context menu. It intelligently selects relevant code and orchestrates the prefilling of chat input for AI operations.
-- **Action Selection**: Presents a quick pick menu for actions like `/fix`, `/merge`, `chat`, or `custom prompt`.
-- **Intelligent Code Selection**: Automatically selects relevant code based on diagnostics (for `/fix`), Git conflicts (for `/merge`), or active file context.
-- **Workflow Orchestration**: Prefills a `composedMessage` into the sidebar chat input, allowing user review before initiating the AI operation.
-- **Key Files**: `src/extension.ts`, `src/services/codeSelectionService.ts`, `src/utils/diagnosticUtils.ts`, `src/utils/mergeUtils.ts`
+##### Diagnostic Context Integration
 
-#### 3. Refined `executeExplainAction` Implementation
+This system ensures that diagnostic information, particularly 'Information' and 'Hint' level messages, are effectively integrated into the AI's context for enhanced decision-making during code generation and modification.
 
-- **Responsibility**: Offers a direct command to explain selected code, ensuring clarity and consistency with the overall AI request orchestration.
-- **Mechanism**: Captures user selection, constructs a precise prompt for AI explanation, and sends it to `aiRequestService.generateWithRetry`.
-- **Error Handling**: Handles `ERROR_QUOTA_EXCEEDED` and other `gemini.ts` errors with user-friendly notifications.
-- **Model Usage**: Consistently uses `DEFAULT_FLASH_LITE_MODEL` for quick, cost-effective explanations.
-- **Key Files**: `src/extension.ts`, `src/ai/gemini.ts`, `src/services/aiRequestService.ts`, `src/utils/codeUtils.ts`
+**Process Overview:**
+
+1. **Capture and Formatting**: The `DiagnosticService` (or utilities within `diagnosticUtils.ts`) captures VS Code diagnostics. These diagnostics are then formatted into a human-readable string representation, including severity, message, file path, and line/character information. This formatted string is intended to be passed as `formattedDiagnostics` within the context object.
+2. **Contextual Embedding**: While not directly appended to `relevantSnippets` string representation in the most direct sense (as `relevantSnippets` typically holds code content), the formatted diagnostic information is incorporated into the `EnhancedGenerationContext`. The `createEnhancedGenerationPrompt` and `createEnhancedModificationPrompt` functions specifically check for and include the `formattedDiagnostics` property from the context if it exists.
+3. **AI Contextualization**: The `EnhancedGenerationContext` object aggregates various contextual data. When constructing prompts, the `formattedDiagnostics` property makes the diagnostic data available for inclusion in the prompt itself, providing the AI with direct insight into code quality issues or hints.
+4. **Prompt Engineering**: Prompt generation functions, specifically `createEnhancedGenerationPrompt` and `createEnhancedModificationPrompt`, are designed to conditionally include the `formattedDiagnostics` string. They dynamically construct prompts that present the AI with the code, project structure, and crucially, the relevant diagnostic information alongside other contextual elements.
+5. **Informed AI Decisions**: By receiving this integrated diagnostic context within the prompt, the AI can make more informed and accurate decisions. It can leverage hints and informational messages to refine its output, address potential issues proactively, and align its actions more closely with the project's current state and quality requirements.
+
+**Key Components Involved**: `DiagnosticService` (conceptual, likely implemented within `diagnosticUtils.ts`), `EnhancedGenerationContext` (type definition), `createEnhancedGenerationPrompt`, `createEnhancedModificationPrompt`, `AIRequestService` (for sending the prompt).
+
+**Goal**: To enrich the AI's understanding with real-time diagnostic insights, leading to higher quality and more contextually appropriate code generation and modification.
+
+#### 3. Advanced Context Building & AI-Driven Selection
+
+- **Responsibility**: Orchestrates the entire process of building highly relevant, semantic-aware contextual data for AI models. It prioritizes functional and semantic relationships between files over simple import chains, avoiding an increase in direct import dependency depth.
+- **Key Features**:
+  - **AI Prompt Engineering (`src/context/smartContextSelector.ts`)**: The AI-driven file selection mechanism is enhanced to focus on deeper semantic and functional relevance, moving beyond basic import statements. It leverages comprehensive symbol information and file content summaries to make more intelligent decisions.
+  - **Heuristic Pre-selection (`src/context/heuristicContextSelector.ts`)**: Improved heuristics provide a more accurate initial set of candidate files, which are then further refined by the AI.
+  - **Semantic Summarization (`src/context/fileContentProcessor.ts`)**: Files are intelligently summarized, capturing their core purpose and abstractions, making them more digestible and relevant for AI context building.
+  - **Workspace Scanning and Project Type Detection**: Initiates with `scanWorkspace` and `detectProjectType` for foundational context.
+  - **Comprehensive `activeSymbolDetailedInfo` Gathering**: Gathers detailed symbol information (definitions, implementations, references, call hierarchy) for precise AI modifications.
+  - **Sequential Project Context (`buildSequentialProjectContext`)**: Handles very large codebases by processing and summarizing files in batches using `SequentialContextService`.
+  - **Performance Monitoring**: Monitors duration of operations and logs warnings for performance optimization.
+  - **Context Assembly**: Integrates all collected data into a cohesive, token-optimized prompt string (`buildContextString`).
+- **Key Files**: `src/context/smartContextSelector.ts`, `src/context/heuristicContextSelector.ts`, `src/context/fileContentProcessor.ts`, `src/services/contextService.ts`, `src/context/workspaceScanner.ts`, `src/context/dependencyGraphBuilder.ts`, `src/context/contextBuilder.ts`, `src/services/symbolService.ts`, `src/utils/diagnosticUtils.ts`, `src/services/sequentialContextService.ts`, `src/services/projectTypeDetector.ts`
+
+#### 4. URL Context Retrieval
+
+- **Responsibility**: Automatically identifies URLs in user input and fetches their content to provide additional contextual information for AI models.
+- **Key Methods**: `extractUrls`, `fetchUrlContext`, `parseHtmlContent`, `formatUrlContexts`.
+- **Key Files**: `src/services/urlContextService.ts`
 
 ### AI Services (Core AI Interaction)
 
@@ -50,6 +79,7 @@ A deeper analysis of the file structure, class responsibilities, and how differe
 - **Enhanced `initializeGenerativeAI` Logic**: Leverages `systemInstruction` (`MINO_SYSTEM_INSTRUCTION`) for consistent AI persona and tracks `currentToolsHash` for optimization.
 - **Robust Streaming (`generateContentStream`)**: Provides `AsyncIterableIterator` for real-time responses, integrates `CancellationToken` support, and includes comprehensive error handling.
 - **Function Call Generation (`generateFunctionCall`)**: Enables the AI to generate structured function calls based on `tools`, supporting `FunctionCallingMode` for fine-grained control.
+- **API Key Management**: The `ApiKeyManager` class is now responsible for managing API key storage, retrieval, and the selection of the currently active key. It utilizes `vscode.SecretStorage` for securely storing multiple API keys in a JSON format. The `initializeGenerativeAI` function in `gemini.ts` obtains the currently active API key from `ApiKeyManager` before initializing the Gemini client.
 - **Key Files**: `src/ai/gemini.ts`, `src/ai/prompts/systemInstructions.ts`
 
 #### 2. AI Request Orchestration & Robustness
@@ -57,6 +87,7 @@ A deeper analysis of the file structure, class responsibilities, and how differe
 - **Responsibility**: Manages the overall process of making AI requests with a focus on reliability and efficiency, including retry logic, cancellation handling, parallel processing, and token usage reporting.
 - **Key Features**: Implements robust retry logic for transient errors, handles cancellation requests, orchestrates concurrent AI calls through `src/utils/parallelProcessor.ts`, and reports token usage to `src/services/tokenTrackingService.ts`.
 - **Function Calling Mode**: Accepts and forwards `functionCallingMode` to enforce specific modes (e.g., `FunctionCallingMode.ANY` for plan generation).
+- **API Key Dependency**: The `AIRequestService` has a dependency on `ApiKeyManager`. Methods such as `generateWithRetry` retrieve the active API key by interacting with `ApiKeyManager` to ensure the correct key is used for AI operations.
 - **Key Files**: `src/services/aiRequestService.ts` (`AIRequestService` class, `generateWithRetry`, `generateMultipleInParallel`, `generateInBatches`, `processFilesInParallel`)
 
 #### 3. Token Usage Tracking
@@ -83,47 +114,6 @@ A deeper analysis of the file structure, class responsibilities, and how differe
 
 - **Responsibility**: Ensures the quality, correctness, and adherence to formatting standards of AI-generated or modified code by integrating with VS Code's diagnostic capabilities and implementing custom validation rules.
 - **Key Files**: `src/services/codeValidationService.ts` (`CodeValidationService` class, `validateCode`, `checkPureCodeFormat`)
-
-### Context Management (Project Understanding)
-
-- **Responsibility**: Gathers, processes, and synthesizes all relevant contextual data from the user's project and external sources to provide AI models with a deep and accurate understanding of the codebase and task at hand.
-- **Uses AI**: Yes (for smart context selection and sequential context processing/summarization)
-
-#### 1. Workspace File Scanning
-
-- **Responsibility**: Efficiently scans the VS Code workspace to discover and identify relevant project files and directories, respecting `.gitignore` rules and applying configurable filters. It also utilizes caching for performance.
-- **Enhancement Note**: The scanned workspace files are now presented through a rich, interactive 'Open File List' UI in the sidebar, complete with search, filtering, and keyboard navigation, significantly improving user discoverability and file selection workflows.
-- **Key Files**: `src/context/workspaceScanner.ts` (`scanWorkspace`, `clearScanCache`, `getScanCacheStats`)
-
-#### 2. Code & Project Structure Analysis
-
-- **Responsibility**: Provides deep insights into the project's codebase, including extracting document symbols, fetching and formatting diagnostic information, detecting project type, and building dependency graphs.
-- **Key Components**:
-  - **Document Symbols**: `src/services/symbolService.ts` (retrieves detailed symbol information).
-  - **Diagnostic Information**: `src/utils/diagnosticUtils.ts` (retrieves and formats real-time diagnostic data).
-  - **Project Type Detection**: `src/services/projectTypeDetector.ts` (analyzes manifests and file structures).
-  - **Dependency Graph**: `src/context/dependencyGraphBuilder.ts` (analyzes import/export statements).
-- **Key Files**: `src/services/symbolService.ts`, `src/utils/diagnosticUtils.ts`, `src/services/projectTypeDetector.ts`, `src/context/dependencyGraphBuilder.ts`
-
-#### 3. Advanced Context Building & AI-Driven Selection
-
-- **Responsibility**: Orchestrates the entire process of building highly relevant, semantic-aware contextual data for AI models. It prioritizes functional and semantic relationships between files over simple import chains, avoiding an increase in direct import dependency depth.
-- **Key Features**:
-  - **AI Prompt Engineering (`src/context/smartContextSelector.ts`)**: The AI-driven file selection mechanism is enhanced to focus on deeper semantic and functional relevance, moving beyond basic import statements. It leverages comprehensive symbol information and file content summaries to make more intelligent decisions.
-  - **Heuristic Pre-selection (`src/context/heuristicContextSelector.ts`)**: Improved heuristics provide a more accurate initial set of candidate files, which are then further refined by the AI.
-  - **Semantic Summarization (`src/context/fileContentProcessor.ts`)**: Files are intelligently summarized, capturing their core purpose and abstractions, making them more digestible and relevant for AI context building.
-  - **Workspace Scanning and Project Type Detection**: Initiates with `scanWorkspace` and `detectProjectType` for foundational context.
-  - **Comprehensive `activeSymbolDetailedInfo` Gathering**: Gathers detailed symbol information (definitions, implementations, references, call hierarchy) for precise AI modifications.
-  - **Sequential Project Context (`buildSequentialProjectContext`)**: Handles very large codebases by processing and summarizing files in batches using `SequentialContextService`.
-  - **Performance Monitoring**: Monitors duration of operations and logs warnings for performance optimization.
-  - **Context Assembly**: Integrates all collected data into a cohesive, token-optimized prompt string (`buildContextString`).
-- **Key Files**: `src/context/smartContextSelector.ts`, `src/context/heuristicContextSelector.ts`, `src/context/fileContentProcessor.ts`, `src/services/contextService.ts`, `src/context/workspaceScanner.ts`, `src/context/dependencyGraphBuilder.ts`, `src/context/contextBuilder.ts`, `src/services/symbolService.ts`, `src/utils/diagnosticUtils.ts`, `src/services/sequentialContextService.ts`, `src/services/projectTypeDetector.ts`
-
-#### 4. URL Context Retrieval
-
-- **Responsibility**: Automatically identifies URLs in user input and fetches their content to provide additional contextual information for AI models.
-- **Key Methods**: `extractUrls`, `fetchUrlContext`, `parseHtmlContent`, `formatUrlContexts`.
-- **Key Files**: `src/services/urlContextService.ts`
 
 ### Code Generation & Modification
 
@@ -281,6 +271,9 @@ A deeper analysis of the file structure, class responsibilities, and how differe
 - **Key Files**: `src/utils/commandExecution.ts` (`executeCommand` function), `src/services/planExecutorService.ts` (`_handleRunCommandStep`, `_isCommandSafe` methods)
 
 ---
+
+> Remember, Minovative Mind is designed to assist, not replace, the brilliance of human developers! Happy Coding!
+> Built by [Daniel Ward](https://github.com/Quarantiine), a USA based developer under Minovative (Minovative = minimal-innovative) Technologies [A DBA registered self-employed company in the US]
 
 > Remember, Minovative Mind is designed to assist, not replace, the brilliance of human developers! Happy Coding!
 > Built by [Daniel Ward](https://github.com/Quarantiine), a USA based developer under Minovative (Minovative = minimal-innovative) Technologies [A DBA registered self-employed company in the US]

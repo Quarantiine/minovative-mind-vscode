@@ -1,5 +1,4 @@
 import { WebviewAppState } from "../types/webviewTypes";
-import { FormattedTokenStatistics } from "../../common/sidebarTypes";
 
 export const appState: WebviewAppState = {
 	currentAiMessageContentElement: null,
@@ -25,6 +24,7 @@ export const appState: WebviewAppState = {
 	isPlanExecutionInProgress: false,
 	hasRevertibleChanges: false,
 	totalKeys: 0,
+	activeIndex: -1,
 	isTokenUsageVisible: false,
 	nextMessageIndex: 0,
 	selectedImages: [],

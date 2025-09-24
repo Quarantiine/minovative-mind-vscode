@@ -8,7 +8,8 @@ export async function getHtmlForWebview(
 	extensionUri: vscode.Uri,
 	availableModels: ModelInfo[],
 	selectedModel: string,
-	logoUri: vscode.Uri
+	logoUri: vscode.Uri,
+	workspaceRootUri: vscode.Uri | undefined
 ): Promise<string> {
 	const scriptUri = webview.asWebviewUri(
 		vscode.Uri.joinPath(extensionUri, "dist", "webview.js")
@@ -65,6 +66,18 @@ export async function getHtmlForWebview(
 			'<div class="chat-input-controls-wrapper">',
 			`${openFileListButtonHtml}<div class="chat-input-controls-wrapper">`
 		);
+
+		// Extract project folder name
+		let projectName: string;
+		if (workspaceRootUri) {
+			const pathSegments = workspaceRootUri.path.split("/");
+			projectName = pathSegments[pathSegments.length - 1] || "No Folder Open";
+		} else {
+			projectName = "No Folder Open";
+		}
+
+		// Replace __PROJECT_NAME__ placeholder
+		htmlContent = htmlContent.replace(/__PROJECT_NAME__/g, projectName);
 
 		return htmlContent;
 	} catch (e) {

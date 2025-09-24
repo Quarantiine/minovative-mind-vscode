@@ -70,6 +70,10 @@ const addApiKeySchema = z.object({
 	type: z.literal("addApiKey"),
 	value: z.string(),
 }); // Based on usage
+const setApiActiveKeySchema = z.object({
+	type: z.literal("setApiActiveKey"),
+	value: z.number().int().nonnegative(),
+});
 const requestDeleteConfirmationSchema = z.object({
 	type: z.literal("requestDeleteConfirmation"),
 });
@@ -150,6 +154,15 @@ const copyContextMessageSchema = z.object({
 	}),
 });
 
+const aiRetryNotificationSchema = z.object({
+	type: z.literal("aiRetryNotification"),
+	delayMs: z
+		.number()
+		.int()
+		.positive("Delay must be a positive number of milliseconds."),
+	reason: z.string().nonempty("Reason for retry notification cannot be empty."),
+});
+
 export const allMessageSchemas = z.discriminatedUnion("type", [
 	planRequestSchema,
 	chatMessageSchema,
@@ -167,6 +180,7 @@ export const allMessageSchemas = z.discriminatedUnion("type", [
 	getCurrentTokenEstimatesSchema,
 	openSidebarSchema,
 	addApiKeySchema,
+	setApiActiveKeySchema,
 	requestDeleteConfirmationSchema,
 	switchToNextKeySchema,
 	switchToPrevKeySchema,
@@ -188,6 +202,7 @@ export const allMessageSchemas = z.discriminatedUnion("type", [
 	requestWorkspaceFilesSchema, // Added here, before the final schema
 	newFeatureRequestSchema,
 	copyContextMessageSchema, // New schema added here
+	aiRetryNotificationSchema,
 ]);
 
 // Export individual schemas if they are needed for more granular error reporting
@@ -199,4 +214,5 @@ export {
 	newFeatureRequestSchema,
 	copyContextMessageSchema,
 	commitReviewSchema,
+	aiRetryNotificationSchema,
 };

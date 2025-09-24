@@ -160,7 +160,7 @@ Tailor Minovative Mind to your specific needs and preferences.
 
 ### 6.1 API & Model Settings
 
-- **Secure API Key Management**: Facilitates secure setup and storage of the Gemini API key.
+- **Secure API Key Management**: Facilitates secure setup and storage of the Gemini API key(s). The system supports the secure management and utilization of _multiple_ API keys, allowing users to configure and switch between them as needed.
 - **Flexible Model Selection**: Allows users to select preferred Gemini models (`gemini-2.5-pro`, `flash`, `flash-lite` - Thinking Mode) for different tasks, offering control over performance and cost.
 
 ### 6.2 Context Filtering
