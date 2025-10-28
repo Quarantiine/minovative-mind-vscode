@@ -4,8 +4,6 @@
 
 We as members, contributors, and leaders of the Minovative Mind project pledge to make participation in our community a harassment-free and inclusive experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
 
-We pledge to act and interact in ways that contribute to an open, welcoming, diverse, and healthy community.
-
 ## Our Standards
 
 Examples of behavior that contributes to a positive environment for our community include:
