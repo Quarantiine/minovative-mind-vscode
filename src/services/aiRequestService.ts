@@ -299,8 +299,33 @@ export class AIRequestService {
 							reason: "API Quota Exceeded. Retrying automatically.",
 						},
 					});
-					await new Promise((resolve) => setTimeout(resolve, currentDelay));
+
+					// Await a cancellable delay
+					await new Promise<void>((resolve) => {
+						if (!token) {
+							setTimeout(resolve, currentDelay);
+							return;
+						}
+
+						const timer = setTimeout(() => {
+							cancellationListener.dispose();
+							resolve();
+						}, currentDelay);
+
+						const cancellationListener = token.onCancellationRequested(() => {
+							clearTimeout(timer);
+							cancellationListener.dispose();
+							resolve(); // Resolve immediately to allow cancellation check to fire
+						});
+					});
+
 					if (token?.isCancellationRequested) {
+						console.log(
+							"[AIRequestService] Operation cancelled during quota backoff delay."
+						);
+						if (streamCallbacks?.onComplete) {
+							streamCallbacks.onComplete();
+						}
 						throw new Error(ERROR_OPERATION_CANCELLED);
 					}
 					consecutiveTransientErrorCount++;

@@ -77,7 +77,8 @@
             <h4>Get your API key to start: </h4>
           </div>
 
-          <li>Gemini API Key: <a href="https://aistudio.google.com/apikey">AI Studio</a></li>
+          <li>Gemini API Key (Required): <a href="https://aistudio.google.com/apikey">AI Studio</a></li>
+          <li>Your GCP: <a href="https://console.cloud.google.com/">Google Cloud Platform</a></li>
         </ul>
 
         <ul class="empty-chat-list">
@@ -106,9 +107,6 @@
             specific instruction
           </li>
         </ul>
-        <p style="color: white; opacity: 0.6;">Note: To use advanced models like
-          <code>gemini-2.5-pro</code>, an upgrade to a paid tier in Google AI Studio is required.
-        </p>
         <p style="color: white; opacity: 0.3; font-style: italic; font-weight: bold;">AI can make mistakes
         </p>
       </div>
@@ -152,8 +150,7 @@
         style="display: none; color: var(--vscode-editor-foreground); font-size: 0.85em; padding: 4px 0;"></div>
       <div id="edit-message-help-text"
         style="display: none; color: var(--vscode-editor-foreground); font-size: 0.85em; padding: 4px 0;"></div>
-      <textarea id="chat-input" rows="3"
-        placeholder="Chat with Mino, use '/' (commands), or find files '@'..."></textarea>
+      <textarea id="chat-input" rows="3" placeholder="Chat with Mino, use '/' (commands)"></textarea>
 
       <div class="input-action-buttons">
         <button id="send-button" title="Send Message">S</button>

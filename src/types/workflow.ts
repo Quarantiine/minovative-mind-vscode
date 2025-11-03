@@ -7,6 +7,7 @@ export interface FileChangeEntry {
 	addedLines?: string[];
 	removedLines?: string[];
 	diffContent?: string; // Formatted diff content string (lines prefixed with '+', '-', or ' ')
+	inversePatch?: string; // Lightweight patch used for easy reversion (usually replaces originalContent)
 	originalContent?: string; // Content before modification/deletion
 	newContent?: string; // Content after modification/creation
 }

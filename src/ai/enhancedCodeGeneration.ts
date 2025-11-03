@@ -23,9 +23,10 @@ import { formatSuccessfulChangesForPrompt } from "../workflow/changeHistoryForma
 import {
 	createEnhancedGenerationPrompt,
 	createEnhancedModificationPrompt,
+	_formatRelevantFilesForPrompt,
 } from "./prompts/enhancedCodeGenerationPrompts";
 import { CodeValidationService } from "../services/codeValidationService";
-import { DEFAULT_SIZE } from "../sidebar/common/sidebarConstants";
+import { ERROR_OPERATION_CANCELLED } from "../ai/gemini";
 import { GenerationConfig } from "@google/generative-ai";
 
 // Re-export these types to make them accessible to other modules that import from this file.
@@ -120,7 +121,7 @@ export class EnhancedCodeGenerator {
 			// Check if the error message indicates cancellation (case-insensitive)
 			if (
 				error instanceof Error &&
-				error.message.toLowerCase().includes("cancelled")
+				error.message === ERROR_OPERATION_CANCELLED
 			) {
 				// If it's a cancellation error, re-throw it immediately.
 				// This prevents sending a redundant codeFileStreamEnd message from this layer.
@@ -186,7 +187,7 @@ export class EnhancedCodeGenerator {
 			// Check if the error message indicates cancellation (case-insensitive)
 			if (
 				error instanceof Error &&
-				error.message.toLowerCase().includes("cancelled")
+				error.message === ERROR_OPERATION_CANCELLED
 			) {
 				// If it's a cancellation error, re-throw it immediately.
 				// This prevents sending a redundant codeFileStreamEnd message from this layer.
@@ -578,116 +579,5 @@ export class EnhancedCodeGenerator {
 		}
 
 		return extractedContent;
-	}
-
-	/**
-	 * Helper to format relevant files content into Markdown fenced code blocks for prompts.
-	 */
-	private async _formatRelevantFilesForPrompt(
-		relevantFilePaths: string[],
-		workspaceRootUri: vscode.Uri,
-		token: vscode.CancellationToken
-	): Promise<string> {
-		if (!relevantFilePaths || relevantFilePaths.length === 0) {
-			return "";
-		}
-
-		const formattedSnippets: string[] = [];
-		const maxFileSizeForSnippet = DEFAULT_SIZE;
-
-		for (const relativePath of relevantFilePaths) {
-			if (token.isCancellationRequested) {
-				return formattedSnippets.join("\n");
-			}
-
-			const fileUri = vscode.Uri.joinPath(workspaceRootUri, relativePath);
-			let fileContent: string | null = null;
-			let languageId = path.extname(relativePath).substring(1);
-			if (!languageId) {
-				languageId = path.basename(relativePath).toLowerCase();
-			}
-			if (languageId === "makefile") {
-				languageId = "makefile";
-			} else if (languageId === "dockerfile") {
-				languageId = "dockerfile";
-			} else if (languageId === "jsonc") {
-				languageId = "json";
-			} else if (
-				languageId === "eslintignore" ||
-				languageId === "prettierignore" ||
-				languageId === "gitignore"
-			) {
-				languageId = "ignore";
-			} else if (languageId === "license") {
-				languageId = "plaintext";
-			}
-
-			try {
-				const fileStat = await vscode.workspace.fs.stat(fileUri);
-
-				if (fileStat.type === vscode.FileType.Directory) {
-					continue;
-				}
-
-				if (fileStat.size > maxFileSizeForSnippet) {
-					console.warn(
-						`[EnhancedCodeGenerator] Skipping relevant file '${relativePath}' (size: ${fileStat.size} bytes) due to size limit for prompt inclusion.`
-					);
-					formattedSnippets.push(
-						`--- Relevant File: ${relativePath} ---\n\`\`\`plaintext\n[File skipped: too large for context (${(
-							fileStat.size / 1024
-						).toFixed(2)}KB > ${(maxFileSizeForSnippet / 1024).toFixed(
-							2
-						)}KB)]\n\`\`\`\n`
-					);
-					continue;
-				}
-
-				const contentBuffer = await vscode.workspace.fs.readFile(fileUri);
-				const content = Buffer.from(contentBuffer).toString("utf8");
-
-				if (content.includes("\0")) {
-					console.warn(
-						`[EnhancedCodeGenerator] Skipping relevant file '${relativePath}' as it appears to be binary.`
-					);
-					formattedSnippets.push(
-						`--- Relevant File: ${relativePath} ---\n\`\`\`plaintext\n[File skipped: appears to be binary]\n\`\`\`\n`
-					);
-					continue;
-				}
-
-				fileContent = content;
-			} catch (error: any) {
-				if (
-					error instanceof vscode.FileSystemError &&
-					(error.code === "FileNotFound" || error.code === "EntryNotFound")
-				) {
-					console.warn(
-						`[EnhancedCodeGenerator] Relevant file not found: '${relativePath}'. Skipping.`
-					);
-				} else if (error.message.includes("is not a file")) {
-					console.warn(
-						`[EnhancedCodeGenerator] Skipping directory '${relativePath}' as a relevant file.`
-					);
-				} else {
-					console.error(
-						`[EnhancedCodeGenerator] Error reading relevant file '${relativePath}': ${error.message}. Skipping.`,
-						error
-					);
-				}
-				formattedSnippets.push(
-					`--- Relevant File: ${relativePath} ---\n\`\`\`plaintext\n[File skipped: could not be read or is inaccessible: ${error.message}]\n\`\`\`\n`
-				);
-				continue;
-			}
-
-			if (fileContent !== null) {
-				formattedSnippets.push(
-					`--- Relevant File: ${relativePath} ---\n\`\`\`${languageId}\n${fileContent}\n\`\`\`\n`
-				);
-			}
-		}
-
-		return formattedSnippets.join("\n");
 	}
 }

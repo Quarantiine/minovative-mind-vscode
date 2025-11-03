@@ -98,6 +98,19 @@
 	width: 100%;
 }
 
+.message-text-content table {
+	display: block;
+	width: fit-content;
+	overflow-x: auto;
+	white-space: nowrap;
+	min-width: 100%;
+}
+
+.message-text-content table td,
+.message-text-content table th {
+	white-space: normal;
+}
+
 .user-message {
 	padding: var(--message-padding);
 	background-color: var(--vscode-list-activeSelectionBackground);
@@ -369,4 +382,84 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+}
+
+.editing-indicator {
+	display: none;
+}
+.cancel-edit-button {
+	display: none;
+}
+
+/* --- Plan Timeline Styles --- */
+#plan-timeline-wrapper {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 8px;
+	position: sticky;
+	top: 0;
+	z-index: 100;
+	padding: 10px;
+	/* Thematic Container Styling */
+	background-color: var(
+		--vscode-editorWidget-background,
+		rgba(40, 40, 40, 0.3)
+	);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px); /* For Safari */
+	border: 1px solid var(--vscode-editorGroupHeader-tabsBorder, #3a3a3a);
+	border-radius: var(--border-radius, 5px);
+	width: 90%;
+}
+
+.plan-step-container {
+	flex: 0 0 auto;
+	padding: 4px 10px;
+	border-radius: 4px;
+	cursor: default;
+	font-size: 0.9em;
+	line-height: 1.2;
+	transition: all 0.2s ease;
+	border: 1px solid transparent;
+	width: 90%;
+}
+
+.plan-step-container:hover {
+	opacity: 0.9;
+}
+
+.completed-step {
+	background-color: green;
+	color: white;
+	overflow-y: scroll;
+	text-overflow: clip;
+	white-space: normal;
+}
+
+.active-step {
+	background-color: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-foreground);
+	overflow-y: scroll;
+	text-overflow: clip;
+	white-space: normal;
+}
+
+.future-step {
+	display: none; /* Required */
+	background-color: var(--vscode-editor-background);
+	color: var(--vscode-descriptionForeground);
+	overflow-y: scroll;
+	text-overflow: clip;
+	white-space: normal;
+}
+
+.error-step {
+	background-color: var(--vscode-errorForeground);
+	color: var(--vscode-editor-background);
+	font-weight: bold;
+	box-shadow: 0 0 8px var(--vscode-errorForeground);
+	overflow-y: scroll;
+	text-overflow: clip;
+	white-space: normal;
 }

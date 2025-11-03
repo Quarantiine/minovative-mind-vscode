@@ -9,6 +9,7 @@ import { UrlContextService } from "./urlContextService";
 import { HistoryEntry, HistoryEntryPart } from "../sidebar/common/sidebarTypes";
 import { DEFAULT_FLASH_LITE_MODEL } from "../sidebar/common/sidebarConstants";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
+import { ContextBuildOptions } from "../types/context";
 
 const AI_CHAT_PROMPT =
 	"Lets discuss and do not code yet. You should only focus on high level thinking in this project, using the project context given to you. Only respone helpfully with production-ready explainations, no placeholders, no TODOs for the user. Make sure to mention what files are being changed or created if any.";
@@ -18,6 +19,51 @@ export class ChatService {
 
 	constructor(private provider: SidebarProvider) {
 		this.urlContextService = new UrlContextService();
+	}
+
+	private async _analyzeRecentHistory(): Promise<{
+		historicallyRelevantFiles: vscode.Uri[];
+		focusReminder: string;
+	}> {
+		if (!this.provider.workspaceRootUri) {
+			return { historicallyRelevantFiles: [], focusReminder: "" };
+		}
+
+		const workspaceRootUri = this.provider.workspaceRootUri;
+
+		const recentHistory = this.provider.chatHistoryManager
+			.getChatHistory()
+			.slice(-10);
+		const modelResponses = recentHistory.filter(
+			(entry) => entry.role === "model"
+		);
+
+		// Collect unique file paths from the last 5 model responses
+		const historicallyRelevantFilePaths = new Set<string>();
+		modelResponses.slice(-5).forEach((response) => {
+			response.relevantFiles?.forEach((filePath) => {
+				historicallyRelevantFilePaths.add(filePath);
+			});
+		});
+
+		const historicallyRelevantFiles: vscode.Uri[] = Array.from(
+			historicallyRelevantFilePaths
+		).map((filePath) => vscode.Uri.joinPath(workspaceRootUri, filePath));
+
+		let focusReminder = "";
+		const lastModelResponse = modelResponses[modelResponses.length - 1];
+
+		if (
+			lastModelResponse?.relevantFiles &&
+			lastModelResponse.relevantFiles.length > 0
+		) {
+			const fileList = lastModelResponse.relevantFiles
+				.map((p) => `\`${p}\``)
+				.join(", ");
+			focusReminder = `--- Conversational Focus Reminder ---\nThe previous exchange focused on these files: ${fileList}. Maintain this context unless the new prompt explicitly directs otherwise.\n--- End Focus Reminder ---`;
+		}
+
+		return { historicallyRelevantFiles, focusReminder };
 	}
 
 	public async handleRegularChat(
@@ -107,6 +153,9 @@ export class ChatService {
 			.join("\n");
 
 		try {
+			const { historicallyRelevantFiles, focusReminder } =
+				await this._analyzeRecentHistory();
+
 			const urlContexts =
 				await this.urlContextService.processMessageForUrlContext(
 					userMessageTextForContext,
@@ -124,7 +173,10 @@ export class ChatService {
 			const projectContext =
 				await this.provider.contextService.buildProjectContext(
 					token,
-					userMessageTextForContext
+					userMessageTextForContext,
+					undefined,
+					undefined,
+					{ historicallyRelevantFiles } as ContextBuildOptions
 				);
 			if (projectContext.contextString.startsWith("[Error")) {
 				throw new Error(projectContext.contextString);
@@ -154,7 +206,14 @@ export class ChatService {
 					}${urlContextString ? `\n\n${urlContextString}` : ""}`,
 				},
 			];
+
+			const focusReminderPart: HistoryEntryPart[] = [];
+			if (focusReminder) {
+				focusReminderPart.push({ text: focusReminder });
+			}
+
 			const fullUserTurnContents: HistoryEntryPart[] = [
+				...focusReminderPart,
 				...initialSystemPrompt,
 				...userContentParts,
 			];
@@ -345,7 +404,10 @@ export class ChatService {
 				userMessageTextForContext,
 				undefined,
 				undefined,
-				{ useAISelectionCache: false, forceAISelectionRecalculation: true }
+				{
+					useAISelectionCache: false,
+					forceAISelectionRecalculation: true,
+				} as ContextBuildOptions
 			);
 
 			if (projectContext.contextString.startsWith("[Error")) {

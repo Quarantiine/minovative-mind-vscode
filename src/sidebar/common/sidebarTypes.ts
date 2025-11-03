@@ -1,4 +1,3 @@
-// src/sidebar/common/sidebarTypes.ts
 import * as vscode from "vscode";
 import { Content } from "@google/generative-ai";
 import { ActiveSymbolDetailedInfo } from "../../services/contextService";
@@ -107,6 +106,21 @@ export type WebviewToExtensionMessages =
 	| WebviewToExtensionChatMessageType
 	| RequestWorkspaceFilesMessage
 	| { type: "copyContextMessage"; payload: CopyContextMessagePayload };
+
+// Extension to Webview for signaling plan timeline initialization
+export interface PlanTimelineInitializeMessage {
+	type: "planTimelineInitialize";
+	stepDescriptions: string[];
+}
+
+// Extension to Webview for signaling plan timeline step progress
+export interface PlanTimelineProgressMessage {
+	type: "planTimelineProgress";
+	stepIndex: number;
+	status: "running" | "success" | "skipped" | "failed" | "queued";
+	detail?: string;
+	diffContent?: string;
+}
 
 // Extension to Webview for pre-filling chat input
 export interface PrefillChatInput {
@@ -398,7 +412,9 @@ export type ExtensionToWebviewMessages =
 	| RestoreHistoryMessage
 	| ConfirmCommitMessage
 	| CancelCommitMessage
-	| UpdateRelevantFilesDisplayMessage;
+	| UpdateRelevantFilesDisplayMessage
+	| PlanTimelineInitializeMessage // Added new interface
+	| PlanTimelineProgressMessage; // Added new interface
 
 export interface PlanGenerationContext {
 	type: "chat" | "editor";

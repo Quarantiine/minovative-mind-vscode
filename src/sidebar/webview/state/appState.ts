@@ -22,6 +22,8 @@ export const appState: WebviewAppState = {
 	isCommitActionInProgress: false,
 	isCancellationInProgress: false,
 	isPlanExecutionInProgress: false,
+	currentPlanSteps: [],
+	currentPlanStepIndex: -1,
 	hasRevertibleChanges: false,
 	totalKeys: 0,
 	activeIndex: -1,

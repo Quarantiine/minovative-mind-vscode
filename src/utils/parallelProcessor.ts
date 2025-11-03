@@ -51,6 +51,7 @@ export class ParallelProcessor {
 		const running = new Set<string>();
 		const completed = new Set<string>();
 		const failed = new Set<string>();
+		let isCancelled = false;
 
 		// Sort tasks by priority (higher priority first)
 		const queue = [...tasks].sort((a, b) => b.priority - a.priority);
@@ -156,14 +157,23 @@ export class ParallelProcessor {
 					} else {
 						// Wait before retry (exponential backoff)
 						const delay = Math.min(1000 * Math.pow(2, retries - 1), 5000);
-						await new Promise((resolve) => {
-							const timer = setTimeout(resolve, delay);
-							// Immediately resolve the timeout promise if cancellation is requested during the delay
-							currentTaskExecutionToken?.onCancellationRequested(() => {
-								clearTimeout(timer);
-								resolve(null); // Resolve immediately
-							});
+						// This promise resolves on a timer, or immediately if cancellation is requested.
+						const delayWithCancellation = new Promise<void>((resolve) => {
+							const timer = setTimeout(() => {
+								cancellationListener?.dispose();
+								resolve();
+							}, delay);
+
+							const cancellationListener =
+								currentTaskExecutionToken?.onCancellationRequested(() => {
+									clearTimeout(timer);
+									cancellationListener?.dispose();
+									resolve();
+								});
 						});
+
+						await delayWithCancellation;
+
 						// Check for cancellation immediately after the delay (or early resolve due to cancellation)
 						if (currentTaskExecutionToken?.isCancellationRequested) {
 							throw new Error(ERROR_OPERATION_CANCELLED);
@@ -178,8 +188,7 @@ export class ParallelProcessor {
 
 		// Process tasks with concurrency control
 		while (queue.length > 0 || running.size > 0) {
-			// Check for global cancellation at the top of the main loop
-			if (globalCancellationToken?.isCancellationRequested) {
+			if (isCancelled) {
 				// Mark all remaining queued tasks as cancelled
 				while (queue.length > 0) {
 					const task = queue.shift()!;
@@ -193,40 +202,56 @@ export class ParallelProcessor {
 					});
 					failed.add(task.id);
 				}
-				// If no running tasks, or all running tasks have already processed cancellation, break the loop
+				// If no running tasks are left, we can break the loop
 				if (running.size === 0) {
 					break;
 				}
 			}
 
-			// Start new tasks if under concurrency limit
-			while (running.size < finalConfig.maxConcurrency && queue.length > 0) {
+			// Start new tasks if under concurrency limit and not cancelled
+			while (
+				running.size < finalConfig.maxConcurrency &&
+				queue.length > 0 &&
+				!isCancelled
+			) {
 				const task = queue.shift()!;
 
 				// Check if task can be executed (dependencies met)
-				// Note: if dependencies fail due to cancellation, `executeTask` will mark them
-				// as cancelled and re-throw, which will be caught below.
 				if (task.dependencies) {
 					const unmetDeps = task.dependencies.filter(
 						(dep) => !completed.has(dep)
 					);
 					if (unmetDeps.length > 0) {
-						// If dependencies are not yet met, re-queue the task and try later
+						const failedDep = unmetDeps.find((dep) => failed.has(dep));
+						if (failedDep) {
+							// A dependency has failed for a non-cancellation reason, so this task must also fail.
+							const errorMessage = `Task '${task.id}' failed because its dependency '${failedDep}' failed.`;
+							results.set(task.id, {
+								id: task.id,
+								result: null as T,
+								duration: 0,
+								success: false,
+								error: errorMessage,
+								retries: 0,
+							});
+							failed.add(task.id);
+							continue; // Do not re-queue, move to the next task in the queue.
+						}
+
+						// If dependencies are not yet met but none have failed, re-queue the task and try later
 						queue.push(task);
 						continue;
 					}
 				}
 
 				executeTask(task).catch((error) => {
-					// Catch errors from individual task executions.
-					// Cancellation errors are explicitly re-thrown from `executeTask` to break the main loop.
-					// Other errors are logged but don't stop the overall parallel execution.
 					if (
-						!(
-							error instanceof Error &&
-							error.message === ERROR_OPERATION_CANCELLED
-						)
+						error instanceof Error &&
+						error.message === ERROR_OPERATION_CANCELLED
 					) {
+						isCancelled = true; // Set the flag to terminate the main loop promptly.
+					} else {
+						// Other errors are logged but don't stop the overall parallel execution.
 						console.error(`Failed to execute task ${task.id}:`, error);
 					}
 				});

@@ -85,7 +85,7 @@ This system ensures that diagnostic information, particularly 'Information' and 
 #### 2. AI Request Orchestration & Robustness
 
 - **Responsibility**: Manages the overall process of making AI requests with a focus on reliability and efficiency, including retry logic, cancellation handling, parallel processing, and token usage reporting.
-- **Key Features**: Implements robust retry logic for transient errors, handles cancellation requests, orchestrates concurrent AI calls through `src/utils/parallelProcessor.ts`, and reports token usage to `src/services/tokenTrackingService.ts`.
+- **Key Features**: Implements robust retry logic for transient errors, handles cancellation requests, orchestrates concurrent AI calls through `src/utils/parallelProcessor.ts`, and reports token usage to `src/services/tokenTrackingService.ts`. Internal backoff delays (e.g., for API quotas) are now responsive to global cancellation signals.
 - **Function Calling Mode**: Accepts and forwards `functionCallingMode` to enforce specific modes (e.g., `FunctionCallingMode.ANY` for plan generation).
 - **API Key Dependency**: The `AIRequestService` has a dependency on `ApiKeyManager`. Methods such as `generateWithRetry` retrieve the active API key by interacting with `ApiKeyManager` to ensure the correct key is used for AI operations.
 - **Key Files**: `src/services/aiRequestService.ts` (`AIRequestService` class, `generateWithRetry`, `generateMultipleInParallel`, `generateInBatches`, `processFilesInParallel`)
@@ -114,6 +114,44 @@ This system ensures that diagnostic information, particularly 'Information' and 
 
 - **Responsibility**: Ensures the quality, correctness, and adherence to formatting standards of AI-generated or modified code by integrating with VS Code's diagnostic capabilities and implementing custom validation rules.
 - **Key Files**: `src/services/codeValidationService.ts` (`CodeValidationService` class, `validateCode`, `checkPureCodeFormat`)
+
+### Chat History Context Management Flow
+
+The management and utilization of chat history are handled through a coordinated effort between the history storage mechanism, the chat orchestration service, and the external AI request handler. The AI (the Gemini model) sees the history as a sequence of alternating roles (`user` and `model`) structured as an array of conversation turns, stripped of application-specific metadata.
+
+#### 1. History Management and Persistence (Source of Truth)
+
+The primary responsibility for storing, loading, and managing the raw conversation turns lies with **`src/sidebar/managers/chatHistoryManager.ts`**.
+
+- **Storage:** History is persisted across VS Code sessions using the workspace state via the key `CHAT_HISTORY_STORAGE_KEY`. This ensures the conversation context survives window restarts.
+- **Data Structure:** The history is stored as an array of `HistoryEntry` objects. Each entry captures:
+  - `role`: (`user` or `model`).
+  - `parts`: An array detailing the content, which can contain text or image data (`HistoryEntryPart`).
+  - **Contextual Metadata:** Crucially, entries also carry application-specific data like `relevantFiles` (paths discussed) and whether certain displays are expanded.
+- **State Synchronization:** When the history changes (loaded, added, or edited), the manager calls `restoreChatHistoryToWebview()`, which sends a message back to the webview to re-render the UI state, keeping the sidebar synchronized with the persisted data.
+- **Self-Correction/Regeneration:** The manager includes sophisticated logic (`editMessageAndTruncate`) allowing a user to edit a previous message. If an edit occurs, all subsequent history entries (the AI responses following the edited message) are automatically truncated, preparing the state for a regeneration cycle.
+
+#### 2. Context Assembly and Augmentation
+
+Before a new query is sent, **`src/services/chatService.ts`** takes the stored history and enriches it with real-time context and system instructions.
+
+- **Relevant File Analysis (`_analyzeRecentHistory`):** This method examines the most recent model responses within the history. It extracts the list of files the AI previously cited as relevant and creates a `focusReminder`. This reminder is prepended to the current user prompt to guide the AI to maintain focus on the established scope (e.g., "Maintain this context unless the new prompt explicitly directs otherwise.").
+- **Project and URL Context Injection:** The service actively builds a detailed `projectContext` (including surrounding code, symbols, and workspace structure) and checks for any URLs in the user's input.
+- **Payload Construction:** The final input passed to the AI request layer is a complete turn sequence:
+  1. System Prompt (containing the fixed instructions defined in `AI_CHAT_PROMPT`).
+  2. Project Context string (from the context builder).
+  3. URL Context string.
+  4. Focus Reminder (if present).
+  5. The user's new input parts.
+  6. **The entire history retrieved from `chatHistoryManager.getChatHistory()`** (all previous turns).
+
+#### 3. AI API Transformation
+
+The assembled payload must be translated into the exact format required by the underlying Generative AI SDK (Gemini). This transformation occurs in **`src/services/aiRequestService.ts`**.
+
+- **`transformHistoryForGemini` Method:** This private method iterates over the internal `HistoryEntry[]`. It maps the internal structure to the external SDK structure (`Content[]`).
+  - It correctly assigns the `role` (`user` or `model`).
+  - It maps the internal `parts` array, differentiating between text parts and image data parts (`inlineData`), ensuring the model receives the historical conversation exactly as it expects for sequential turn processing.
 
 ### Code Generation & Modification
 
@@ -150,6 +188,7 @@ This system ensures that diagnostic information, particularly 'Information' and 
 - **Deep Integration**: Utilizes `EnhancedCodeGenerator` for file operations, `GitConflictResolutionService` for merge conflicts, `ProjectChangeLogger` for recording changes, and `commandExecution.ts` for shell commands.
 - **User Interaction & Monitoring**: Manages user prompts, provides real-time progress updates, reports errors, and notifies on completion or cancellation.
 - **Model Usage Distinction**: Dynamically retrieves model names, using `DEFAULT_FLASH_LITE_MODEL` for initial textual plans and optimized models for function calling.
+- **Enhanced Execution Modularity (PlanExecutorService)**: This service optimizes execution ordering and resource management. Terminal cleanup (`_disposeExecutionTerminals`) is now guaranteed by being called in a `finally` block, ensuring resource hygiene. Additionally, local step retries are preempted by a global cancellation signal, allowing for immediate termination of the plan.
 - **Key Files**: `src/services/planService.ts` (`PlanService` class, `handleInitialPlanRequest`, `initiatePlanFromEditorAction`, `generateStructuredPlanAndExecute`, `_executePlan`, `_executePlanSteps`, `parseAndValidatePlanWithFix`), `src/ai/workflowPlanner.ts`, `src/services/aiRequestService.ts`, `src/ai/enhancedCodeGeneration.ts`, `src/services/gitConflictResolutionService.ts`, `src/utils/commandExecution.ts`, `src/workflow/ProjectChangeLogger.ts`, `src/services/RevertService.ts`
 
 #### 3. Project Change Logging
@@ -162,7 +201,7 @@ This system ensures that diagnostic information, particularly 'Information' and 
 #### 4. Revert Service
 
 - **Responsibility**: Provides critical functionality for safely undoing file system changes made by AI-driven workflows, using logs from `src/workflow/ProjectChangeLogger.ts` to restore the project state.
-- **Key Methods**: The core `revertChanges` method iterates through changes in reverse, deleting created files, restoring original content for modified files, and recreating deleted files.
+- **Key Methods**: The core `revertChanges` method iterates through changes in reverse, deleting created files, restoring original content for modified files, and recreating deleted files. It also ensures improved logging integrity during revert operations, maintaining a faithful history of file state changes.
 - **Key Files**: `src/services/RevertService.ts` (`RevertService` class)
 
 ### User Interface & Interactive Chat Systems
@@ -229,7 +268,7 @@ This system ensures that diagnostic information, particularly 'Information' and 
 #### 2. Concurrency Management (Infrastructure)
 
 - **Responsibility**: Provides generic, reusable utilities for managing parallel tasks and controlling concurrency across various operations, optimizing AI request handling and resource usage.
-- **Key Features**: Allows defining maximum concurrent tasks, timeouts, and retries for individual parallel operations.
+- **Key Features**: Implements interruptible retry delays, robust failure propagation for dependent tasks (where a failed dependency immediately fails its dependents), and immediate termination of the main execution loop upon cancellation.
 - **Key Files**: `src/utils/parallelProcessor.ts` (`ParallelProcessor` class, `executeParallel`, `processFilesInParallel`, `executeInBatches`)
 
 #### 3. Code Selection Logic Utilities
@@ -240,7 +279,7 @@ This system ensures that diagnostic information, particularly 'Information' and 
 
 #### 4. File Change Summarization Utilities
 
-- **Responsibility**: Generates human-readable summaries and precise diffs of file modifications using the `diff-match-patch` library. These summaries are crucial for logging changes, user feedback, and re-contextualizing AI.
+- **Responsibility**: Generates human-readable summaries and precise diffs of file modifications using the `diff-match-patch` library, now enhanced with granular entity analysis for generating more precise change summaries. These summaries are crucial for logging changes, user feedback, and re-contextualizing AI.
 - **Key Methods**: `generateFileChangeSummary`, `analyzeDiff`, `generatePreciseTextEdits`, `parseDiffHunkToTextEdits`, `applyDiffHunkToDocument`.
 - **Key Files**: `src/utils/diffingUtils.ts`
 
@@ -271,9 +310,6 @@ This system ensures that diagnostic information, particularly 'Information' and 
 - **Key Files**: `src/utils/commandExecution.ts` (`executeCommand` function), `src/services/planExecutorService.ts` (`_handleRunCommandStep`, `_isCommandSafe` methods)
 
 ---
-
-> Remember, Minovative Mind is designed to assist, not replace, the brilliance of human developers! Happy Coding!
-> Built by [Daniel Ward](https://github.com/Quarantiine), a USA based developer under Minovative (Minovative = minimal-innovative) Technologies [A DBA registered self-employed company in the US]
 
 > Remember, Minovative Mind is designed to assist, not replace, the brilliance of human developers! Happy Coding!
 > Built by [Daniel Ward](https://github.com/Quarantiine), a USA based developer under Minovative (Minovative = minimal-innovative) Technologies [A DBA registered self-employed company in the US]

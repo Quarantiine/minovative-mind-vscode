@@ -30,7 +30,6 @@ To use Minovative Mind's AI features, you will need:
 
 - **Gemini API Key**: A valid Google Gemini API key is essential for AI functionality.
   - **Obtaining the Key**: You can obtain a free API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
-  - Note: To use advanced models like `gemini-2.5-pro`, an upgrade to a paid tier in Google AI Studio is required.
   - **Setting the Key**: Input your API key into the sidebar UI via the API Key Management section.
 
 ---

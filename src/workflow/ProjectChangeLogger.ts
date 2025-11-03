@@ -1,6 +1,8 @@
 // src/workflow/ProjectChangeLogger.ts
 import { FileChangeEntry } from "../types/workflow";
 import { v4 as uuidv4 } from "uuid";
+import { createInversePatch } from "../utils/diffingUtils";
+import * as path from "path";
 
 export interface RevertibleChangeSet {
 	id: string;
@@ -15,9 +17,38 @@ export class ProjectChangeLogger {
 
 	/**
 	 * Logs a new file change entry.
+	 * If the change is a modification, it creates an inverse patch for reverting
+	 * and removes the original content from the log to save space.
 	 * @param entry The FileChangeEntry object to log.
 	 */
 	logChange(entry: FileChangeEntry) {
+		if (entry.changeType === "created") {
+			const normalizedPath = path.normalize(entry.filePath);
+			if (normalizedPath.endsWith("/") || normalizedPath.endsWith(path.sep)) {
+				// This is a directory path, but it's being logged as a 'created' file.
+				// Remove the trailing separator to prevent potential recursive directory deletion on revert.
+				entry.filePath = normalizedPath.replace(
+					new RegExp(`[${path.sep}/]$`),
+					""
+				);
+				console.warn(
+					`[ProjectChangeLogger] Warning: Normalized created path. Removed trailing separator from '${normalizedPath}' to '${entry.filePath}' to ensure it's treated as a file path.`
+				);
+			}
+		}
+
+		if (
+			entry.changeType === "modified" &&
+			typeof entry.originalContent === "string" &&
+			typeof entry.newContent === "string"
+		) {
+			const inversePatch = createInversePatch(
+				entry.originalContent,
+				entry.newContent
+			);
+			entry.inversePatch = inversePatch;
+		}
+
 		this.changes.push(entry);
 		console.log(
 			`[ProjectChangeLogger] Logged change for ${entry.filePath}: ${

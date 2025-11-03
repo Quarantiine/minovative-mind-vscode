@@ -127,6 +127,8 @@ export interface WebviewAppState {
 	isCommitActionInProgress: boolean;
 	isCancellationInProgress: boolean;
 	isPlanExecutionInProgress: boolean;
+	currentPlanSteps: string[];
+	currentPlanStepIndex: number;
 	hasRevertibleChanges: boolean;
 	totalKeys: number;
 	activeIndex: number; // Tracks the index of the currently active API key

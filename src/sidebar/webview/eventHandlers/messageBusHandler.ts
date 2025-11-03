@@ -2,6 +2,8 @@
 import {
 	appendMessage,
 	finalizeStreamingMessage,
+	buildPlanTimeline,
+	renderPlanTimeline,
 } from "../ui/chatMessageRenderer";
 import {
 	updateApiKeyStatus,
@@ -19,6 +21,9 @@ import {
 	AiResponseChunkMessage,
 	AiResponseEndMessage,
 	FormattedTokenStatistics,
+	ExtensionToWebviewMessages,
+	PlanTimelineInitializeMessage, // ADDED
+	PlanTimelineProgressMessage, // ADDED
 } from "../../common/sidebarTypes";
 import {
 	stopTypingAnimation,
@@ -571,6 +576,46 @@ export function initializeMessageBusHandler(
 				break;
 			}
 
+			case "planTimelineInitialize": {
+				const initializeMessage = message as PlanTimelineInitializeMessage;
+				console.log(
+					"[Webview] Received planTimelineInitialize message. Steps:",
+					initializeMessage.stepDescriptions.length
+				);
+
+				// 3. Handle planTimelineInitialize
+				appState.currentPlanSteps = initializeMessage.stepDescriptions;
+				appState.currentPlanStepIndex = -1; // Reset step index
+				appState.isPlanExecutionInProgress = true;
+				setLoadingState(true, elements);
+
+				buildPlanTimeline(elements);
+				renderPlanTimeline(elements, -1, "Initializing...");
+
+				break;
+			}
+
+			case "planTimelineProgress": {
+				const progressMessage = message as PlanTimelineProgressMessage;
+				console.log(
+					"[Webview] Received planTimelineProgress message. Index:",
+					progressMessage.stepIndex
+				);
+
+				// 4. Handle planTimelineProgress
+				appState.currentPlanStepIndex = progressMessage.stepIndex;
+				renderPlanTimeline(
+					elements,
+					progressMessage.stepIndex,
+					progressMessage.detail ?? "",
+					progressMessage.diffContent,
+					progressMessage.status === "failed"
+				);
+
+				setLoadingState(true, elements);
+				break;
+			}
+
 			case "requestClearChatConfirmation": {
 				console.log("[Webview] Received requestClearChatConfirmation.");
 				showClearChatConfirmationUI(
@@ -889,6 +934,7 @@ export function initializeMessageBusHandler(
 
 			case "appendRealtimeModelMessage":
 				if (message.value && typeof message.value.text === "string") {
+					// 6. Modify the `case "appendRealtimeModelMessage":` block to remove the check for `message.isPlanStepUpdate`
 					appendMessage(
 						elements,
 						"Model",
@@ -900,7 +946,7 @@ export function initializeMessageBusHandler(
 						undefined, // messageIndexForHistory
 						undefined, // isRelevantFilesExpandedForHistory
 						false, // isPlanExplanationForRender
-						message.isPlanStepUpdate // Pass the new flag here
+						false // isPlanStepUpdate (Hardcoded false, as timeline handles progress)
 					);
 					setLoadingState(appState.isLoading, elements);
 				} else {
@@ -1008,15 +1054,24 @@ export function initializeMessageBusHandler(
 				appState.isRequestingWorkspaceFiles = false;
 				appState.hasRevertibleChanges = false;
 				resetCodeStreams();
-				break;
-			}
-			case "planExecutionStarted": {
-				appState.isPlanExecutionInProgress = true;
-				setLoadingState(appState.isLoading, elements);
-				break;
-			}
-			case "planExecutionEnded": {
+				// Reset plan state
+				appState.currentPlanSteps = [];
+				appState.currentPlanStepIndex = -1;
 				appState.isPlanExecutionInProgress = false;
+				break;
+			}
+			// 5. Remove case "planExecutionStarted":
+			// case "planExecutionStarted": {
+			// 	appState.isPlanExecutionInProgress = true;
+			// 	setLoadingState(appState.isLoading, elements);
+			// 	break;
+			// }
+
+			case "planExecutionEnded": {
+				// 7. Modify the `case "planExecutionEnded":` block
+				appState.isPlanExecutionInProgress = false;
+				appState.currentPlanSteps = [];
+				appState.currentPlanStepIndex = -1;
 				setLoadingState(appState.isLoading, elements);
 				break;
 			}
@@ -1063,6 +1118,8 @@ export function initializeMessageBusHandler(
 				appState.pendingPlanData = null; // Ensure this is reset too
 				appState.pendingCommitReviewData = null; // Ensure this is reset too
 				appState.isPlanExecutionInProgress = false; // Reset plan execution state
+				appState.currentPlanSteps = []; // Reset plan steps
+				appState.currentPlanStepIndex = -1; // Reset step index
 				updateEmptyChatPlaceholderVisibility(elements);
 				resetCodeStreams();
 				break;
@@ -1188,6 +1245,10 @@ export function initializeMessageBusHandler(
 				appState.isRequestingWorkspaceFiles = false;
 				appState.hasRevertibleChanges = false;
 				resetCodeStreams();
+				// Reset plan state
+				appState.currentPlanSteps = [];
+				appState.currentPlanStepIndex = -1;
+				appState.isPlanExecutionInProgress = false;
 				break;
 			}
 			default:

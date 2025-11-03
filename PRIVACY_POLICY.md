@@ -140,8 +140,8 @@ The Minovative Mind extension is not intended for use by individuals under the a
 
 ## 9. Changes to This Privacy Policy
 
-We may update this Privacy Policy from time to time to reflect changes in our practices or legal requirements. Any changes will be posted on our GitHub repository (https://github.com/Minovative-Technologies/minovative-mind) and potentially announced via the VS Code Marketplace. Your continued use of the extension after any changes signifies your acceptance of the updated policy.
+We may update this Privacy Policy from time to time to reflect changes in our practices or legal requirements. Any changes will be posted on our GitHub repository [https://github.com/Minovative-Technologies/minovative-mind](https://github.com/Minovative-Technologies/minovative-mind) and potentially announced via the VS Code Marketplace. Your continued use of the extension after any changes signifies your acceptance of the updated policy.
 
 ## 10. Contact Us
 
-If you have any questions or concerns regarding this Privacy Policy or our data practices, please open an issue on our GitHub repository (https://github.com/Minovative-Technologies/minovative-mind/issues) or use the security reporting form: (https://forms.gle/QexZY2resdXpahUK6).
+If you have any questions or concerns regarding this Privacy Policy or our data practices, please open an issue on our GitHub repository [https://github.com/Minovative-Technologies/minovative-mind/issues](https://github.com/Minovative-Technologies/minovative-mind/issues) or use the security reporting form: [https://forms.gle/QexZY2resdXpahUK6](https://forms.gle/QexZY2resdXpahUK6).

@@ -79,7 +79,7 @@ The Minovative Mind extension relies on the Google Gemini API as a third-party s
 
 ## 9. Modifications to the Terms of Use
 
-We reserve the right to modify or replace these Terms at any time. If a revision is material, we will make reasonable efforts to provide at least 30 days’ notice prior to any new terms taking effect. What constitutes a material change will be determined at our sole discretion. Any changes will be posted on our GitHub repository (https://github.com/Minovative-Technologies/minovative-mind) and potentially announced via the VS Code Marketplace. By continuing to access or use the Extension after those revisions become effective, you agree to be bound by the revised terms. If you do not agree to the new terms, you are no longer authorized to use the Extension.
+We reserve the right to modify or replace these Terms at any time. If a revision is material, we will make reasonable efforts to provide at least 30 days’ notice prior to any new terms taking effect. What constitutes a material change will be determined at our sole discretion. Any changes will be posted on our GitHub repository [https://github.com/Minovative-Technologies/minovative-mind](https://github.com/Minovative-Technologies/minovative-mind) and potentially announced via the VS Code Marketplace. By continuing to access or use the Extension after those revisions become effective, you agree to be bound by the revised terms. If you do not agree to the new terms, you are no longer authorized to use the Extension.
 
 ## 10. Termination
 
@@ -91,4 +91,4 @@ These Terms shall be governed and construed in accordance with the laws of the U
 
 ## 12. Contact Information
 
-If you have any questions or concerns regarding these Terms of Use, please contact us by opening an issue on our GitHub repository: https://github.com/Minovative-Technologies/minovative-mind/issues, or by using the security reporting form: https://forms.gle/QexZY2resdXpahUK6.
+If you have any questions or concerns regarding these Terms of Use, please contact us by opening an issue on our GitHub repository: [https://github.com/Minovative-Technologies/minovative-mind/issues](https://github.com/Minovative-Technologies/minovative-mind/issues), or by using the security reporting form: [https://forms.gle/QexZY2resdXpahUK6](https://forms.gle/QexZY2resdXpahUK6).

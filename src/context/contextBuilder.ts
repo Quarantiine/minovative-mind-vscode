@@ -72,7 +72,8 @@ function _prioritizeFilesForContext(
 	reverseDependencyGraph: Map<string, string[]> | undefined,
 	activeSymbolDetailedInfo: ActiveSymbolDetailedInfo | undefined,
 	documentSymbols: Map<string, vscode.DocumentSymbol[] | undefined> | undefined,
-	config: ContextConfig
+	config: ContextConfig,
+	historicallyRelevantFiles?: vscode.Uri[]
 ): vscode.Uri[] {
 	let prioritizedFiles: PrioritizedFile[] = relevantFiles.map((uri) => ({
 		uri,
@@ -174,6 +175,17 @@ function _prioritizeFilesForContext(
 				config.maxSymbolEntriesPerFile / 2
 		) {
 			pf.score += 50;
+		}
+	}
+
+	if (historicallyRelevantFiles && historicallyRelevantFiles.length > 0) {
+		const historicalPaths = new Set(
+			historicallyRelevantFiles.map((uri) => uri.fsPath)
+		);
+		for (const pf of prioritizedFiles) {
+			if (historicalPaths.has(pf.uri.fsPath)) {
+				pf.score += 2000;
+			}
 		}
 	}
 
@@ -463,7 +475,8 @@ export async function buildContextString(
 	dependencyGraph?: Map<string, string[]>,
 	documentSymbols?: Map<string, vscode.DocumentSymbol[] | undefined>,
 	activeSymbolDetailedInfo?: ActiveSymbolDetailedInfo,
-	reverseDependencyGraph?: Map<string, string[]>
+	reverseDependencyGraph?: Map<string, string[]>,
+	historicallyRelevantFiles?: vscode.Uri[]
 ): Promise<string> {
 	let { context, currentTotalLength } = _initializeBuildContext(
 		workspaceRoot,
@@ -569,7 +582,8 @@ export async function buildContextString(
 		reverseDependencyGraph,
 		activeSymbolDetailedInfo,
 		documentSymbols,
-		config
+		config,
+		historicallyRelevantFiles
 	);
 
 	// 8. Process File Contents

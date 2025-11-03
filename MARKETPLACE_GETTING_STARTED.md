@@ -14,7 +14,6 @@ Minovative Mind is powered by **Google’s advanced Gemini models**. To enable t
 
 - Visit [Google AI Studio](https://aistudio.google.com/app/apikey).
 - Generate your free API key in just a few minutes.
-- Note: To use advanced models like `gemini-2.5-pro`, an upgrade to a paid tier in Google AI Studio is required.
 
 ### 2. Configure Your API Key in VS Code
 

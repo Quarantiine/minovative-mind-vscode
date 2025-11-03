@@ -519,23 +519,23 @@ export async function activate(context: vscode.ExtensionContext) {
 					diagnosticsString || "No errors found."
 				}\n\n---\n\nHighlevel thinking first. No coding yet.`;
 			} else if (instruction === "/merge") {
-				composedMessage = `/plan Please resolve the merge conflicts in ${displayFileName}. Provide the implementation solution before code. Here's the full file content with conflicts:\n\n\`\`\`${languageId}\n${fullText}\n\`\`\`\n. Highlevel thinking first. No coding yet.`;
+				composedMessage = `/plan My message: Please resolve the merge conflicts in ${displayFileName}. \n\nInstruction: Provide the implementation solution before code. Here's the full file content with conflicts:\n\n\`\`\`${languageId}\n${fullText}\n\`\`\`\n. Highlevel thinking first. No coding yet.`;
 			} else if (instruction === "chat") {
 				if (originalSelection.isEmpty) {
-					composedMessage = `Message: ${userProvidedMessage} \n\nIn this project, focus on the conversation within the context of file \`${displayFileName}\`. \n\nDo not code.`;
+					composedMessage = `My message: ${userProvidedMessage} \n\nInstruction: In this project, focus on the conversation within the context of file \`${displayFileName}\`. \n\nDo not code yet.`;
 				} else {
 					composedMessage =
 						`Message: ${userProvidedMessage}\n\n` +
-						`In this project: From this file \`${displayFileName}\`, focus on the conversation. I've provided ${contextDescription}.\n\n` +
-						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`. \n\nDo not code.`;
+						`Instruction: In this project, From this file \`${displayFileName}\`, focus on the conversation. I've provided ${contextDescription}.\n\n` +
+						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`\ Do not code yet.`;
 				}
 			} else if (instruction === "custom prompt") {
 				if (originalSelection.isEmpty) {
-					composedMessage = `/plan ${userProvidedMessage}\n\nIn this project: Provide the implementation solution within the context of file \`${displayFileName}\`. Highlevel thinking first. No coding yet.`;
+					composedMessage = `/plan My message: ${userProvidedMessage}\n\nInstruction: In this project, Provide the implementation solution within the context of file \`${displayFileName}\`. Highlevel thinking first. No coding yet.`;
 				} else {
 					composedMessage =
-						`/plan ${userProvidedMessage}\n\n` +
-						`In this project: From this file \`${displayFileName}\`. I've provided ${contextDescription}:\n\n` +
+						`/plan My message: ${userProvidedMessage}\n\n` +
+						`Instruction: In this project, From this file \`${displayFileName}\`. I've provided ${contextDescription}:\n\n` +
 						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`\n\nHighlevel thinking first. No coding yet.`;
 				}
 			} else {

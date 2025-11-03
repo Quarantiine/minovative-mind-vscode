@@ -51,14 +51,7 @@ export function injectChatRendererStyles(): void {
 	}
 
 	const style = document.createElement("style");
-	style.textContent = `
-		.editing-indicator {
-			display: none;
-		}
-		.cancel-edit-button {
-			display: none;
-		}
-	`;
+
 	document.head.appendChild(style);
 	_chatRendererStylesInjected = true;
 	console.log(
@@ -118,6 +111,29 @@ export function appendMessage(
 	isPlanStepUpdateForRender: boolean = false,
 	imageParts?: ImageInlineData[]
 ): void {
+	// Instruction 4.1: Return immediately if it's a plan progress update.
+	if (isPlanStepUpdateForRender) {
+		const isError = className.includes("error-message");
+		const match = text.match(/Step (\d+)\/(\d+)/);
+
+		let stepIndex = -1;
+		if (match && match[1]) {
+			stepIndex = parseInt(match[1], 10) - 1; // Convert 1-based index to 0-based
+		} else if (
+			appState.currentPlanStepIndex !== undefined &&
+			appState.currentPlanStepIndex !== null
+		) {
+			stepIndex = appState.currentPlanStepIndex;
+		}
+
+		if (stepIndex !== -1 && appState.isPlanExecutionInProgress) {
+			renderPlanTimeline(elements, stepIndex, text, diffContent, isError);
+		}
+
+		// Always return to ensure plan step updates are decoupled from chat history creation.
+		return;
+	}
+
 	// Instruction 2: At the very beginning of the `appendMessage` function, insert the following conditional call:
 	if (
 		(sender === "Model" && text === "" && className.includes("ai-message")) ||
@@ -150,9 +166,8 @@ export function appendMessage(
 	if (className) {
 		className.split(" ").forEach((cls) => messageElement.classList.add(cls));
 	}
-	if (isPlanStepUpdateForRender) {
-		messageElement.classList.add("plan-step-message");
-	}
+	// Removed: isPlanStepUpdateForRender check here (handled by early exit)
+
 	if (isHistoryMessage) {
 		messageElement.dataset.isHistory = "true";
 		if (messageIndexForHistory !== undefined) {
@@ -481,10 +496,9 @@ export function appendMessage(
 				// Removed: if (copyContextButton) { copyContextButton.disabled = false; }
 			} else if (className.includes("ai-message")) {
 				const shouldDisableAiStreamingButtons =
-					(sender === "Model" &&
-						text === "" &&
-						!className.includes("error-message")) ||
-					isPlanStepUpdateForRender; // ADDED: Also disable if it's a plan step update
+					sender === "Model" &&
+					text === "" &&
+					!className.includes("error-message");
 
 				if (copyButton) {
 					copyButton.disabled = shouldDisableAiStreamingButtons;
@@ -497,10 +511,6 @@ export function appendMessage(
 				}
 				if (generatePlanButton) {
 					generatePlanButton.disabled = shouldDisableAiStreamingButtons;
-					// Additionally, hide it if it's a plan step update
-					if (isPlanStepUpdateForRender) {
-						generatePlanButton.style.display = "none";
-					}
 				}
 				// Disable copyContextButton during streaming for AI messages
 				if (
@@ -652,50 +662,29 @@ export function appendMessage(
 					textElement.appendChild(imageIndicatorSpan);
 				}
 
-				// Enable buttons for completed messages IF NOT a plan step update
-				if (!isPlanStepUpdateForRender) {
-					if (copyButton) {
-						copyButton.disabled = false;
-					}
-					if (deleteButton) {
-						deleteButton.disabled = false;
-					}
-					if (editButton) {
-						editButton.disabled = false;
-					}
-					// Enable copyContextButton for complete/history AI messages (not streaming)
-					if (copyContextButton) {
-						copyContextButton.disabled = false;
-					}
-					if (
-						generatePlanButton &&
-						!isPlanExplanationForRender &&
-						!appState.isPlanExecutionInProgress
-					) {
-						generatePlanButton.disabled = false;
-						generatePlanButton.style.display = "";
-					} else if (generatePlanButton) {
-						generatePlanButton.style.display = "none";
-					}
-				} else {
-					// For plan step update messages, explicitly hide/disable buttons if they were somehow created.
-					// The CSS will also handle this, but defensive JS is good.
-					if (copyButton) {
-						copyButton.style.display = "none";
-					}
-					if (deleteButton) {
-						deleteButton.style.display = "none";
-					}
-					if (editButton) {
-						editButton.style.display = "none";
-					}
-					// Hide copyContextButton for isPlanStepUpdateForRender
-					if (copyContextButton) {
-						copyContextButton.style.display = "none";
-					}
-					if (generatePlanButton) {
-						generatePlanButton.style.display = "none";
-					}
+				// Instruction 4.2: Enable buttons for completed messages (since isPlanStepUpdateForRender is handled by early exit)
+				if (copyButton) {
+					copyButton.disabled = false;
+				}
+				if (deleteButton) {
+					deleteButton.disabled = false;
+				}
+				if (editButton) {
+					editButton.disabled = false;
+				}
+				// Enable copyContextButton for complete/history AI messages (not streaming)
+				if (copyContextButton) {
+					copyContextButton.disabled = false;
+				}
+				if (
+					generatePlanButton &&
+					!isPlanExplanationForRender &&
+					!appState.isPlanExecutionInProgress
+				) {
+					generatePlanButton.disabled = false;
+					generatePlanButton.style.display = "";
+				} else if (generatePlanButton) {
+					generatePlanButton.style.display = "none";
 				}
 			}
 		} else {
@@ -903,4 +892,156 @@ export function sendEditedMessageToExtension(
 	console.log(
 		`[ChatMessageRenderer] Sent editChatMessage for index ${messageIndex}`
 	);
+}
+
+/**
+ * Finds or creates the plan timeline wrapper and populates it with step containers.
+ * @param elements - The required DOM elements.
+ * @returns The plan timeline wrapper element.
+ */
+export function buildPlanTimeline(
+	elements: RequiredDomElements
+): HTMLDivElement {
+	let wrapper = elements.chatContainer.querySelector(
+		"#plan-timeline-wrapper"
+	) as HTMLDivElement | null;
+
+	if (!wrapper) {
+		wrapper = document.createElement("div");
+		wrapper.id = "plan-timeline-wrapper";
+
+		// Insert the wrapper at the very top of the chat container
+		if (elements.chatContainer.firstChild) {
+			elements.chatContainer.insertBefore(
+				wrapper,
+				elements.chatContainer.firstChild
+			);
+		} else {
+			elements.chatContainer.appendChild(wrapper);
+		}
+	} else {
+		// Clear existing steps if the wrapper already existed (e.g., re-render on history load)
+		wrapper.innerHTML = "";
+	}
+
+	const steps = appState.currentPlanSteps || [];
+	appState.currentPlanStepIndex = -1; // Initialize or reset index
+
+	steps.forEach((stepDescription, index) => {
+		const stepContainer = document.createElement("div");
+		stepContainer.classList.add("plan-step-container");
+		stepContainer.dataset.stepIndex = index.toString();
+		// Store the original description for display when not active
+		stepContainer.dataset.originalDescription = stepDescription;
+
+		// Initial state: all steps are future steps (hidden)
+		stepContainer.classList.add("future-step");
+
+		stepContainer.textContent = stepDescription; // Initial content is just the description
+		wrapper!.appendChild(stepContainer);
+	});
+
+	return wrapper!;
+}
+
+/**
+ * Updates the visual state of the plan timeline based on the current step index.
+ * It also injects content and diffs into the active step container.
+ * @param elements - The required DOM elements.
+ * @param stepIndex - The current 0-based index being executed.
+ * @param stepContent - The textual output (message) for the current step (e.g., "Step 1/5: Creating file...").
+ * @param diffContent - Optional diff output for file modifications.
+ * @param isError - Whether the current step resulted in an error.
+ */
+export function renderPlanTimeline(
+	elements: RequiredDomElements,
+	stepIndex: number,
+	stepContent: string,
+	diffContent?: string,
+	isError: boolean = false
+): void {
+	const wrapper = elements.chatContainer.querySelector(
+		"#plan-timeline-wrapper"
+	) as HTMLDivElement | null;
+
+	if (!wrapper) {
+		console.warn("[PlanRenderer] Timeline wrapper not found during render.");
+		return;
+	}
+
+	const stepContainers = wrapper.querySelectorAll(
+		".plan-step-container"
+	) as NodeListOf<HTMLDivElement>;
+
+	if (stepContainers.length === 0) {
+		return;
+	}
+
+	appState.currentPlanStepIndex = stepIndex;
+
+	stepContainers.forEach((stepContainer, index) => {
+		stepContainer.classList.remove(
+			"completed-step",
+			"active-step",
+			"future-step",
+			"error-step"
+		);
+
+		const isCurrentStep = index === stepIndex;
+		const isCompletedStep = index < stepIndex;
+
+		// 1. Reset inner content container
+		stepContainer.innerHTML = "";
+
+		const originalDescription =
+			stepContainer.dataset.originalDescription || `Step ${index + 1}`;
+
+		// 2. Set base classes
+		if (isCompletedStep) {
+			stepContainer.classList.add("completed-step");
+		} else if (isCurrentStep) {
+			stepContainer.classList.add(isError ? "error-step" : "active-step");
+		} else {
+			stepContainer.classList.add("future-step");
+		}
+
+		// 3. Populate content
+		if (isCurrentStep) {
+			// Active step: Use live status text
+			const statusText = document.createElement("span");
+			statusText.textContent = stepContent;
+			stepContainer.appendChild(statusText);
+
+			// Inject diff content below the status if provided and not an error
+			if (diffContent && diffContent.trim() !== "" && !isError) {
+				const diffElement = document.createElement("pre");
+				diffElement.classList.add("plan-step-diff");
+				diffElement.textContent = diffContent;
+				diffElement.style.maxHeight = "150px";
+				diffElement.style.overflow = "auto";
+				diffElement.style.fontSize = "0.8em";
+				diffElement.style.marginTop = "5px";
+				diffElement.style.padding = "5px";
+				diffElement.style.backgroundColor = "var(--vscode-editor-background)";
+				diffElement.style.border = "1px solid var(--vscode-editorGroup-border)";
+
+				stepContainer.appendChild(diffElement);
+			}
+		} else {
+			// Completed or Future steps: use original description for brevity in timeline
+			stepContainer.textContent = originalDescription;
+		}
+	});
+
+	// Scroll the active step into view horizontally
+	const activeStep = wrapper.querySelector(
+		".active-step, .error-step"
+	) as HTMLDivElement | null;
+	if (activeStep) {
+		activeStep.scrollIntoView({
+			behavior: "smooth",
+			block: "nearest",
+			inline: "center",
+		});
+	}
 }

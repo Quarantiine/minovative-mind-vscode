@@ -26,48 +26,82 @@ interface ScanCache {
 
 // File type patterns for better filtering (default fallback)
 const RELEVANT_FILE_EXTENSIONS = [
-	// Source code files
-	".ts",
-	".tsx",
-	".js",
-	".jsx",
-	".mjs",
-	".cjs",
-	".py",
-	".java",
-	".kt",
-	".scala",
-	".groovy",
-	".cpp",
-	".cc",
-	".cxx",
-	".c",
-	".h",
-	".hpp",
-	".cs",
-	".vb",
-	".fs",
-	".fsx",
-	".go",
-	".rs",
-	".swift",
-	".kt",
-	".scala",
-	".php",
-	".rb",
-	".pl",
-	".pm",
+	// --- Web Technologies (Frontend & JavaScript/TypeScript Ecosystem) ---
 	".html",
 	".htm",
 	".css",
 	".scss",
 	".sass",
 	".less",
+	".js",
+	".mjs",
+	".cjs",
+	".jsx",
+	".ts",
+	".tsx",
+	".d.ts", // TypeScript Declaration Files
 	".vue",
 	".svelte",
-	".jsx",
-	".tsx",
-	".json",
+	".json", // Often used for data, config, or even web components
+	".graphql", // GraphQL schema/query files
+	".gql", // GraphQL query files
+
+	// --- General Purpose & Backend Languages ---
+	".py", // Python
+	".java", // Java
+	".kt", // Kotlin
+	".kts", // Kotlin Script
+	".scala", // Scala
+	".groovy", // Groovy
+	".go", // Go
+	".rs", // Rust
+	".php", // PHP
+	".rb", // Ruby
+	".swift", // Swift
+	".dart", // Dart
+	".cs", // C#
+	".vb", // Visual Basic
+	".fs", // F#
+	".fsx", // F# Script
+	".jl", // Julia
+	".ml", // OCaml
+	".mli", // OCaml Interface
+
+	// --- Low-level & Systems Programming ---
+	".cpp",
+	".cc",
+	".cxx",
+	".c",
+	".h",
+	".hpp",
+	".asm", // Assembly
+
+	// --- Scripting & Shell Languages ---
+	".sh", // Shell script
+	".bash", // Bash script
+	".zsh", // Zsh script
+	".ps1", // PowerShell script
+	".psm1", // PowerShell module
+	".psd1", // PowerShell data
+	".lua", // Lua
+	".luau", // Luau (Roblox)
+	".pl", // Perl
+	".pm", // Perl Module
+
+	// --- Database Query Languages ---
+	".sql",
+
+	// --- Infrastructure as Code (IaC) ---
+	".tf", // Terraform
+	".hcl", // HashiCorp Configuration Language
+
+	// --- Blockchain / Smart Contract Languages ---
+	".sol", // Solidity
+
+	// --- Game Development Specific ---
+	".gd", // GDScript (Godot Engine)
+
+	// --- Configuration, Markup & Documentation Files (by extension) ---
 	".yaml",
 	".yml",
 	".toml",
@@ -77,24 +111,27 @@ const RELEVANT_FILE_EXTENSIONS = [
 	".svg",
 	".md",
 	".txt",
-	// Configuration files
-	".config",
-	".conf",
-	".properties",
-	// Build files
-	"package.json",
-	"tsconfig.json",
-	"webpack.config.js",
-	"vite.config.js",
-	"rollup.config.js",
-	"jest.config.js",
-	"Dockerfile",
-	"docker-compose.yml",
-	"docker-compose.yaml",
-	".gitignore",
-	".eslintrc",
-	".prettierrc",
-	// Documentation
+	".config", // General configuration (e.g., .NET web.config)
+	".conf", // General configuration
+	".properties", // Java properties files
+	".R", // R Language (often for data analysis/statistics, but also scripts)
+	".r", // R Language (alternative extension)
+
+	// --- Major Project/Build System Files (by full name) ---
+	"package.json", // Node.js/JavaScript projects
+	"tsconfig.json", // TypeScript configuration
+	"webpack.config.js", // Webpack configuration
+	"vite.config.js", // Vite configuration
+	"rollup.config.js", // Rollup configuration
+	"jest.config.js", // Jest configuration
+	"Dockerfile", // Docker container definition
+	"docker-compose.yml", // Docker Compose configuration
+	"docker-compose.yaml", // Docker Compose configuration
+	".gitignore", // Git ignore rules
+	".eslintrc", // ESLint configuration
+	".prettierrc", // Prettier configuration
+
+	// --- Core Project Documentation & Metadata Files (by full name) ---
 	"README.md",
 	"CHANGELOG.md",
 	"LICENSE",

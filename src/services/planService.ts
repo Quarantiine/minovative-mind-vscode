@@ -18,11 +18,11 @@ import { UrlContextService } from "./urlContextService";
 import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
 import {
 	createInitialPlanningExplanationPrompt,
-	createPlanningPromptForFunctionCall, // Modified: Changed to createPlanningPromptForFunctionCall
+	createPlanningPromptForFunctionCall,
 } from "../ai/prompts/planningPrompts";
 import { repairJsonEscapeSequences } from "../utils/jsonUtils";
 import { PlanExecutorService } from "./planExecutorService";
-import { generateExecutionPlanTool } from "../ai/prompts/planFunctions"; // Added: Import generateExecutionPlanTool
+import { generateExecutionPlanTool } from "../ai/prompts/planFunctions";
 
 export class PlanService {
 	// Audited retry constants and made configurable via VS Code settings
@@ -53,13 +53,13 @@ export class PlanService {
 
 		// Initialize PlanExecutorService
 		this.planExecutorService = new PlanExecutorService(
-			provider, // Pass the SidebarProvider instance
+			provider,
 			this.workspaceRootUri!,
-			postMessageToWebview, // Pass the function
-			this.urlContextService, // Pass the UrlContextService instance
-			enhancedCodeGenerator, // Pass the EnhancedCodeGenerator instance
-			this.gitConflictResolutionService, // Pass the GitConflictResolutionService instance
-			this.MAX_TRANSIENT_STEP_RETRIES // Pass the retry count
+			postMessageToWebview,
+			this.urlContextService,
+			enhancedCodeGenerator,
+			this.gitConflictResolutionService,
+			this.MAX_TRANSIENT_STEP_RETRIES
 		);
 	}
 

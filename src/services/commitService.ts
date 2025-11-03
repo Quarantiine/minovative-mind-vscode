@@ -345,7 +345,7 @@ ${diff}
 	 */
 	private _validateSubjectLineLength(message: string): void {
 		const firstLine = message.split("\n", 1)[0].trim();
-		const SUBJECT_HARD_LIMIT = 72; // enforce conventional hard limit
+		const SUBJECT_HARD_LIMIT = 400; // enforce conventional hard limit
 		const SUBJECT_SOFT_LIMIT = 50; // recommended limit
 
 		if (firstLine.length > SUBJECT_HARD_LIMIT) {

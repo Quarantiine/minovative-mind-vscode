@@ -231,7 +231,6 @@ div#commit-message-display table,
 	white-space: normal; /* Ensure content within table cells wraps */
 	word-wrap: break-word; /* Ensure content within table cells wraps */
 	overflow-wrap: break-word; /* Ensure content within table cells wraps */
-	/* If table itself is too wide, .ai-message overflow-x:auto will handle scrolling */
 }
 
 div#commit-message-display th,
