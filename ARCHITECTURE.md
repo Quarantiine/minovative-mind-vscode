@@ -1,4 +1,4 @@
-# The Holy Grail of AI agents: Minovative Mind, an Integrated AI-Driven Development & Automation Platform for VS Code
+# Minovative Mind, an Integrated AI-Driven Development & Automation Platform for VS Code
 
 A deeper analysis of the file structure, class responsibilities, and how different components interact, here is a more comprehensive breakdown of the systems that work together in this project. This results in approximately **6** core, distinct systems:
 
@@ -185,11 +185,11 @@ The assembled payload must be translated into the exact format required by the u
 - **Structured Plan Generation**: Relies on `FunctionCallingMode.ANY` when interacting with `aiRequestService.generateFunctionCall` to force deterministic JSON output adhering to the `ExecutionPlan` schema.
 - **Validation & Repair**: Employs `parseAndValidatePlanWithFix` for rigorous validation and programmatic repair of plans.
 - **Step Execution Logic**: Interprets and executes each step, managing retries and providing user intervention options.
-- **Deep Integration**: Utilizes `EnhancedCodeGenerator` for file operations, `GitConflictResolutionService` for merge conflicts, `ProjectChangeLogger` for recording changes, and `commandExecution.ts` for shell commands.
+- **Deep Integration**: Utilizes `EnhancedCodeGenerator` for file operations, `ProjectChangeLogger` for recording changes, and `commandExecution.ts` for shell commands.
 - **User Interaction & Monitoring**: Manages user prompts, provides real-time progress updates, reports errors, and notifies on completion or cancellation.
 - **Model Usage Distinction**: Dynamically retrieves model names, using `DEFAULT_FLASH_LITE_MODEL` for initial textual plans and optimized models for function calling.
 - **Enhanced Execution Modularity (PlanExecutorService)**: This service optimizes execution ordering and resource management. Terminal cleanup (`_disposeExecutionTerminals`) is now guaranteed by being called in a `finally` block, ensuring resource hygiene. Additionally, local step retries are preempted by a global cancellation signal, allowing for immediate termination of the plan.
-- **Key Files**: `src/services/planService.ts` (`PlanService` class, `handleInitialPlanRequest`, `initiatePlanFromEditorAction`, `generateStructuredPlanAndExecute`, `_executePlan`, `_executePlanSteps`, `parseAndValidatePlanWithFix`), `src/ai/workflowPlanner.ts`, `src/services/aiRequestService.ts`, `src/ai/enhancedCodeGeneration.ts`, `src/services/gitConflictResolutionService.ts`, `src/utils/commandExecution.ts`, `src/workflow/ProjectChangeLogger.ts`, `src/services/RevertService.ts`
+- **Key Files**: `src/services/planService.ts` (`PlanService` class, `handleInitialPlanRequest`, `initiatePlanFromEditorAction`, `generateStructuredPlanAndExecute`, `_executePlan`, `_executePlanSteps`, `parseAndValidatePlanWithFix`), `src/ai/workflowPlanner.ts`, `src/services/aiRequestService.ts`, `src/ai/enhancedCodeGeneration.ts`, `src/utils/commandExecution.ts`, `src/workflow/ProjectChangeLogger.ts`, `src/services/RevertService.ts`
 
 #### 3. Project Change Logging
 

@@ -7,7 +7,7 @@ Minovative Mind is a powerful AI-augmented Visual Studio Code extension that int
 - **Intelligent AI Chat Interface**: Multimodal interaction, context-aware Q&A, and rich file interactions.
 - **Autonomous AI Workflows**: AI-driven planning, execution of multi-step tasks, and intelligent code modification.
 - **Deep Contextual Understanding**: Comprehensive codebase analysis, symbol and dependency graphing, and smart file relevance.
-- **Integrated Git Automation**: AI-generated commit messages and automated conflict resolution.
+- **Integrated Git Automation**: AI-generated commit messages.
 - **Robust Control & Transparency**: Reversible changes, real-time feedback, and secure operations.
 - **Optimized Performance**: Efficient resource management and fast contextual processing.
 - **Flexible Customization**: API key management and model selection.
@@ -29,7 +29,7 @@ Minovative Mind offers an intuitive chat interface for direct interaction with A
 - **Direct Chat from Editor**: Initiate a chat directly from the active editor via right-click context menu or `Ctrl/Cmd+M`, sending selected code or the full file to the AI for discussion.
 - **Dynamic Markdown Responses**: AI-generated Markdown responses are rendered with rich HTML support for interactive content.
 - **Inline Code Actions**: Easily copy code snippets from AI responses or apply changes directly to your active editor.
-- **Slash Command Suggestions**: Utilize intelligent suggestions for commands like `/plan`, `/fix`, `/merge`, and `/commit` to streamline actions.
+- **Slash Command Suggestions**: Utilize intelligent suggestions for commands like `/plan`, `/fix`, and `/commit` to streamline actions.
 - **Editable History**: Edit previous messages to re-evaluate conversations with updated context.
 - **Convert to Plans**: AI-generated responses can be seamlessly converted into actionable `/plan` commands for structured execution.
 - **Interactive File Selector**: A dedicated "Open File List" button provides a dynamic, searchable, and navigable popup. Users can efficiently select workspace files to insert their paths directly into the chat input, complete with search, keyboard navigation, and visual enhancements.
@@ -69,7 +69,6 @@ Minovative Mind can autonomously plan and execute complex development tasks, sig
 
 - **Automated Commit Messages**: Use the `/commit` command to have the AI analyze your staged changes and generate insightful, descriptive Git commit messages.
 - **Review & Edit**: The AI prompts you to review and edit the generated message before committing.
-- **Automated Conflict Resolution**: Assists in resolving Git merge conflicts for files targeted by `/merge` commands or AI plans, including updating VS Code's Git status for resolved files.
 
 ---
 

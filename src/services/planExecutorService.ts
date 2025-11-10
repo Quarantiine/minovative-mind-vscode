@@ -22,7 +22,6 @@ import {
 	RunCommandStep,
 } from "../ai/workflowPlanner";
 import { generateFileChangeSummary } from "../utils/diffingUtils";
-import { GitConflictResolutionService } from "./gitConflictResolutionService";
 import { applyAITextEdits, cleanCodeOutput } from "../utils/codeUtils";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import { UrlContextService } from "./urlContextService";
@@ -41,7 +40,6 @@ export class PlanExecutorService {
 		private postMessageToWebview: (message: ExtensionToWebviewMessages) => void,
 		private urlContextService: UrlContextService,
 		private enhancedCodeGenerator: EnhancedCodeGenerator,
-		private gitConflictResolutionService: GitConflictResolutionService,
 		private readonly MAX_TRANSIENT_STEP_RETRIES: number
 	) {}
 

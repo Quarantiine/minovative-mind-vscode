@@ -22,7 +22,6 @@ import {
 	showWarningNotification,
 	showErrorNotification,
 } from "../utils/notificationUtils";
-import { GitConflictResolutionService } from "../services/gitConflictResolutionService";
 
 import { CodeValidationService } from "../services/codeValidationService";
 import { DiagnosticService } from "../utils/diagnosticUtils";
@@ -81,7 +80,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	public planService: PlanService;
 	public chatService: ChatService;
 	public commitService: CommitService;
-	public gitConflictResolutionService: GitConflictResolutionService;
 	public tokenTrackingService: TokenTrackingService;
 	public revertService!: RevertService; // Added as per instructions
 	private enhancedCodeGenerator: EnhancedCodeGenerator;
@@ -168,10 +166,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			this.tokenTrackingService
 		);
 
-		this.gitConflictResolutionService = new GitConflictResolutionService(
-			context
-		);
-
 		this.contextService = new ContextService(
 			this.settingsManager,
 			this.chatHistoryManager,
@@ -205,7 +199,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		this.planService = new PlanService(
 			this,
 			this.workspaceRootUri,
-			this.gitConflictResolutionService,
 			this.enhancedCodeGenerator,
 			this.postMessageToWebview.bind(this)
 		);

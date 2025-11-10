@@ -50,7 +50,6 @@ For initial setup and installation, please refer to the [README.md](https://gith
   - The extension supports image input. Attach images or paste them; they will be processed and sent as Base64 data.
 - **Slash Commands**: Enhance your interaction with convenient slash commands:
   - `/fix`: Fast Assistants in debugging and fixing bugs.
-  - `/merge`: Generates Git commit messages.
   - `/plan`: Initiates AI planning for complex tasks.
   - `/commit`: Generates Git commit messages.
   - `chat` (general): For regular conversational queries about your code.
@@ -65,7 +64,7 @@ For initial setup and installation, please refer to the [README.md](https://gith
 - **Triggering Explanation**: Use the \"Generate Explanation\" command from your editor's context menu (right-click) or execute the `minovative-mind.explainSelection` command.
 - **Output Format**: Explanations are presented in a clear VS Code information modal.
 
-### 4.4 AI Planning & Execution
+### 4.3 AI Planning & Execution
 
 - **Initiating a Plan**:
   - Start a plan by typing `/plan [your request]` in the chat interface.
@@ -76,12 +75,12 @@ For initial setup and installation, please refer to the [README.md](https://gith
   - Plans can be cancelled if needed during execution.
 - **Reverting Changes**: The \"Revert Changes\" button, at the top right, allows you to undo AI-driven workflow actions if necessary.
 
-### 4.5 Git Commit Generation
+### 4.4 Git Commit Generation
 
 - **Triggering Commit**: Use the `/commit` command in the chat interface.
 - **Process**: The AI analyzes your staged changes, generates a commit message, and prompts you for review and edits before committing.
 
-### 4.6 Code Streaming & Modification
+### 4.5 Code Streaming & Modification
 
 - **Live Generation**: Code generated for `create_file` and `modify_file` steps streams directly into the editor, providing immediate visual feedback.
 - **Applying Changes**: AI modifications are applied to your editor, often involving diff analysis and intelligent application of changes.
