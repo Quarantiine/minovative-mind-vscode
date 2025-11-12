@@ -277,15 +277,26 @@ export class ChatService {
 				);
 			}
 		} catch (error: any) {
-			finalAiResponseText = formatUserFacingErrorMessage(
-				error,
-				"Failed to generate AI response.",
-				"AI Response Generation Error: ",
-				this.provider.workspaceRootUri
-			);
-			success = false;
-			if (this.provider.currentAiStreamingState) {
-				this.provider.currentAiStreamingState.isError = true;
+			const isCancellation = error?.message === ERROR_OPERATION_CANCELLED;
+
+			if (isCancellation) {
+				finalAiResponseText = ERROR_OPERATION_CANCELLED;
+				success = true;
+				if (this.provider.currentAiStreamingState) {
+					this.provider.currentAiStreamingState.isError = false;
+					this.provider.currentAiStreamingState.isComplete = true;
+				}
+			} else {
+				finalAiResponseText = formatUserFacingErrorMessage(
+					error,
+					"Failed to generate AI response.",
+					"AI Response Generation Error: ",
+					this.provider.workspaceRootUri
+				);
+				success = false;
+				if (this.provider.currentAiStreamingState) {
+					this.provider.currentAiStreamingState.isError = true;
+				}
 			}
 		} finally {
 			const isThisOperationStillActiveGlobally =
@@ -481,19 +492,27 @@ export class ChatService {
 				);
 			}
 		} catch (error: any) {
-			finalAiResponseText = formatUserFacingErrorMessage(
-				error,
-				"Failed to regenerate AI response.",
-				"AI Response Regeneration Error: ",
-				this.provider.workspaceRootUri
-			);
-			success = false;
-			if (this.provider.currentAiStreamingState) {
-				this.provider.currentAiStreamingState.isError = true;
-			}
-			if (error.message === ERROR_OPERATION_CANCELLED) {
+			const isCancellation = error?.message === ERROR_OPERATION_CANCELLED;
+
+			if (isCancellation) {
+				finalAiResponseText = ERROR_OPERATION_CANCELLED;
+				success = true;
+				if (this.provider.currentAiStreamingState) {
+					this.provider.currentAiStreamingState.isError = false;
+					this.provider.currentAiStreamingState.isComplete = true;
+				}
 				console.log("[ChatService] AI response regeneration cancelled.");
 			} else {
+				finalAiResponseText = formatUserFacingErrorMessage(
+					error,
+					"Failed to regenerate AI response.",
+					"AI Response Regeneration Error: ",
+					this.provider.workspaceRootUri
+				);
+				success = false;
+				if (this.provider.currentAiStreamingState) {
+					this.provider.currentAiStreamingState.isError = true;
+				}
 				console.error("[ChatService] Error regenerating AI response:", error);
 				chatHistoryManager.addHistoryEntry(
 					"model",

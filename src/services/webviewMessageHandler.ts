@@ -95,7 +95,7 @@ export async function handleWebviewMessage(
 
 	// Capture the current state of a user operation before processing the message.
 	const initialActiveChatOperationId = provider.currentActiveChatOperationId;
-	const initialIsGeneratingUserRequest = provider.isGeneratingUserRequest;
+	const initialIsOperationActive = !!provider.currentActiveChatOperationId;
 
 	try {
 		switch (validatedData.type) {
@@ -1013,7 +1013,7 @@ export async function handleWebviewMessage(
 		// If a user operation was initially generating and its ID hasn't changed,
 		// attempt to end the operation with a "failed" status.
 		if (
-			initialIsGeneratingUserRequest &&
+			initialIsOperationActive &&
 			provider.currentActiveChatOperationId === initialActiveChatOperationId
 		) {
 			await provider.endUserOperation("failed", errorMessage);

@@ -573,9 +573,46 @@ export class EnhancedCodeGenerator {
 				`[EnhancedCodeGenerator] Successfully extracted content for ${targetFilePath}.`
 			);
 		} else {
+			// Path-based extraction failed. Attempting fallback to find the largest code block.
 			console.warn(
-				`[EnhancedCodeGenerator] Could not extract content for ${targetFilePath}.`
+				`[EnhancedCodeGenerator] Path-based extraction failed for ${targetFilePath}. Attempting general code block fallback.`
 			);
+
+			// Regex to find all potential code blocks (Group 1 captures the content)
+			const fallbackRegex = /(?:\w+)?\n([\s\S]*?)\n/g;
+			let largestContent: string | null = null;
+			let currentBestLength = -1;
+
+			let fallbackMatch: RegExpExecArray | null;
+			// Reset regex last index before starting the search across rawResponse
+			fallbackRegex.lastIndex = 0;
+
+			// Iterate through all matches to find the largest content block
+			while ((fallbackMatch = fallbackRegex.exec(rawResponse)) !== null) {
+				const content = fallbackMatch[1];
+
+				// Prioritize the largest content block, ensuring it's not trivial.
+				if (
+					content &&
+					content.length > currentBestLength &&
+					content.trim().length > 10
+				) {
+					largestContent = content;
+					currentBestLength = content.length;
+				}
+			}
+
+			if (largestContent) {
+				extractedContent = largestContent.trim();
+				console.log(
+					`[EnhancedCodeGenerator] Fallback successful. Extracted content (length: ${extractedContent.length}) based on largest generic block.`
+				);
+			} else {
+				// If no content is found after the fallback, log the existing warning.
+				console.warn(
+					`[EnhancedCodeGenerator] Could not extract content for ${targetFilePath}.`
+				);
+			}
 		}
 
 		return extractedContent;

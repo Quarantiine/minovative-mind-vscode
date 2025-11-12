@@ -221,8 +221,6 @@ export function appendMessage(
 			} else {
 				setIconForButton(toggleButton, faChevronUp);
 			}
-			// Ensure the chat scrolls to make the expanded diff visible
-			elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
 		});
 
 		diffHeaderElement.appendChild(toggleButton);

@@ -179,10 +179,7 @@ export class PlanExecutorService {
 					.currentExecutionOutcome as sidebarTypes.ExecutionOutcome;
 			}
 
-			await this.provider.showPlanCompletionNotification(
-				plan.planDescription || "Unnamed Plan",
-				outcome
-			);
+			await this.provider.showPlanCompletionNotification(outcome);
 
 			this.postMessageToWebview({
 				type: "updateLoadingState",
@@ -564,15 +561,14 @@ export class PlanExecutorService {
 		}/${totalSteps}: ${detailedStepDescription}${retrySuffix}`;
 	}
 
-	// 3. Modify _logStepProgress method
+	// 1. Modify _logStepProgress method
 	private _logStepProgress(
 		currentStepNumber: number,
 		totalSteps: number,
 		message: string,
 		currentTransientAttempt: number,
 		maxTransientRetries: number,
-		isError: boolean = false,
-		diffContent?: string
+		isError: boolean = false
 	): void {
 		// Log to console first
 		if (isError) {
@@ -594,7 +590,6 @@ export class PlanExecutorService {
 			status = "skipped";
 		} else if (
 			message.includes(`Step ${currentStepNumber}/${totalSteps}`) &&
-			!diffContent &&
 			!message.includes("already has the desired content") &&
 			!message.includes("Command completed successfully")
 		) {
@@ -611,7 +606,7 @@ export class PlanExecutorService {
 			stepIndex: currentStepNumber - 1, // 0-based index
 			status: status,
 			detail: message,
-			diffContent: diffContent,
+			// diffContent removed
 		});
 	}
 
@@ -960,15 +955,27 @@ export class PlanExecutorService {
 					step.step.path
 				);
 
+				// 1. In the existing file modification path (the `try` block), change the success message passed to `this._logStepProgress` from 'Created file' to 'Modified file'.
 				this._logStepProgress(
 					currentStepNumber,
 					totalSteps,
 					`Modified file \`${path.basename(step.step.path)}\``,
 					0,
 					0,
-					false,
-					formattedDiff
+					false
 				);
+
+				// 2. In the existing file modification path, update the `chatMessageText` string to use the format: `Step ${currentStepNumber}/${totalSteps}: Modified file: \`${path.basename(step.step.path)}\`\n\n${summary}`.
+				const chatMessageText = `Step ${currentStepNumber}/${totalSteps}: Modified file: \`${path.basename(
+					step.step.path
+				)}\`\n\n${summary}`;
+				this._postChatUpdateForPlanExecution({
+					type: "appendRealtimeModelMessage",
+					value: {
+						text: chatMessageText,
+					},
+					diffContent: formattedDiff,
+				});
 
 				changeLogger.logChange({
 					filePath: step.step.path,
@@ -1000,15 +1007,28 @@ export class PlanExecutorService {
 					step.step.path
 				);
 
+				// 2. Modify _logStepProgress to remove diffContent
 				this._logStepProgress(
 					currentStepNumber,
 					totalSteps,
 					`Created file \`${path.basename(step.step.path)}\``,
 					0,
 					0,
-					false,
-					formattedDiff
+					false
 				);
+
+				// 3. In the new file creation path (the `catch` block), update the `chatMessageText` string to use the format: `Step ${currentStepNumber}/${totalSteps}: Created file: \`${path.basename(step.step.path)}\`\n\n${summary}`.
+				const chatMessageText = `Step ${currentStepNumber}/${totalSteps}: Created file: \`${path.basename(
+					step.step.path
+				)}\`\n\n${summary}`;
+				this._postChatUpdateForPlanExecution({
+					type: "appendRealtimeModelMessage",
+					value: {
+						text: chatMessageText,
+					},
+					diffContent: formattedDiff,
+				});
+
 				changeLogger.logChange({
 					filePath: step.step.path,
 					changeType: "created",
@@ -1122,15 +1142,27 @@ export class PlanExecutorService {
 				step.step.path
 			);
 
+			// Update the _logStepProgress message
 			this._logStepProgress(
 				currentStepNumber,
 				totalSteps,
 				`Modified file \`${path.basename(step.step.path)}\``,
 				0,
 				0,
-				false,
-				formattedDiff
+				false
 			);
+
+			// Update the chatMessageText string format
+			const chatMessageText = `Step ${currentStepNumber}/${totalSteps}: Modified file: \`${path.basename(
+				step.step.path
+			)}\`\n\n${summary}`;
+			this._postChatUpdateForPlanExecution({
+				type: "appendRealtimeModelMessage",
+				value: {
+					text: chatMessageText,
+				},
+				diffContent: formattedDiff,
+			});
 
 			changeLogger.logChange({
 				filePath: step.step.path,

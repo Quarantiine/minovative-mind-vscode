@@ -500,14 +500,6 @@ export class PlanService {
 			};
 			await this.provider.updatePersistedPendingPlanData(dataToPersist);
 
-			// Set isGeneratingUserRequest to true for persistence like /plan
-			this.provider.isGeneratingUserRequest = true;
-			await this.provider.workspaceState.update(
-				"minovativeMind.isGeneratingUserRequest",
-				true
-			);
-			// END ADDED
-
 			finalResult = {
 				success: true,
 				textualPlanExplanation: textualPlanResponse,

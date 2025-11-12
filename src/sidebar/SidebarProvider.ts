@@ -34,6 +34,52 @@ import { commitReviewSchema } from "../services/messageSchemas";
 
 type PendingCommitReviewDataType = z.infer<typeof commitReviewSchema>["value"];
 
+const MESSAGE_THROTTLING_CONFIG = {
+	IMMEDIATE_TYPES: [
+		"webviewReady", // Crucial for initial handshake
+		"updateKeyList", // API key updates (infrequent)
+		"restoreHistory", // Full chat history restoration (infrequent after initial load)
+		"confirmCommit", // Part of commit review flow
+		"cancelCommit", // Part of commit review flow
+		"fileUriLoaded", // Internal signal for webview readiness
+		"aiResponseStart", // Marks the beginning of an AI streaming response
+		"aiResponseChunk",
+		"reenableInput", // Critical for restoring user interaction
+		"aiResponseEnd", // Marks the end of an AI streaming response or operation result
+		"PrefillChatInput", // Prefilling chat input (critical for user workflow)
+		"operationCancelledConfirmation", // Confirmation of cancellation (critical)
+		"chatCleared", // Confirmation of chat clearing
+		"planExecutionStarted", // Marks the start of a plan execution
+		"planExecutionEnded", // Marks the end of a plan execution
+		"requestClearChatConfirmation", // Initiates user confirmation flow for chat clearing
+		"receiveWorkspaceFiles", // Result of a file scan request
+		"restorePendingPlanConfirmation", // Restores UI for pending plan review
+		"updateModelList", // Model selection changes (infrequent)
+		"updateLoadingState",
+		"apiKeyStatus",
+		"updateOptimizationSettings",
+		"structuredPlanParseFailed",
+		"planExecutionFinished",
+		"revertCompleted",
+		"restoreStreamingProgress",
+		"restorePendingCommitReview",
+		"resetCodeStreamingArea",
+		"updateCancellationState",
+	] as const,
+	THROTTLED_TYPES: [
+		"updateRelevantFilesDisplay", // Toggling relevant files display
+		"appendRealtimeModelMessage", // Used for plan step updates/logs and other non-AI-streaming status messages
+		"statusUpdate", // General progress updates (can be frequent)
+		"updateTokenStatistics", // Real-time token statistics updates
+		"updateCurrentTokenEstimates", // Real-time token estimates during streaming
+		"codeFileStreamStart", // Signals the start of code file streaming
+		"codeFileStreamChunk", // Individual chunks of streamed code content (very frequent)
+		"codeFileStreamEnd", // Signals the end of code file streaming
+		"gitProcessUpdate", // Updates from git command execution
+		"updateStreamingRelevantFiles",
+	] as const,
+};
+
 export class SidebarProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = "minovativeMindSidebarView";
 
@@ -59,14 +105,23 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	public currentExecutionOutcome: sidebarTypes.ExecutionOutcome | undefined;
 	public currentAiStreamingState: sidebarTypes.AiStreamingState | null = null;
 	public pendingCommitReviewData: PendingCommitReviewDataType | null = null;
-	public isGeneratingUserRequest: boolean = false;
-	public isCancellingOperation: boolean = false;
+	// Removed isGeneratingUserRequest
+	// Removed isCancellingOperation
 	public isEditingMessageActive: boolean = false;
 	private _persistedPendingPlanData: sidebarTypes.PersistedPlanData | null =
 		null;
 	public completedPlanChangeSets: RevertibleChangeSet[] = [];
 	public isPlanExecutionActive: boolean = false;
 	public currentActiveChatOperationId: string | null = null; // New property added
+
+	// Add private getter _isOperationActive
+	private get _isOperationActive(): boolean {
+		return (
+			!!this.currentActiveChatOperationId &&
+			!!this.activeOperationCancellationTokenSource &&
+			!this.activeOperationCancellationTokenSource.token.isCancellationRequested
+		);
+	}
 
 	// --- MANAGERS & SERVICES ---
 	public apiKeyManager: ApiKeyManager;
@@ -146,18 +201,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		this.tokenTrackingService = new TokenTrackingService();
 
 		// Register for real-time token updates
-		this.tokenTrackingService.onTokenUpdate((stats) => {
+		this.tokenTrackingService.onTokenUpdate(() => {
 			this.postMessageToWebview({
 				type: "updateTokenStatistics",
 				value: this.tokenTrackingService.getFormattedStatistics(),
 			});
 		});
 
-		// Load persistent state for isGeneratingUserRequest
-		this.isGeneratingUserRequest = context.workspaceState.get<boolean>(
-			"minovativeMind.isGeneratingUserRequest",
-			false
-		);
+		// Removed logic for loading persistent state for isGeneratingUserRequest
 
 		// Instantiate services, passing dependencies
 		this.aiRequestService = new AIRequestService(
@@ -317,53 +368,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		// Messages that should bypass throttling (immediate delivery)
 		const immediateTypes = new Set<
 			sidebarTypes.ExtensionToWebviewMessages["type"]
-		>([
-			"webviewReady", // Crucial for initial handshake
-			"updateKeyList", // API key updates (infrequent)
-			"restoreHistory", // Full chat history restoration (infrequent after initial load)
-			"confirmCommit", // Part of commit review flow
-			"cancelCommit", // Part of commit review flow
-			"fileUriLoaded", // Internal signal for webview readiness
-			"aiResponseStart", // Marks the beginning of an AI streaming response
-			"aiResponseChunk", // <<< Add this line
-			"reenableInput", // Critical for restoring user interaction
-			"aiResponseEnd", // Marks the end of an AI streaming response or operation result
-			"PrefillChatInput", // Prefilling chat input (critical for user workflow)
-			"operationCancelledConfirmation", // Confirmation of cancellation (critical)
-			"chatCleared", // Confirmation of chat clearing
-			"planExecutionStarted", // Marks the start of a plan execution
-			"planExecutionEnded", // Marks the end of a plan execution
-			"requestClearChatConfirmation", // Initiates user confirmation flow for chat clearing
-			"receiveWorkspaceFiles", // Result of a file scan request
-			"restorePendingPlanConfirmation", // Restores UI for pending plan review
-			"updateModelList", // Model selection changes (infrequent)
-			"updateLoadingState",
-			"apiKeyStatus",
-			"updateOptimizationSettings",
-			"structuredPlanParseFailed",
-			"planExecutionFinished",
-			"revertCompleted",
-			"restoreStreamingProgress",
-			"restorePendingCommitReview",
-			"resetCodeStreamingArea",
-			"updateCancellationState", // Add this line
-		]);
+		>(MESSAGE_THROTTLING_CONFIG.IMMEDIATE_TYPES);
 
 		// Messages that are typically frequent and should be throttled to prevent UI overwhelming
 		const throttledTypes = new Set<
 			sidebarTypes.ExtensionToWebviewMessages["type"]
-		>([
-			"updateRelevantFilesDisplay", // Toggling relevant files display
-			"appendRealtimeModelMessage", // Used for plan step updates/logs and other non-AI-streaming status messages
-			"statusUpdate", // General progress updates (can be frequent)
-			"updateTokenStatistics", // Real-time token statistics updates
-			"updateCurrentTokenEstimates", // Real-time token estimates during streaming
-			"codeFileStreamStart", // Signals the start of code file streaming
-			"codeFileStreamChunk", // Individual chunks of streamed code content (very frequent)
-			"codeFileStreamEnd", // Signals the end of code file streaming
-			"gitProcessUpdate", // Updates from git command execution
-			"updateStreamingRelevantFiles",
-		]);
+		>(MESSAGE_THROTTLING_CONFIG.THROTTLED_TYPES);
 
 		if (immediateTypes.has(message.type)) {
 			this._postMessageImmediateInternal(message);
@@ -514,47 +524,31 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		this.chatHistoryManager.restoreChatHistoryToWebview();
 
 		// Restore UI state based on potential ongoing operations
+		// 1) isPlanExecutionActive (Highest priority)
 		if (this.isPlanExecutionActive) {
 			await this._restorePlanExecutionState();
+			// 2) _persistedPendingPlanData (Plan Review)
 		} else if (this._persistedPendingPlanData) {
 			await this._restorePendingPlanConfirmationState(
 				this._persistedPendingPlanData
 			);
-		} else if (
-			this.currentAiStreamingState &&
-			!this.currentAiStreamingState.isComplete
-		) {
-			// Check for active token source when restoring streaming state
-			if (this.activeOperationCancellationTokenSource) {
-				await this._restoreAiStreamingState(this.currentAiStreamingState);
-			} else {
-				// Stale streaming state: streaming state is active but no cancellation token source
-				console.warn(
-					"[SidebarProvider] Detected stale AI streaming state: currentAiStreamingState is active but activeOperationCancellationTokenSource is undefined. Resetting."
-				);
-				await this._resetStaleLoadingState();
-			}
+			// 3) pendingCommitReviewData (Commit Review)
 		} else if (this.pendingCommitReviewData) {
 			await this._restorePendingCommitReviewState(this.pendingCommitReviewData);
+			// 4) currentAiStreamingState AND this._isOperationActive
 		} else if (
-			this.isGeneratingUserRequest &&
-			!this.activeOperationCancellationTokenSource
+			this.currentAiStreamingState &&
+			!this.currentAiStreamingState.isComplete &&
+			this._isOperationActive
 		) {
-			// Explicitly handle the case where isGeneratingUserRequest is true but token source is undefined.
+			await this._restoreAiStreamingState(this.currentAiStreamingState);
+			// 5) this._isOperationActive (Stale/Generic check for operations not explicitly captured)
+		} else if (this._isOperationActive) {
 			console.warn(
-				"[SidebarProvider] Detected stale generic loading state: isGeneratingUserRequest is true but activeOperationCancellationTokenSource is undefined. Resetting."
+				"[SidebarProvider] Detected active operation (currentActiveChatOperationId set) without specific plan, review, or streaming context. Assuming stale and resetting."
 			);
 			await this._resetStaleLoadingState();
-		} else if (this.isGeneratingUserRequest) {
-			// isGeneratingUserRequest is true AND activeOperationCancellationTokenSource IS defined,
-			// but it wasn't caught by planExecutionActive, persistedPlanData, currentAiStreamingState, or pendingCommitReviewData.
-			// This means there's an active, but unidentified or generic operation.
-			// For robustness, we should also treat this as stale or at least re-enable inputs.
-			// `_resetStaleLoadingState` calls `endUserOperation` which will clear active state and re-enable inputs.
-			console.warn(
-				"[SidebarProvider] Detected generic active operation (isGeneratingUserRequest true, token source defined) without specific context. Assuming stale and resetting."
-			);
-			await this._resetStaleLoadingState();
+			// 6) _resetQuiescentUIState (Default)
 		} else {
 			// No active or pending operations detected. Ensure UI is fully re-enabled.
 			await this._resetQuiescentUIState();
@@ -607,11 +601,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			value: planDataForRestore,
 		});
 		this.postMessageToWebview({ type: "updateLoadingState", value: false });
-		this.isGeneratingUserRequest = false;
-		await this.workspaceState.update(
-			"minovativeMind.isGeneratingUserRequest",
-			false
-		);
+		// Removed logic setting/persisting isGeneratingUserRequest
 	}
 
 	/**
@@ -647,11 +637,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			value: commitReviewData,
 		});
 		this.postMessageToWebview({ type: "updateLoadingState", value: false });
-		this.isGeneratingUserRequest = false;
-		await this.workspaceState.update(
-			"minovativeMind.isGeneratingUserRequest",
-			false
-		);
+		// Removed logic setting/persisting isGeneratingUserRequest
 	}
 
 	/**
@@ -681,36 +667,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		// Generate a new unique operationId at the very beginning
 		const newOperationId = crypto.randomUUID();
 
-		// Stale state check: If `isGeneratingUserRequest` is true but `currentActiveChatOperationId` is null,
-		// it indicates a previous operation might have crashed or not cleaned up properly.
-		// In this case, we reset the state and allow the new operation to proceed.
-		if (
-			this.isGeneratingUserRequest &&
-			this.currentActiveChatOperationId === null
-		) {
-			console.warn(
-				`[SidebarProvider] Detected stale 'isGeneratingUserRequest' state (true) with no active operation ID. ` +
-					`Resetting state for new operation '${operationType}' (ID: ${newOperationId}).`
-			);
-			this.clearActiveOperationState(); // Clears token source and operation ID
-			this.isGeneratingUserRequest = false; // Explicitly set to false
-			await this.workspaceState.update(
-				"minovativeMind.isGeneratingUserRequest",
-				false
-			);
-			// After resetting, the method will continue to the normal concurrency check
-			// and then start the new operation.
-		}
-
-		// Immediate concurrency check: If an operation is truly in progress (i.e., isGeneratingUserRequest is true
-		// AND currentActiveChatOperationId is NOT null, or the stale state check above wasn't triggered and
-		// isGeneratingUserRequest is still true from a legitimately ongoing operation), warn and exit.
-		if (this.isGeneratingUserRequest) {
+		// Concurrency check: If an operation is truly in progress (ID set and token active), warn and exit.
+		if (this._isOperationActive) {
 			console.warn(
 				`[SidebarProvider] Attempted to start operation '${operationType}' (new ID: ${newOperationId}) while an operation ` +
-					`(current ID: ${this.currentActiveChatOperationId}) is already in progress. Ignoring duplicate request.`
+					`(current ID: ${this.currentActiveChatOperationId}) is already active. Ignoring duplicate request.`
 			);
 			return;
+		}
+
+		// If operation is inactive, but a stale operation ID exists (e.g., failed to clear ID on crash), clear it now
+		if (this.currentActiveChatOperationId !== null) {
+			console.warn(
+				`[SidebarProvider] Detected stale active operation ID (${this.currentActiveChatOperationId}) while no token was active. Resetting state for new operation.`
+			);
+			this.clearActiveOperationState();
 		}
 
 		console.log(
@@ -739,23 +710,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		// Assign the new operation ID
 		this.currentActiveChatOperationId = newOperationId;
 
-		// Set isGeneratingUserRequest and persist it.
-		this.isGeneratingUserRequest = true;
-		await this.workspaceState.update(
-			"minovativeMind.isGeneratingUserRequest",
-			true
-		);
-
 		console.log(
 			"[SidebarProvider] Created new CancellationTokenSource and updated generation state for the operation."
 		);
 	}
 
 	public isOperationInProgress(): boolean {
-		return (
-			!!this.activeOperationCancellationTokenSource ||
-			this.activeChildProcesses.length > 0
-		);
+		return this._isOperationActive || this.activeChildProcesses.length > 0;
 	}
 
 	public clearActiveOperationState(): void {
@@ -771,7 +732,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	}
 
 	public async endCancellationOperation(): Promise<void> {
-		this.isCancellingOperation = false;
+		// Removed: this.isCancellingOperation = false;
 		this.postMessageToWebview({
 			type: "updateCancellationState",
 			value: false,
@@ -788,11 +749,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			`[SidebarProvider] Ending user operation with outcome: ${outcome}`
 		);
 
-		this.isGeneratingUserRequest = false;
-		await this.workspaceState.update(
-			"minovativeMind.isGeneratingUserRequest",
-			false
-		);
+		// Removed: logic setting/persisting isGeneratingUserRequest = false
 
 		if (outcome === "cancelled") {
 			this.endCancellationOperation();
@@ -869,22 +826,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	public async triggerUniversalCancellation(): Promise<void> {
 		console.log("[SidebarProvider] Triggering universal cancellation...");
 
-		// Set `isGeneratingUserRequest` to false first, and persist it.
-		this.isGeneratingUserRequest = false;
-		await this.workspaceState.update(
-			"minovativeMind.isGeneratingUserRequest",
-			false
-		);
-
-		this.isCancellingOperation = true;
+		// Removed logic setting/persisting isGeneratingUserRequest = false
+		// Removed: this.isCancellingOperation = true;
 
 		// Cancel the active operation token source if it exists.
 		if (this.activeOperationCancellationTokenSource) {
 			this.activeOperationCancellationTokenSource.cancel();
 		}
 
-		// Now, dispose and clear the token source, which is safe to do after `isGeneratingUserRequest` is false.
-		// This also ensures `activeOperationCancellationTokenSource` is set to `undefined`.
+		// Dispose and clear the token source and operation ID.
 		this.clearActiveOperationState();
 
 		this.activeChildProcesses.forEach((cp) => {
@@ -901,9 +851,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		await this.updatePersistedPendingPlanData(null);
 		this.lastPlanGenerationContext = null;
 		this.pendingCommitReviewData = null;
-		this.currentActiveChatOperationId = null; // Clear the operation ID on universal cancellation
-
-		// this.isEditingMessageActive = false; // Removed as per instructions
+		// Removed: this.currentActiveChatOperationId = null; (Handled by clearActiveOperationState)
 
 		// Ensure these messages are always sent to re-enable UI regardless of active token source
 		this.postMessageToWebview({ type: "updateLoadingState", value: false });
@@ -938,7 +886,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			return;
 		}
 
-		let revertSuccessful: boolean = false;
 		let revertErrorMessage: string = "";
 		let finalStatusMessage: string = "";
 		let isErrorStatus: boolean = false;
@@ -963,12 +910,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
 				await this.revertService.revertChanges(mostRecentChangeSet.changes);
 
-				revertSuccessful = true;
 				console.log(
 					"[SidebarProvider] Most recent workflow changes reverted successfully."
 				);
 			} catch (error: any) {
-				revertSuccessful = false;
 				revertErrorMessage = formatUserFacingErrorMessage(
 					error,
 					"Failed to revert most recent workflow changes.",
@@ -990,7 +935,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 				this.completedPlanChangeSets.push(mostRecentChangeSet);
 			}
 		} else {
-			revertSuccessful = false;
 			revertErrorMessage = "Revert operation cancelled by user.";
 			finalStatusMessage = "Revert operation cancelled.";
 			isErrorStatus = false;
@@ -1022,7 +966,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	}
 
 	public async showPlanCompletionNotification(
-		description: string,
 		outcome: sidebarTypes.ExecutionOutcome
 	): Promise<void> {
 		let message: string;
