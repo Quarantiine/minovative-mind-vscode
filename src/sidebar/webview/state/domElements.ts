@@ -1,4 +1,5 @@
 // Path: src/sidebar/webview/state/domElements.ts
+import { RequiredDomElements } from "../types/webviewTypes";
 
 /**
  * Initializes and retrieves references to all required DOM elements from the HTML document.
@@ -106,6 +107,9 @@ export function initializeDomElements(): RequiredDomElements | null {
 	const openFileListButton = document.getElementById(
 		"openFileListButton"
 	) as HTMLButtonElement;
+	const heuristicContextToggle = document.getElementById(
+		"heuristic-context-toggle"
+	) as HTMLButtonElement;
 	// const groundingToggle = document.getElementById(
 	// 	"grounding-toggle"
 	// ) as HTMLInputElement;
@@ -193,6 +197,7 @@ export function initializeDomElements(): RequiredDomElements | null {
 		chatInputControlsWrapper,
 		commandSuggestionsContainer,
 		openFileListButton,
+		heuristicContextToggle,
 
 		// Token usage elements
 		tokenUsageContainer,
@@ -247,7 +252,6 @@ export function initializeDomElements(): RequiredDomElements | null {
                     </p>
                     <p>
                         This usually indicates an issue with the extension's installation or a corrupted file.
-                        Please try one of the following:
                     </p>
                     <ul style="text-align: left; margin-top: 15px; margin-bottom: 25px; padding-left: 25px;">
                         <li>Reload the VS Code window (Command Palette: Developer: Reload Window).</li>
@@ -277,147 +281,4 @@ export function initializeDomElements(): RequiredDomElements | null {
 
 	// If all elements are found, cast and return the object
 	return requiredElements as RequiredDomElements;
-}
-
-// Path: src/sidebar/webview/types/webviewTypes.ts
-import { VsCodeWebviewApi } from "../vscode.d";
-
-export interface VsCodeApi extends VsCodeWebviewApi {}
-
-export interface RequiredDomElements {
-	chatContainer: HTMLDivElement;
-	chatInput: HTMLTextAreaElement;
-	sendButton: HTMLButtonElement;
-	statusArea: HTMLDivElement;
-	modelSelect: HTMLSelectElement;
-	currentKeyDisplay: HTMLSpanElement;
-	prevKeyButton: HTMLButtonElement;
-	nextKeyButton: HTMLButtonElement;
-	deleteKeyButton: HTMLButtonElement;
-	addKeyInput: HTMLInputElement;
-	addKeyButton: HTMLButtonElement;
-	apiKeyStatusDiv: HTMLDivElement;
-	clearChatButton: HTMLButtonElement;
-	saveChatButton: HTMLButtonElement;
-	loadChatButton: HTMLButtonElement;
-	cancelGenerationButton: HTMLButtonElement;
-	planConfirmationContainer: HTMLDivElement | null;
-	confirmPlanButton: HTMLButtonElement | null;
-	cancelPlanButton: HTMLButtonElement | null;
-	planParseErrorContainer: HTMLDivElement;
-	planParseErrorDisplay: HTMLParagraphElement;
-	failedJsonDisplay: HTMLElement;
-	retryGenerationButton: HTMLButtonElement;
-	cancelParseErrorButton: HTMLButtonElement;
-	commitReviewContainer: HTMLDivElement;
-	commitMessageTextarea: HTMLTextAreaElement;
-	stagedFilesList: HTMLOListElement;
-	confirmCommitButton: HTMLButtonElement;
-	cancelCommitButton: HTMLButtonElement;
-	emptyChatPlaceholder: HTMLDivElement;
-
-	editingIndicator: HTMLElement | null;
-	cancelEditButton: HTMLButtonElement | null;
-	editMessageHelpText: HTMLElement | null; // Added this property
-
-	chatInputControlsWrapper: HTMLDivElement;
-	commandSuggestionsContainer: HTMLDivElement;
-
-	// Token usage display elements
-	tokenUsageContainer: HTMLDivElement;
-	tokenUsageDisplay: HTMLDivElement;
-	tokenUsageToggle: HTMLButtonElement;
-	revertChangesButton: HTMLButtonElement;
-	modelUsagePercentagesList: HTMLDivElement; // NEW: Display for model usage percentages
-	copyStatsButton: HTMLButtonElement; // NEW: Copy button for token statistics
-
-	// Clear chat confirmation
-	chatClearConfirmationContainer: HTMLDivElement | null;
-	confirmClearChatButton: HTMLButtonElement | null;
-	cancelClearChatButton: HTMLButtonElement | null;
-
-	// Image upload
-	imageUploadInput: HTMLInputElement;
-	attachImageButton: HTMLButtonElement;
-	imagePreviewsContainer: HTMLDivElement;
-	clearImagesButton: HTMLButtonElement;
-	openFileListButton: HTMLButtonElement;
-}
-
-export interface PendingPlanData {
-	type: string;
-	originalRequest?: string;
-	originalInstruction?: string;
-	relevantFiles?: string[];
-	textualPlanExplanation?: string; // ADDED
-}
-
-export interface PendingCommitReviewData {
-	commitMessage: string;
-	stagedFiles: string[];
-}
-
-/**
- * Message type sent from webview to extension when a chat message is edited.
- */
-export interface EditChatMessage {
-	type: "editChatMessage";
-	messageIndex: number; // The index of the message in the chat history array
-	newContent: string; // The new, edited content of the message
-}
-
-/**
- * Represents the state of an image file selected for upload in the webview.
- */
-export interface ImageUploadState {
-	file: File;
-	mimeType: string;
-	data: string; // Base64 encoded string of the image
-	previewElement: HTMLDivElement; // Reference to the DOM element displaying the preview
-}
-
-/**
- * Represents image data that is sent inline, typically Base64 encoded.
- */
-export interface ImageInlineData {
-	mimeType: string;
-	data: string;
-}
-
-export type SuggestionType = "command" | "file" | "loading" | "none";
-
-export interface WebviewAppState {
-	currentAiMessageContentElement: HTMLSpanElement | null;
-	currentAccumulatedText: string;
-	typingBuffer: string;
-	typingTimer: ReturnType<typeof setInterval> | null;
-	TYPING_SPEED_MS: number;
-	CHARS_PER_INTERVAL: number;
-	activeCommandIndex: number;
-	filteredCommands: string[];
-	isCommandSuggestionsVisible: boolean;
-	planConfirmationContainer: HTMLDivElement | null;
-	confirmPlanButton: HTMLButtonElement | null;
-	cancelPlanButton: HTMLButtonElement | null;
-	pendingPlanData: PendingPlanData | null;
-	pendingCommitReviewData: PendingCommitReviewData | null;
-	isApiKeySet: boolean;
-	isLoading: boolean;
-	isAwaitingUserReview: boolean;
-	isCancelling: boolean;
-	isCommitActionInProgress: boolean;
-	isCancellationInProgress: boolean;
-	isPlanExecutionInProgress: boolean;
-	hasRevertibleChanges: boolean;
-	totalKeys: number;
-	isTokenUsageVisible: boolean;
-	nextMessageIndex: number;
-	selectedImages: ImageUploadState[];
-	allWorkspaceFiles: string[];
-	isRequestingWorkspaceFiles: boolean;
-	currentSuggestionType: SuggestionType;
-	currentFileSearchQuery: string;
-	editingMessageIndex: number | null;
-	isEditingMessage: boolean;
-	currentActiveOperationId: string | null;
 }

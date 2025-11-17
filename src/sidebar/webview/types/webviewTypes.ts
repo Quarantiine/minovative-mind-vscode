@@ -58,9 +58,10 @@ export interface RequiredDomElements {
 	// Image upload
 	imageUploadInput: HTMLInputElement;
 	attachImageButton: HTMLButtonElement;
-	imagePreviewsContainer: HTMLDivElement;
 	clearImagesButton: HTMLButtonElement;
 	openFileListButton: HTMLButtonElement;
+	heuristicContextToggle: HTMLButtonElement;
+	imagePreviewsContainer: HTMLDivElement;
 }
 
 export interface PendingPlanData {
@@ -143,4 +144,5 @@ export interface WebviewAppState {
 	editingMessageIndex: number | null;
 	isEditingMessage: boolean;
 	currentActiveOperationId: string | null;
+	isHeuristicContextEnabled: boolean;
 }

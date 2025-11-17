@@ -19,13 +19,13 @@ import {
 } from "./ui/chatMessageRenderer";
 import { RequiredDomElements } from "./types/webviewTypes";
 import { setIconForButton } from "./utils/iconHelpers";
-import { faChartLine } from "./utils/iconHelpers";
+import { faChartLine, faProjectDiagram } from "./utils/iconHelpers";
 import { hideSuggestions } from "./ui/commandSuggestions";
 
 /**
  * Updates token usage display with current statistics
  */
-function updateTokenUsageDisplay(elements: RequiredDomElements): void {
+function updateTokenUsageDisplay(_elements: RequiredDomElements): void {
 	// Request token statistics from extension
 	postMessageToExtension({ type: "getTokenStatistics" });
 }
@@ -42,6 +42,32 @@ function toggleTokenUsageDisplay(elements: RequiredDomElements): void {
 	if (appState.isTokenUsageVisible) {
 		updateTokenUsageDisplay(elements);
 	}
+}
+
+/**
+ * Toggles heuristic context usage and updates the display.
+ */
+function toggleHeuristicContextDisplay(elements: RequiredDomElements): void {
+	// Flip state
+	const isEnabled = !appState.isHeuristicContextEnabled;
+	appState.isHeuristicContextEnabled = isEnabled;
+
+	const toggleButton = elements.heuristicContextToggle; // Correctly referencing elements.heuristicContextToggle
+	const title = isEnabled
+		? "Heuristic Context is ON"
+		: "Heuristic Context is OFF";
+
+	// Only update title here. Visual state (active/disabled) is handled by setLoadingState.
+	toggleButton.title = title;
+
+	// Send message to extension host
+	postMessageToExtension({
+		type: "toggleHeuristicContextUsage",
+		isEnabled: isEnabled,
+	});
+
+	// Ensure immediate synchronization
+	setLoadingState(appState.isLoading, elements);
 }
 
 /**
@@ -75,31 +101,29 @@ function setLoadingState(
 	const chatClearConfirmationVisible =
 		elements.chatClearConfirmationContainer?.style.display !== "none" || false;
 
+	// Define blocked state based on ongoing operations
+	const isBlockedByOperation =
+		loading ||
+		appState.isAwaitingUserReview ||
+		appState.isCancellationInProgress ||
+		appState.isPlanExecutionInProgress;
+
 	// Introduce new constants for granular control
 	const canInteractWithMainChatControls =
-		!loading &&
-		appState.isApiKeySet &&
-		!appState.isAwaitingUserReview && // Refactored
-		!appState.isCancellationInProgress &&
-		!appState.isPlanExecutionInProgress;
+		!isBlockedByOperation && appState.isApiKeySet;
 
 	const canSendCurrentInput =
 		canInteractWithMainChatControls && !appState.isCommandSuggestionsVisible;
 
 	// Determine enablement for chat history management buttons
 	const canInteractWithChatHistoryButtons =
-		!loading &&
-		!appState.isAwaitingUserReview && // Refactored
-		!appState.isCommandSuggestionsVisible &&
-		!appState.isCancellationInProgress &&
-		!appState.isPlanExecutionInProgress;
+		!isBlockedByOperation && !appState.isCommandSuggestionsVisible;
 
 	// Define enablement for image upload controls
-	const canInteractWithImageControls =
-		!loading &&
-		!appState.isAwaitingUserReview &&
-		!appState.isCancellationInProgress &&
-		!appState.isPlanExecutionInProgress;
+	const canInteractWithImageControls = !isBlockedByOperation;
+
+	// Define enablement for Heuristic Context Toggle
+	const canToggleHeuristicButton = !isBlockedByOperation;
 
 	console.log(
 		`[setLoadingState] Final computed canInteractWithMainChatControls=${canInteractWithMainChatControls}, canSendCurrentInput=${canSendCurrentInput}, canInteractWithChatHistoryButtons=${canInteractWithChatHistoryButtons}`
@@ -109,16 +133,27 @@ function setLoadingState(
 	elements.chatInput.disabled = !canInteractWithMainChatControls;
 	elements.modelSelect.disabled = !canInteractWithMainChatControls;
 	elements.sendButton.disabled = !canSendCurrentInput;
-	elements.openFileListButton.disabled = !canInteractWithMainChatControls; // Instruction 1: Enable/disable openFileListButton
+	elements.openFileListButton.disabled = !canInteractWithMainChatControls;
+
+	// Apply disabled states to Heuristic Context Toggle
+	elements.heuristicContextToggle.disabled = !canToggleHeuristicButton;
+
+	// Apply derived CSS class toggling logic
+	const isHeuristicEnabled = appState.isHeuristicContextEnabled;
+	elements.heuristicContextToggle.classList.toggle(
+		"active",
+		isHeuristicEnabled
+	);
+	elements.heuristicContextToggle.classList.toggle(
+		"inactive",
+		!isHeuristicEnabled
+	);
 
 	// Apply disabled states to API key management controls
 	const enableApiKeyControls =
-		!appState.isLoading &&
-		!appState.isAwaitingUserReview && // Refactored
+		!isBlockedByOperation &&
 		!appState.isCommandSuggestionsVisible &&
-		appState.totalKeys > 0 &&
-		!appState.isCancellationInProgress &&
-		!appState.isPlanExecutionInProgress;
+		appState.totalKeys > 0;
 	elements.prevKeyButton.disabled =
 		!enableApiKeyControls || appState.totalKeys <= 1;
 	elements.nextKeyButton.disabled =
@@ -127,11 +162,7 @@ function setLoadingState(
 		!enableApiKeyControls || !appState.isApiKeySet;
 
 	const enableAddKeyInputControls =
-		!loading &&
-		!appState.isAwaitingUserReview && // Refactored
-		!appState.isCommandSuggestionsVisible &&
-		!appState.isCancellationInProgress &&
-		!appState.isPlanExecutionInProgress;
+		!isBlockedByOperation && !appState.isCommandSuggestionsVisible;
 	elements.addKeyInput.disabled = !enableAddKeyInputControls;
 	elements.addKeyButton.disabled = !enableAddKeyInputControls;
 
@@ -154,7 +185,7 @@ function setLoadingState(
 		elements.commitMessageTextarea.value.trim() === "";
 
 	// Apply disabled states for image upload controls
-	const attachImageButton = elements.attachImageButton; // Alias for clarity as per instruction 1
+	const attachImageButton = elements.attachImageButton;
 	elements.imageUploadInput.disabled = !canInteractWithImageControls;
 	// elements.imageUploadInput.style.display line removed as per instruction. (It should remain 'none' as per index.html)
 	attachImageButton.disabled = !canInteractWithImageControls;
@@ -328,9 +359,6 @@ function initializeWebview(): void {
 
 	// Initialize all event listeners for buttons, inputs, and the message bus
 	initializeInputEventListeners(elements, setLoadingState);
-	// Instruction 3: ensure initializeButtonEventListeners is called after initializeDomElements.
-	// This is already the case as initializeDomElements returns `elements`, which is then passed
-	// to initializeButtonEventListeners. The order here is correct.
 	initializeButtonEventListeners(elements, setLoadingState);
 	initializeMessageBusHandler(elements, setLoadingState);
 
@@ -341,6 +369,31 @@ function initializeWebview(): void {
 
 	// Set icon for token usage button
 	setIconForButton(elements.tokenUsageToggle, faChartLine);
+
+	// --- Heuristic Context Toggle Initialization ---
+	// Ensure initial visual state reflects appState (defaulting to false if unset)
+	const isHeuristicEnabledInitially = !!appState.isHeuristicContextEnabled;
+
+	elements.heuristicContextToggle.classList.toggle(
+		"active",
+		isHeuristicEnabledInitially
+	);
+	elements.heuristicContextToggle.classList.toggle(
+		"inactive",
+		!isHeuristicEnabledInitially
+	);
+	elements.heuristicContextToggle.title = isHeuristicEnabledInitially
+		? "Heuristic Context is ON (Click to disable file relationship analysis)"
+		: "Heuristic Context is OFF (Click to enable file relationship analysis)";
+
+	// Attach event listener
+	elements.heuristicContextToggle.addEventListener("click", () => {
+		toggleHeuristicContextDisplay(elements);
+	});
+
+	// Set icon for heuristic context button
+	setIconForButton(elements.heuristicContextToggle, faProjectDiagram);
+	// --- End Heuristic Context Toggle Initialization ---
 
 	// Perform initial UI setup for dynamically created components or visibility
 	createPlanConfirmationUI(

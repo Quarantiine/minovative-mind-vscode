@@ -11,6 +11,7 @@ const LOW_RELEVANCE = 50;
 const ACTIVE_FILE_SCORE_BOOST = 200;
 
 export interface HeuristicSelectionOptions {
+	heuristicSelectionEnabled?: boolean;
 	maxHeuristicFilesTotal: number;
 	maxSameDirectoryFiles: number;
 	maxDirectDependencies: number;
@@ -44,8 +45,16 @@ export async function getHeuristicRelevantFiles(
 	cancellationToken?: vscode.CancellationToken,
 	options?: Partial<HeuristicSelectionOptions>
 ): Promise<vscode.Uri[]> {
+	if (options?.heuristicSelectionEnabled === false) {
+		console.log(
+			"[HeuristicContextSelector] Heuristic selection explicitly disabled. Skipping scoring."
+		);
+		return [];
+	}
+
 	// Initialize effective options with provided options or default weights
 	const effectiveOptions: HeuristicSelectionOptions = {
+		heuristicSelectionEnabled: options?.heuristicSelectionEnabled,
 		maxHeuristicFilesTotal: options?.maxHeuristicFilesTotal ?? 30,
 		maxSameDirectoryFiles: options?.maxSameDirectoryFiles ?? 15,
 		maxDirectDependencies: options?.maxDirectDependencies ?? 10,

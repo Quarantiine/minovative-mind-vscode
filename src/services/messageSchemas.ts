@@ -163,6 +163,11 @@ const aiRetryNotificationSchema = z.object({
 	reason: z.string().nonempty("Reason for retry notification cannot be empty."),
 });
 
+const toggleHeuristicContextUsageSchema = z.object({
+	type: z.literal("toggleHeuristicContextUsage"),
+	isEnabled: z.boolean(),
+});
+
 export const allMessageSchemas = z.discriminatedUnion("type", [
 	planRequestSchema,
 	chatMessageSchema,
@@ -203,6 +208,7 @@ export const allMessageSchemas = z.discriminatedUnion("type", [
 	newFeatureRequestSchema,
 	copyContextMessageSchema, // New schema added here
 	aiRetryNotificationSchema,
+	toggleHeuristicContextUsageSchema, // New schema added here
 ]);
 
 // Export individual schemas if they are needed for more granular error reporting
@@ -215,4 +221,5 @@ export {
 	copyContextMessageSchema,
 	commitReviewSchema,
 	aiRetryNotificationSchema,
+	toggleHeuristicContextUsageSchema,
 };

@@ -423,12 +423,39 @@ export class ContextService {
 			}
 			const rootFolder = workspaceFolders[0];
 
+			// --- Optimization/Heuristic Flag Calculation Pre-scan ---
+			const queryForContextCheck = userRequest || editorContext?.instruction;
+
+			// 1. Hard gate for /commit (Highest Priority)
+			if (queryForContextCheck?.startsWith("/commit")) {
+				return {
+					contextString:
+						"[Project context not applicable for git commit message generation]",
+					relevantFiles: [],
+				};
+			}
+
+			const isAISelctionRequired =
+				this.settingsManager.getSetting<boolean>(
+					"smartContext.enabled",
+					true
+				) && !!queryForContextCheck;
+
+			const heuristicSelectionEnabled =
+				this.settingsManager.getOptimizationSettings()
+					.heuristicSelectionEnabled;
+			const shouldRunHeuristics =
+				isAISelctionRequired && heuristicSelectionEnabled;
+			// --- End Flag Calculation ---
+
 			// Optimized workspace scanning with performance monitoring
 			const scanStartTime = Date.now();
+
+			// 1. Wrap status updates
 			this.postMessageToWebview({
 				type: "statusUpdate",
 				value: "Scanning workspace for relevant files",
-				showLoadingDots: true, // ADDED
+				showLoadingDots: true,
 			});
 
 			const allScannedFiles = await scanWorkspace({
@@ -475,84 +502,118 @@ export class ContextService {
 				};
 			}
 
-			// Optimized dependency graph building
-			const dependencyStartTime = Date.now();
-			this.postMessageToWebview({
-				type: "statusUpdate",
-				value: "Analyzing file dependencies",
-				showLoadingDots: true, // ADDED
-			});
+			// 2. Hard gate for disabled heuristics after scan (Instruction 2)
+			if (!heuristicSelectionEnabled) {
+				this.postMessageToWebview({
+					type: "statusUpdate",
+					value:
+						"Context heuristics disabled by user settings. Proceeding with zero context files.",
+					isError: true,
+				});
 
-			const fileDependencies = await buildDependencyGraph(
-				allScannedFiles,
-				rootFolder.uri,
-				{
-					useCache: options?.useDependencyCache ?? true,
-					maxConcurrency: options?.maxConcurrency ?? 15,
-					skipLargeFiles: options?.skipLargeFiles ?? true,
-					maxFileSizeForParsing: options?.maxFileSize ?? DEFAULT_SIZE,
-					retryFailedFiles: true,
-					maxRetries: 3,
-				}
-			);
-
-			const dependencyBuildTime = Date.now() - dependencyStartTime;
-			if (
-				enablePerformanceMonitoring &&
-				dependencyBuildTime >
-					PERFORMANCE_THRESHOLDS.DEPENDENCY_BUILD_TIME_WARNING
-			) {
-				console.warn(
-					`[ContextService] Dependency graph build took ${dependencyBuildTime}ms (threshold: ${PERFORMANCE_THRESHOLDS.DEPENDENCY_BUILD_TIME_WARNING}ms)`
-				);
+				return {
+					contextString: "[Context building disabled by user settings]",
+					relevantFiles: [],
+					performanceMetrics: {
+						scanTime,
+						dependencyBuildTime: 0,
+						contextBuildTime: 0,
+						totalTime: Date.now() - startTime,
+						fileCount: allScannedFiles.length,
+						processedFileCount: 0,
+					},
+				};
 			}
 
-			const reverseFileDependencies = buildReverseDependencyGraph(
-				fileDependencies,
-				rootFolder.uri
-			);
+			// Optimized dependency graph building
+			let fileDependencies = new Map<string, DependencyRelation[]>();
+			let reverseFileDependencies = new Map<string, DependencyRelation[]>();
+			let dependencyBuildTime = 0;
 
-			this.postMessageToWebview({
-				type: "statusUpdate",
-				value: `Analyzed ${fileDependencies.size} file dependencies in ${dependencyBuildTime}ms.`,
-			});
+			// 2. Gate the entire Dependency Graph building block
+			if (shouldRunHeuristics) {
+				const dependencyStartTime = Date.now();
+				this.postMessageToWebview({
+					type: "statusUpdate",
+					value: "Analyzing file dependencies",
+					showLoadingDots: true, // ADDED
+				});
+
+				fileDependencies = await buildDependencyGraph(
+					allScannedFiles,
+					rootFolder.uri,
+					{
+						useCache: options?.useDependencyCache ?? true,
+						maxConcurrency: options?.maxConcurrency ?? 15,
+						skipLargeFiles: options?.skipLargeFiles ?? true,
+						maxFileSizeForParsing: options?.maxFileSize ?? DEFAULT_SIZE,
+						retryFailedFiles: true,
+						maxRetries: 3,
+					}
+				);
+
+				dependencyBuildTime = Date.now() - dependencyStartTime;
+				if (
+					enablePerformanceMonitoring &&
+					dependencyBuildTime >
+						PERFORMANCE_THRESHOLDS.DEPENDENCY_BUILD_TIME_WARNING
+				) {
+					console.warn(
+						`[ContextService] Dependency graph build took ${dependencyBuildTime}ms (threshold: ${PERFORMANCE_THRESHOLDS.DEPENDENCY_BUILD_TIME_WARNING}ms)`
+					);
+				}
+
+				reverseFileDependencies = buildReverseDependencyGraph(
+					fileDependencies,
+					rootFolder.uri
+				);
+
+				this.postMessageToWebview({
+					type: "statusUpdate",
+					value: `Analyzed ${fileDependencies.size} file dependencies in ${dependencyBuildTime}ms.`,
+				});
+			}
 
 			// Optimized symbol processing with limits
 			const documentSymbolsMap = new Map<string, vscode.DocumentSymbol[]>();
-			const maxFilesForSymbolProcessing = Math.min(
-				allScannedFiles.length,
-				PERFORMANCE_THRESHOLDS.MAX_FILES_FOR_SYMBOL_PROCESSING
-			);
 
-			// Process symbols only for files that are likely to be relevant
-			const filesForSymbolProcessing = allScannedFiles.slice(
-				0,
-				maxFilesForSymbolProcessing
-			);
+			// 2. Gate the symbol processing loop
+			if (shouldRunHeuristics) {
+				const maxFilesForSymbolProcessing = Math.min(
+					allScannedFiles.length,
+					PERFORMANCE_THRESHOLDS.MAX_FILES_FOR_SYMBOL_PROCESSING
+				);
 
-			await BPromise.map(
-				filesForSymbolProcessing,
-				async (fileUri: vscode.Uri) => {
-					if (cancellationToken?.isCancellationRequested) {
-						return;
-					}
-					try {
-						const symbols = await SymbolService.getSymbolsInDocument(
-							fileUri,
-							cancellationToken
-						);
-						const relativePath = path
-							.relative(rootFolder.uri.fsPath, fileUri.fsPath)
-							.replace(/\\/g, "/");
-						documentSymbolsMap.set(relativePath, symbols || []);
-					} catch (symbolError: any) {
-						console.warn(
-							`[ContextService] Failed to get symbols for ${fileUri.fsPath}: ${symbolError.message}`
-						);
-					}
-				},
-				{ concurrency: options?.maxConcurrency ?? 5 }
-			);
+				// Process symbols only for files that are likely to be relevant
+				const filesForSymbolProcessing = allScannedFiles.slice(
+					0,
+					maxFilesForSymbolProcessing
+				);
+
+				await BPromise.map(
+					filesForSymbolProcessing,
+					async (fileUri: vscode.Uri) => {
+						if (cancellationToken?.isCancellationRequested) {
+							return;
+						}
+						try {
+							const symbols = await SymbolService.getSymbolsInDocument(
+								fileUri,
+								cancellationToken
+							);
+							const relativePath = path
+								.relative(rootFolder.uri.fsPath, fileUri.fsPath)
+								.replace(/\\/g, "/");
+							documentSymbolsMap.set(relativePath, symbols || []);
+						} catch (symbolError: any) {
+							console.warn(
+								`[ContextService] Failed to get symbols for ${fileUri.fsPath}: ${symbolError.message}`
+							);
+						}
+					},
+					{ concurrency: options?.maxConcurrency ?? 5 }
+				);
+			}
 
 			// --- Determine effective diagnostics string ---
 			let effectiveDiagnosticsString: string | undefined =
@@ -608,10 +669,14 @@ export class ContextService {
 			}
 			// --- End Determine effective diagnostics string ---
 
-			// 2b. Add new conditional block for activeSymbolDetailedInfo
+			// 2b. Add new conditional block for activeSymbolDetailedInfo (Instruction 4 Check)
 			// This block is added after fileDependencies is built.
 			let activeSymbolDetailedInfo: ActiveSymbolDetailedInfo | undefined;
-			if (editorContext?.documentUri && editorContext?.selection) {
+			if (
+				shouldRunHeuristics &&
+				editorContext?.documentUri &&
+				editorContext?.selection
+			) {
 				const activeFileUri = editorContext.documentUri;
 				try {
 					// 2b.iii. Call SymbolService.getSymbolsInDocument
@@ -859,10 +924,7 @@ export class ContextService {
 
 			const currentQueryForSelection =
 				userRequest || editorContext?.instruction;
-			const smartContextEnabled = this.settingsManager.getSetting<boolean>(
-				"smartContext.enabled",
-				true
-			);
+			// Note: smartContextEnabled is derived implicitly via isAISelctionRequired
 
 			// Get the current operation ID from options
 			const currentOperationId = options?.operationId;
@@ -895,157 +957,153 @@ export class ContextService {
 				this.lastProcessedOperationId = currentOperationId;
 			}
 
-			if (
-				currentQueryForSelection &&
-				smartContextEnabled &&
-				!currentQueryForSelection.startsWith("/commit")
-			) {
-				this.postMessageToWebview({
-					type: "statusUpdate",
-					value: "Identifying relevant files",
-					showLoadingDots: true,
-				});
+			// 3. Restructure the final file selection block
+			if (isAISelctionRequired) {
+				// Since !heuristicSelectionEnabled is gated above, if isAISelctionRequired is true, shouldRunHeuristics must also be true.
+				if (shouldRunHeuristics) {
+					// Case 1: Run the existing AI selection logic (Heuristics enabled)
+					this.postMessageToWebview({
+						type: "statusUpdate",
+						value: "Identifying relevant files",
+						showLoadingDots: true,
+					});
 
-				try {
-					const selectionOptions: SelectRelevantFilesAIOptions = {
-						userRequest: currentQueryForSelection,
-						chatHistory: this.chatHistoryManager.getChatHistory(),
-						allScannedFiles,
-						projectRoot: rootFolder.uri,
-						activeEditorContext: editorContext,
-						diagnostics: effectiveDiagnosticsString,
-						activeEditorSymbols: editorContext?.documentUri
-							? documentSymbolsMap.get(
-									path
-										.relative(
-											rootFolder.uri.fsPath,
-											editorContext.documentUri.fsPath
-										)
-										.replace(/\\/g, "/")
-							  )
-							: undefined,
-						// Modified to adapt prompt from string to HistoryEntryPart[]
-						aiModelCall: async (
-							prompt: string,
-							modelName: string,
-							history: HistoryEntry[] | undefined,
-							requestType: string,
-							generationConfig: GenerationConfig | undefined,
-							streamCallbacks:
-								| {
-										onChunk: (chunk: string) => Promise<void> | void;
-										onComplete?: () => void;
-								  }
-								| undefined,
-							token: vscode.CancellationToken | undefined
-						) => {
-							const messages: HistoryEntryPart[] = [{ text: prompt }];
-							return this.aiRequestService.generateWithRetry(
-								messages,
-								modelName,
-								history,
-								requestType,
-								generationConfig,
-								streamCallbacks,
-								token
-							);
-						},
-						modelName: DEFAULT_FLASH_LITE_MODEL, // Use the default model for selection
-						cancellationToken,
-						fileDependencies:
-							this._convertDependencyMapToStringMap(fileDependencies),
-						preSelectedHeuristicFiles: [], // Pass heuristicSelectedFiles
-						fileSummaries: fileSummariesForAI, // Pass the generated file summaries
-						selectionOptions: {
-							useCache: shouldUseAISelectionCache, // Use the dynamically determined cache option
-							cacheTimeout: 5 * 60 * 1000, // 5 minutes
-							maxPromptLength: 50000,
-							enableStreaming: false,
-							fallbackToHeuristics: true,
-						},
-					};
-					const selectedFiles = await selectRelevantFilesAI(selectionOptions);
+					try {
+						const selectionOptions: SelectRelevantFilesAIOptions = {
+							userRequest: currentQueryForSelection!,
+							chatHistory: this.chatHistoryManager.getChatHistory(),
+							allScannedFiles,
+							projectRoot: rootFolder.uri,
+							activeEditorContext: editorContext,
+							diagnostics: effectiveDiagnosticsString,
+							activeEditorSymbols: editorContext?.documentUri
+								? documentSymbolsMap.get(
+										path
+											.relative(
+												rootFolder.uri.fsPath,
+												editorContext.documentUri.fsPath
+											)
+											.replace(/\\/g, "/")
+								  )
+								: undefined,
+							// Modified to adapt prompt from string to HistoryEntryPart[]
+							aiModelCall: async (
+								prompt: string,
+								modelName: string,
+								history: HistoryEntry[] | undefined,
+								requestType: string,
+								generationConfig: GenerationConfig | undefined,
+								streamCallbacks:
+									| {
+											onChunk: (chunk: string) => Promise<void> | void;
+											onComplete?: () => void;
+									  }
+									| undefined,
+								token: vscode.CancellationToken | undefined
+							) => {
+								const messages: HistoryEntryPart[] = [{ text: prompt }];
+								return this.aiRequestService.generateWithRetry(
+									messages,
+									modelName,
+									history,
+									requestType,
+									generationConfig,
+									streamCallbacks,
+									token
+								);
+							},
+							modelName: DEFAULT_FLASH_LITE_MODEL, // Use the default model for selection
+							cancellationToken,
+							fileDependencies:
+								this._convertDependencyMapToStringMap(fileDependencies),
+							preSelectedHeuristicFiles: heuristicSelectedFiles, // Pass heuristicSelectedFiles
+							fileSummaries: fileSummariesForAI, // Pass the generated file summaries
+							selectionOptions: {
+								useCache: shouldUseAISelectionCache, // Use the dynamically determined cache option
+								cacheTimeout: 5 * 60 * 1000, // 5 minutes
+								maxPromptLength: 50000,
+								enableStreaming: false,
+								fallbackToHeuristics: true,
+							},
+						};
+						const selectedFiles = await selectRelevantFilesAI(selectionOptions);
 
-					if (selectedFiles.length > 0) {
-						filesForContextBuilding = selectedFiles;
+						if (selectedFiles.length > 0) {
+							filesForContextBuilding = selectedFiles;
+							this.postMessageToWebview({
+								type: "statusUpdate",
+								value: `Found relevant file(s) for context`, // Updated message
+							});
+						} else {
+							// AI returned no relevant files or an empty selection.
+							let fallbackFiles: vscode.Uri[] = [];
+							if (editorContext?.documentUri) {
+								// Priority 1: Active file
+								fallbackFiles = [editorContext.documentUri];
+								this.postMessageToWebview({
+									type: "statusUpdate",
+									value: `AI selection yielded no relevant files. Falling back to the active file.`,
+								});
+							} else if (allScannedFiles.length > 0) {
+								fallbackFiles = allScannedFiles.slice(
+									0,
+									Math.min(allScannedFiles.length, 1) // Fallback to the first scanned file
+								);
+								this.postMessageToWebview({
+									type: "statusUpdate",
+									value: `AI selection yielded no relevant files. Falling back to the first scanned file.`,
+								});
+							} else {
+								// No files available at all
+								fallbackFiles = [];
+								this.postMessageToWebview({
+									type: "statusUpdate",
+									value: `AI selection yielded no relevant files and no files were scanned.`,
+								});
+							}
+							filesForContextBuilding = fallbackFiles; // Assign fallback files
+						}
+					} catch (error: any) {
+						console.error(
+							`[ContextService] Error during smart file selection: ${error.message}`
+						);
 						this.postMessageToWebview({
 							type: "statusUpdate",
-							value: `Found relevant file(s) for context`, // Updated message
+							value: `Smart context selection failed due to an error. Falling back to limited context.`,
+							isError: true,
 						});
-					} else {
-						// AI returned no relevant files or an empty selection.
+
 						let fallbackFiles: vscode.Uri[] = [];
 						if (editorContext?.documentUri) {
 							// Priority 1: Active file
 							fallbackFiles = [editorContext.documentUri];
 							this.postMessageToWebview({
 								type: "statusUpdate",
-								value: `AI selection yielded no relevant files. Falling back to the active file.`,
+								value: `Falling back to the active file.`,
 							});
 						} else if (allScannedFiles.length > 0) {
+							// Priority 2: Small subset of scanned files (e.g., first 10)
 							fallbackFiles = allScannedFiles.slice(
 								0,
-								Math.min(allScannedFiles.length, 0)
+								Math.min(allScannedFiles.length, 10)
 							);
 							this.postMessageToWebview({
 								type: "statusUpdate",
-								value: `AI selection yielded no relevant files.`,
+								value: `Falling back to a subset of scanned files (${fallbackFiles.length}).`,
 							});
 						} else {
 							// No files available at all
 							fallbackFiles = [];
 							this.postMessageToWebview({
 								type: "statusUpdate",
-								value: `AI selection yielded no relevant files and no files were scanned.`,
+								value: `No files available for fallback.`,
 							});
 						}
 						filesForContextBuilding = fallbackFiles; // Assign fallback files
 					}
-				} catch (error: any) {
-					console.error(
-						`[ContextService] Error during smart file selection: ${error.message}`
-					);
-					this.postMessageToWebview({
-						type: "statusUpdate",
-						value: `Smart context selection failed due to an error. Falling back to limited context.`,
-						isError: true,
-					});
-
-					let fallbackFiles: vscode.Uri[] = [];
-					if (editorContext?.documentUri) {
-						// Priority 1: Active file
-						fallbackFiles = [editorContext.documentUri];
-						this.postMessageToWebview({
-							type: "statusUpdate",
-							value: `Falling back to the active file.`,
-						});
-					} else if (allScannedFiles.length > 0) {
-						// Priority 2: Small subset of scanned files (e.g., first 10)
-						fallbackFiles = allScannedFiles.slice(
-							0,
-							Math.min(allScannedFiles.length, 10)
-						);
-						this.postMessageToWebview({
-							type: "statusUpdate",
-							value: `Falling back to a subset of scanned files (${fallbackFiles.length}).`,
-						});
-					} else {
-						// No files available at all
-						fallbackFiles = [];
-						this.postMessageToWebview({
-							type: "statusUpdate",
-							value: `No files available for fallback.`,
-						});
-					}
-					filesForContextBuilding = fallbackFiles; // Assign fallback files
 				}
-			} else if (currentQueryForSelection?.startsWith("/commit")) {
-				return {
-					contextString:
-						"[Project context not applicable for git commit message generation]",
-					relevantFiles: [],
-				};
 			}
+			// If isAISelctionRequired is false, filesForContextBuilding remains allScannedFiles (the default set).
 
 			if (filesForContextBuilding.length === 0) {
 				return {

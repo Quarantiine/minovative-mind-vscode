@@ -75,6 +75,7 @@ export async function handleWebviewMessage(
 		"operationCancelledConfirmation", // Allowed to update UI state after cancellation
 		"copyContextMessage", // Allowed during background operations
 		"setApiActiveKey", // Allow API key switching
+		"toggleHeuristicContextUsage", // Allowed as a UI interaction during background operations
 	];
 
 	if (
@@ -430,6 +431,17 @@ export async function handleWebviewMessage(
 					validatedData.value
 				);
 				break;
+
+			case "toggleHeuristicContextUsage": {
+				const isEnabled = validatedData.isEnabled;
+				console.log(
+					`[MessageHandler] Received toggleHeuristicContextUsage: ${isEnabled}`
+				);
+				await provider.settingsManager.updateHeuristicSelectionEnabled(
+					isEnabled
+				);
+				break;
+			}
 
 			case "openExternalLink": {
 				const url = validatedData.url;

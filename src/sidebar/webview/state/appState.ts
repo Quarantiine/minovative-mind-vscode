@@ -38,4 +38,5 @@ export const appState: WebviewAppState = {
 	isEditingMessage: false,
 	currentActiveOperationId: null,
 	lastFormattedTokenStats: null,
+	isHeuristicContextEnabled: true, // New property added here
 };
