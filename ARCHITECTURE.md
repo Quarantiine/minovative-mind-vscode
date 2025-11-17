@@ -1,11 +1,11 @@
 # Minovative Mind, an Integrated AI-Driven Development & Automation Platform for VS Code
 
-A deeper analysis of the file structure, class responsibilities, and how different components interact, here is a more comprehensive breakdown of the systems that work together in this project. This results in approximately **6** core, distinct systems:
+A deeper analysis of the file structure, class responsibilities, and how different components interact, here is a more comprehensive breakdown of the systems that work together in this project. This results in approximately **7** core, distinct systems:
 
 ## In a nutshell, Minovative Mind is powered by
 
-- Highly advanced Prompt Engineering
-- Google Gemini APIs
+- Highly extensive & advanced Prompt Engineering
+- Google Gemini AI & Tools
 - VS Code APIs
 
 ---
