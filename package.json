@@ -140,10 +140,8 @@
 	"dependencies": {
 		"@fortawesome/fontawesome-svg-core": "^6.7.2",
 		"@fortawesome/free-solid-svg-icons": "^6.7.2",
-		"@google/genai": "^1.29.1",
 		"@google/generative-ai": "^0.24.1",
 		"@types/markdown-it": "^14.1.2",
-		"@vscode/test-cli": "^0.0.11",
 		"bluebird": "^3.7.2",
 		"diff-match-patch": "^1.0.5",
 		"highlight.js": "^11.11.1",
