@@ -190,6 +190,7 @@ The assembled payload (both the current turn and the previous history) must be t
 
 - **Responsibility**: Manages the full lifecycle of AI-generated action plans, from initial conceptualization to automated execution and post-execution handling.
 - **Structured Plan Generation**: Relies on `FunctionCallingMode.ANY` when interacting with `aiRequestService.generateFunctionCall` to force deterministic JSON output adhering to the `ExecutionPlan` schema.
+- **Quick Action Prompt Engineering**: Specialized quick menu commands (like `/docs` and `/fix`) bypass standard chat prompt construction. Instead, they utilize pre-engineered, complex instructional payloads that explicitly force a high-level AI planning workflow for targeted outcomes (e.g., standardizing documentation and code cleanup).
 - **Validation & Repair**: Employs `parseAndValidatePlanWithFix` for rigorous validation and programmatic repair of plans.
 - **Step Execution Logic**: Interprets and executes each step, managing retries and providing user intervention options.
 - **Deep Integration**: Utilizes `EnhancedCodeGenerator` for file operations, `ProjectChangeLogger` for recording changes, and `commandExecution.ts` for shell commands.
