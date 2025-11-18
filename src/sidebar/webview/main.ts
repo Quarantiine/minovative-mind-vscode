@@ -16,6 +16,7 @@ import {
 	reenableAllMessageActionButtons,
 	setGlobalSetLoadingState,
 	disableAllMessageActionButtons,
+	finalizeStreamingMessage, // 1. Update import
 } from "./ui/chatMessageRenderer";
 import { RequiredDomElements } from "./types/webviewTypes";
 import { setIconForButton } from "./utils/iconHelpers";
@@ -310,8 +311,52 @@ function setLoadingState(
 	// Update empty chat placeholder visibility only when not loading
 	if (!loading) {
 		updateEmptyChatPlaceholderVisibility(elements);
-		// Re-enable all message action buttons when loading becomes false
-		reenableAllMessageActionButtons(elements);
+		// 2. Remove unconditional call to reenableAllMessageActionButtons
+	}
+}
+
+/**
+ * Handles cleanup and restoration of the UI state when an AI response or stream
+ * (including plans) has fully finished.
+ *
+ * @param message The final message object, potentially containing an operationId.
+ * @param elements DOM elements.
+ * @param setLoadingState Function to update the main loading state.
+ */
+export function handleAiResponseEndUI(
+	message: any,
+	elements: RequiredDomElements,
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+): void {
+	// a. Call finalizeStreamingMessage unconditionally
+	finalizeStreamingMessage(elements);
+
+	// b. Check if the message relates to the active operation
+	if (message.operationId === appState.currentActiveOperationId) {
+		console.log(
+			`[handleAiResponseEndUI] Matching operation ID (${message.operationId}) found. Restoring UI.`
+		);
+
+		// c. If they match: restore UI state
+		const isSuccess = !message.isError;
+		const statusText = isSuccess
+			? "Generation complete."
+			: "Generation failed.";
+
+		// Only re-enable message action buttons if we are NOT in an editing session,
+		// otherwise, the editing session disabled them and only wants the chat input to be enabled.
+		if (!appState.isEditingMessage) {
+			reenableAllMessageActionButtons(elements);
+		}
+
+		updateStatus(elements, statusText, !isSuccess);
+		appState.currentActiveOperationId = null;
+		setLoadingState(false, elements);
+	} else {
+		// d. If they mismatch: log and skip UI action
+		console.log(
+			`[handleAiResponseEndUI] Operation ID mismatch. Skipped UI restoration. Message ID: ${message.operationId}, Active ID: ${appState.currentActiveOperationId}`
+		);
 	}
 }
 
