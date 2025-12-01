@@ -8,6 +8,59 @@ import { DEFAULT_SIZE } from "../sidebar/common/sidebarConstants";
 import { DependencyRelation } from "./dependencyGraphBuilder";
 import { buildSemanticGraph, SemanticGraph } from "./semanticLinker";
 
+// 1. Define BINARY_FILE_EXTENSIONS
+const BINARY_FILE_EXTENSIONS = new Set([
+	".png",
+	".jpg",
+	".jpeg",
+	".gif",
+	".bmp",
+	".ico",
+	".svg",
+	".webp",
+	".mp4",
+	".webm",
+	".mov",
+	".avi",
+	".mp3",
+	".wav",
+	".ogg",
+	".zip",
+	".tar",
+	".gz",
+	".tgz",
+	".7z",
+	".rar",
+	".pdf",
+	".doc",
+	".docx",
+	".xls",
+	".xlsx",
+	".ppt",
+	".pptx",
+	".exe",
+	".dll",
+	".obj",
+	".class",
+	".bin",
+	".dat",
+	".woff",
+	".woff2",
+	".ttf",
+	".eot",
+]);
+
+/**
+ * Checks if a file URI corresponds to a known binary file extension.
+ * @param fileUri The URI of the file.
+ * @returns True if the file should be skipped for content reading, false otherwise.
+ */
+function shouldSkipContentForUri(fileUri: vscode.Uri): boolean {
+	// Use path.extname on fsPath to reliably get the extension
+	const extension = path.extname(fileUri.fsPath).toLowerCase();
+	return BINARY_FILE_EXTENSIONS.has(extension);
+}
+
 // Configuration for context building - Adjusted for large context windows
 interface ContextConfig {
 	maxFileLength: number; // Maximum characters per file content
@@ -329,6 +382,42 @@ async function _processFileContentsForContext(
 			}
 		} else {
 			importRelationsDisplay = `imports: No Imports (Dependency graph not provided)\n`;
+		}
+
+		// Check for binary files and skip content reading if necessary
+		if (shouldSkipContentForUri(fileUri)) {
+			const fileExtension = path.extname(fileUri.fsPath);
+			const skipMessage = `[Binary file (${fileExtension}) content omitted]\n`;
+			const closingNewlines = "\n\n";
+
+			const estimatedLengthIncrease =
+				fileHeader.length +
+				importRelationsDisplay.length +
+				skipMessage.length +
+				closingNewlines.length;
+
+			// Perform a context limit check
+			if (length + estimatedLengthIncrease > config.maxTotalLength) {
+				skippedCount =
+					sortedRelevantFiles.length - sortedRelevantFiles.indexOf(fileUri);
+				console.warn(
+					`Skipping remaining ${skippedCount} file contents (including binary file ${relativePath}) as total limit reached.`
+				);
+				break;
+			}
+
+			// If it fits, append the content
+			context += fileHeader;
+			context += importRelationsDisplay;
+			context += skipMessage;
+			context += closingNewlines;
+
+			length += estimatedLengthIncrease;
+			contentAdded = true;
+			console.log(
+				`Skipped binary file content for ${relativePath}. Current total size: ${length} chars.`
+			);
+			continue; // Skip the rest of the text file processing logic
 		}
 
 		let fileContentRaw = "";

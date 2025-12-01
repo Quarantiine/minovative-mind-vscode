@@ -915,9 +915,7 @@ export class PlanExecutionService {
 					}
 					try {
 						progress.report({
-							message: `Executing command: ${step.command} ${
-								step.args ? step.args.join(" ") : ""
-							}`,
+							message: `${step.command}`,
 						});
 						await vscode.commands.executeCommand(
 							step.command,

@@ -1275,10 +1275,7 @@ export class PlanExecutorService {
 					// Only send command text on the first try, or if explicitly retrying later.
 					commandTerminal.sendText(`${displayCommand}`, true);
 				} else {
-					commandTerminal.sendText(
-						`\n[RETRY ${attempt}/${this.MAX_COMMAND_RETRIES}] Executing command: ${displayCommand}\n`,
-						true
-					);
+					commandTerminal.sendText(`${displayCommand}`, true);
 				}
 
 				try {
