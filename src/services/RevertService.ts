@@ -199,8 +199,11 @@ export class RevertService {
 
 								let contentToRestore: string | undefined;
 
-								// Prioritize using the inverse patch if it exists, as it's more precise.
-								if (change.inversePatch) {
+								// Prioritize using change.originalContent, as it represents the guaranteed state before modification.
+								if (change.originalContent) {
+									contentToRestore = change.originalContent;
+								} else if (change.inversePatch) {
+									// Fallback: If originalContent is missing, attempt to use the inverse patch.
 									try {
 										contentToRestore = applyPatch(
 											currentContent,
@@ -208,14 +211,14 @@ export class RevertService {
 										);
 									} catch (patchError: any) {
 										console.warn(
-											`[RevertService] Failed to apply inverse patch for '${relativePath}'. Falling back to originalContent. Error: ${patchError.message}`
+											`[RevertService] Failed to apply inverse patch for '${relativePath}'. No content available to restore. Error: ${patchError.message}`
 										);
-										// Fallback to originalContent if patch fails
-										contentToRestore = change.originalContent;
+										// If patch fails and originalContent was missing, contentToRestore remains undefined.
+										contentToRestore = undefined;
 									}
 								} else {
-									// Fallback for older change entries without an inverse patch.
-									contentToRestore = change.originalContent;
+									// Neither originalContent nor inversePatch available.
+									contentToRestore = undefined;
 								}
 
 								if (contentToRestore === undefined) {

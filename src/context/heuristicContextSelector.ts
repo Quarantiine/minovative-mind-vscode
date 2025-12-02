@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { PlanGenerationContext } from "../sidebar/common/sidebarTypes";
 import { ActiveSymbolDetailedInfo } from "../services/contextService";
+import { DependencyRelation } from "./dependencyGraphBuilder";
 
 // Scoring weights constants
 const HIGH_RELEVANCE = 100;
@@ -10,13 +11,16 @@ const LOW_RELEVANCE = 50;
 const ACTIVE_FILE_SCORE_BOOST = 200;
 
 export interface HeuristicSelectionOptions {
+	heuristicSelectionEnabled?: boolean;
 	maxHeuristicFilesTotal: number;
 	maxSameDirectoryFiles: number;
 	maxDirectDependencies: number;
 	maxReverseDependencies: number;
 	maxCallHierarchyFiles: number;
 	sameDirectoryWeight: number;
-	directDependencyWeight: number;
+	runtimeDependencyWeight: number;
+	typeDependencyWeight: number;
+	conceptualProximityWeight: number;
 	reverseDependencyWeight: number;
 	callHierarchyWeight: number;
 	definitionWeight: number;
@@ -34,21 +38,37 @@ export async function getHeuristicRelevantFiles(
 	allScannedFiles: ReadonlyArray<vscode.Uri>,
 	projectRoot: vscode.Uri,
 	activeEditorContext?: PlanGenerationContext["editorContext"],
-	fileDependencies?: Map<string, string[]>,
+	fileDependencies?: Map<string, DependencyRelation[]>,
 	reverseFileDependencies?: Map<string, string[]>,
 	activeSymbolDetailedInfo?: ActiveSymbolDetailedInfo,
+	semanticGraph?: Map<string, { relatedPath: string; score: number }[]>,
 	cancellationToken?: vscode.CancellationToken,
 	options?: Partial<HeuristicSelectionOptions>
 ): Promise<vscode.Uri[]> {
+	const isHeuristicSelectionEnabled =
+		options?.heuristicSelectionEnabled === true;
+
+	if (!isHeuristicSelectionEnabled) {
+		console.log(
+			"[HeuristicContextSelector] Heuristic selection is not explicitly true. Skipping scoring."
+		);
+		return [];
+	}
+
 	// Initialize effective options with provided options or default weights
 	const effectiveOptions: HeuristicSelectionOptions = {
+		heuristicSelectionEnabled: true,
 		maxHeuristicFilesTotal: options?.maxHeuristicFilesTotal ?? 30,
 		maxSameDirectoryFiles: options?.maxSameDirectoryFiles ?? 15,
 		maxDirectDependencies: options?.maxDirectDependencies ?? 10,
 		maxReverseDependencies: options?.maxReverseDependencies ?? 10,
 		maxCallHierarchyFiles: options?.maxCallHierarchyFiles ?? 10,
 		sameDirectoryWeight: options?.sameDirectoryWeight ?? LOW_RELEVANCE,
-		directDependencyWeight: options?.directDependencyWeight ?? MEDIUM_RELEVANCE,
+		runtimeDependencyWeight:
+			options?.runtimeDependencyWeight ?? HIGH_RELEVANCE * 1.5,
+		typeDependencyWeight: options?.typeDependencyWeight ?? MEDIUM_RELEVANCE,
+		conceptualProximityWeight:
+			options?.conceptualProximityWeight ?? LOW_RELEVANCE,
 		reverseDependencyWeight:
 			options?.reverseDependencyWeight ?? MEDIUM_RELEVANCE,
 		callHierarchyWeight: options?.callHierarchyWeight ?? HIGH_RELEVANCE,
@@ -168,11 +188,20 @@ export async function getHeuristicRelevantFiles(
 
 		// Score based on dependencies
 		if (activeFileRelativePath) {
-			if (
-				fileDependencies?.get(activeFileRelativePath)?.includes(relativePath)
-			) {
-				score += effectiveOptions.directDependencyWeight;
+			const dependencies = fileDependencies?.get(activeFileRelativePath);
+			if (dependencies) {
+				for (const dep of dependencies) {
+					if (dep.path === relativePath) {
+						if (dep.relationType === "runtime") {
+							score += effectiveOptions.runtimeDependencyWeight;
+						} else if (dep.relationType === "type") {
+							score += effectiveOptions.typeDependencyWeight;
+						}
+						break;
+					}
+				}
 			}
+
 			if (
 				reverseFileDependencies
 					?.get(activeFileRelativePath)

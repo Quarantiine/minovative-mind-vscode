@@ -224,7 +224,6 @@ ${diff}
 						: undefined,
 				operationId: operationId!,
 			});
-			this.provider.isGeneratingUserRequest = false;
 
 			if (isCancellation) {
 				this.provider.postMessageToWebview({ type: "reenableInput" });

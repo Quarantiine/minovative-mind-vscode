@@ -17,6 +17,7 @@ import {
 	faChartLine, // Import faChartLine for token usage icon
 	faLightbulb,
 	faImage,
+	faProjectDiagram, // Import faProjectDiagram for heuristic context toggle button
 } from "@fortawesome/free-solid-svg-icons";
 
 // Add the imported icons to the Font Awesome library for use in the webview.
@@ -38,7 +39,8 @@ library.add(
 	faPenToSquare, // Add faPenToSquare to the library as per instructions
 	faChartLine, // Add faChartLine to the library for token usage icon
 	faLightbulb,
-	faImage
+	faImage,
+	faProjectDiagram // Add faProjectDiagram to the library for heuristic context toggle button
 );
 
 /**
@@ -98,4 +100,5 @@ export {
 	faPenToSquare, // Export faPenToSquare as per instructions
 	faChartLine, // Export faChartLine for token usage icon
 	faLightbulb,
+	faProjectDiagram, // Export faProjectDiagram for heuristic context toggle button
 };

@@ -6,7 +6,10 @@ import {
 } from "./sequentialFileProcessor";
 import { AIRequestService } from "./aiRequestService";
 import { scanWorkspace } from "../context/workspaceScanner";
-import { buildDependencyGraph } from "../context/dependencyGraphBuilder";
+import {
+	buildDependencyGraph,
+	DependencyRelation,
+} from "../context/dependencyGraphBuilder";
 import { intelligentlySummarizeFileContent } from "../context/fileContentProcessor";
 import {
 	getHeuristicRelevantFiles,
@@ -58,16 +61,16 @@ export class SequentialContextService {
 	private workspaceRoot: vscode.Uri;
 	private postMessageToWebview: (message: any) => void;
 	private settingsManager: SettingsManager;
-	private fileDependencies: Map<string, string[]>;
-	private reverseFileDependencies: Map<string, string[]>;
+	private fileDependencies: Map<string, DependencyRelation[]>;
+	private reverseFileDependencies: Map<string, DependencyRelation[]>;
 
 	constructor(
 		aiRequestService: AIRequestService,
 		workspaceRoot: vscode.Uri,
 		postMessageToWebview: (message: any) => void,
 		settingsManager: SettingsManager,
-		fileDependencies: Map<string, string[]>,
-		reverseFileDependencies: Map<string, string[]>
+		fileDependencies: Map<string, DependencyRelation[]>,
+		reverseFileDependencies: Map<string, DependencyRelation[]>
 	) {
 		this.aiRequestService = aiRequestService;
 		this.workspaceRoot = workspaceRoot;
@@ -79,8 +82,8 @@ export class SequentialContextService {
 			aiRequestService,
 			workspaceRoot,
 			postMessageToWebview,
-			this.fileDependencies,
-			this.reverseFileDependencies
+			this.convertDependencyMapToStringMap(this.fileDependencies),
+			this.convertDependencyMapToStringMap(this.reverseFileDependencies)
 		);
 	}
 
@@ -350,7 +353,8 @@ export class SequentialContextService {
 		});
 
 		// Retrieve optimization settings
-		const optimizationSettings = this.settingsManager.getOptimizationSettings();
+		const optimizationSettings =
+			this.settingsManager.getOptimizationSettings() as any;
 
 		// Create a heuristicOptions object
 		const heuristicOptions: HeuristicSelectionOptions = {
@@ -360,7 +364,9 @@ export class SequentialContextService {
 			maxReverseDependencies: optimizationSettings.maxReverseDependencies,
 			maxCallHierarchyFiles: optimizationSettings.maxCallHierarchyFiles,
 			sameDirectoryWeight: optimizationSettings.sameDirectoryWeight,
-			directDependencyWeight: optimizationSettings.directDependencyWeight,
+			runtimeDependencyWeight: optimizationSettings.runtimeDependencyWeight,
+			typeDependencyWeight: optimizationSettings.typeDependencyWeight,
+			conceptualProximityWeight: optimizationSettings.conceptualProximityWeight,
 			reverseDependencyWeight: optimizationSettings.reverseDependencyWeight,
 			callHierarchyWeight: optimizationSettings.callHierarchyWeight,
 			definitionWeight: optimizationSettings.definitionWeight,
@@ -380,11 +386,12 @@ export class SequentialContextService {
 			allFiles,
 			this.workspaceRoot,
 			undefined, // No active editor context for filtering
-			this.fileDependencies, // Pass file dependencies
-			this.reverseFileDependencies, // Pass reverse file dependencies
+			this.fileDependencies, // Pass structured dependency map
+			this.convertDependencyMapToStringMap(this.reverseFileDependencies), // Pass structured reverse dependency map
 			undefined, // No active symbol info for filtering
+			undefined, // No semantic graph
 			undefined, // No cancellation token
-			heuristicOptions // Pass heuristicOptions as the last argument
+			heuristicOptions // Pass heuristicOptions as options parameter
 		);
 
 		// If we have a reasonable number of files, use AI to refine the selection
@@ -459,7 +466,9 @@ export class SequentialContextService {
 					},
 					modelName,
 					cancellationToken: undefined,
-					fileDependencies: this.fileDependencies, // Pass file dependencies for AI filtering
+					fileDependencies: this.convertDependencyMapToStringMap(
+						this.fileDependencies
+					), // Pass file dependencies for AI filtering
 					preSelectedHeuristicFiles: heuristicFiles,
 					fileSummaries,
 					selectionOptions: {
@@ -494,6 +503,23 @@ export class SequentialContextService {
 			value: `Using heuristic selection: ${heuristicFiles.length} relevant files found.`,
 		});
 		return heuristicFiles;
+	}
+
+	/**
+	 * Convert structured DependencyRelation map to a simple string array map.
+	 * This is necessary for components (like SequentialFileProcessor) expecting legacy format.
+	 */
+	private convertDependencyMapToStringMap(
+		dependencyMap: Map<string, DependencyRelation[]>
+	): Map<string, string[]> {
+		const stringMap = new Map<string, string[]>();
+		for (const [key, relations] of dependencyMap.entries()) {
+			stringMap.set(
+				key,
+				relations.map((rel) => rel.path)
+			);
+		}
+		return stringMap;
 	}
 
 	/**

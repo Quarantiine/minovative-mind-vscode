@@ -154,7 +154,7 @@
 	min-width: var(--copy-button-size); /* MODIFIED */
 	height: var(--copy-button-size); /* ADDED */
 	min-height: var(--copy-button-size); /* MODIFIED */
-	background-color: var(--vscode-button-secondaryBackground);
+	background-color: var(--vscode-button-background);
 	border: 1px solid var(--vscode-button-border);
 	color: var(--copy-button-color); /* MODIFIED */
 	border-radius: var(--border-radius);
@@ -289,4 +289,52 @@
 	opacity: 0.5;
 	cursor: not-allowed;
 	border-color: var(--vscode-button-border);
+}
+
+/* Styling for the Heuristic Context Toggle Button */
+#heuristic-context-toggle {
+	padding: 0;
+	width: var(--icon-button-size);
+	min-width: var(--icon-button-size);
+	height: var(--icon-button-size);
+	background-color: var(--vscode-button-secondaryBackground);
+	border: 1px solid var(--vscode-button-border);
+	color: var(--vscode-button-secondaryForeground);
+	border-radius: var(--border-radius);
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out,
+		border-color 0.1s ease-in-out;
+	user-select: none;
+	font-size: 0.9em;
+}
+
+#heuristic-context-toggle.active {
+	background-color: #3a8e43; /* Distinct Green */
+	border-color: #3a8e43;
+	color: var(--vscode-button-foreground);
+}
+#heuristic-context-toggle.active:hover {
+	background-color: #4a9e53;
+	border-color: #4a9e53;
+}
+#heuristic-context-toggle.active:active {
+	background-color: #317f3a;
+	border-color: #317f3a;
+}
+
+#heuristic-context-toggle.inactive {
+	background-color: #b84444; /* Distinct Red */
+	border-color: #b84444;
+	color: var(--vscode-button-foreground);
+}
+#heuristic-context-toggle.inactive:hover {
+	background-color: #c85454;
+	border-color: #c85454;
+}
+#heuristic-context-toggle.inactive:active {
+	background-color: #a33c3c;
+	border-color: #a33c3c;
 }

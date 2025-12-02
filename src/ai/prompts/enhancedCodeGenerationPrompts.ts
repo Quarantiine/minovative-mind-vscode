@@ -220,6 +220,12 @@ export function createEnhancedModificationPrompt(
 
 	const requirementsList: string[] = [];
 
+	// Universal critical requirements (always strictly enforced, regardless of rewrite intent)
+	// IMPORTANT: This specific requirement is explicitly placed first for highest logical priority.
+	requirementsList.push(
+		"**FINAL OUTPUT FORMAT: IMPORTANT**: When modifying a file, you MUST generate and return the *complete, full content of the entire file* after applying the modifications. The output MUST be a **single, properly formatted markdown code block** (e.g., \n```typescript\n...full_file_content...\n```\n). Do NOT provide only a partial code snippet, diff, specific function/class, or any conversational text outside the code block. The output must be the *whole, updated file* contained within this single code block."
+	);
+
 	if (isRewrite) {
 		requirementsList.push(
 			"**Prioritize New Structure/Content**: You are tasked with a significant rewrite or overhaul of the existing file. Prioritize generating the new code structure and content precisely as specified in the instructions, even if it requires significant deviations from the existing structure or content. Treat the 'Current Content' as a reference to be completely overhauled, not strictly adhered to for incremental changes. You have full autonomy to innovate and introduce new patterns/structures if they best fulfill the request."
@@ -251,10 +257,7 @@ export function createEnhancedModificationPrompt(
 		);
 	}
 
-	// Universal critical requirements (always strictly enforced, regardless of rewrite intent)
-	requirementsList.push(
-		"**FINAL OUTPUT FORMAT: IMPORTANT**: When modifying a file, you MUST generate and return the *complete, full content of the entire file* after applying the modifications. The output MUST be a **single, properly formatted markdown code block** (e.g., \n```typescript\n...full_file_content...\n```\n). Do NOT provide only a partial code snippet, diff, specific function/class, or any conversational text outside the code block. The output must be the *whole, updated file* contained within this single code block."
-	);
+	// Universal critical requirements (excluding output format, which is now the very first element)
 	requirementsList.push(
 		"**Accuracy First**: Ensure all imports, types, and dependencies are *absolutely* correct and precisely specified. Verify module paths, type definitions, and API usage."
 	);
@@ -280,6 +283,15 @@ Path: ${filePath}
 Language: ${languageId}
 
 ${_formatFileStructureAnalysis(fileAnalysis)}
+
+**CRITICAL OUTPUT CONSTRAINTS:**
+- You MUST return the complete, full content of the entire file after modifications.
+- The entire output MUST be wrapped in a single, properly formatted markdown code block.
+- A path marker (like \`// Path: ${filePath}\`) is NOT required, but the language fence is mandatory.
+- Example: 
+\`\`\`${languageId}
+// ... full file content only ...
+\`\`\`
 
 **Instructions:**
 ${modificationPrompt}
@@ -367,6 +379,13 @@ export function createRefineModificationPrompt(
 - **Maintain Import Integrity**: Ensure all necessary imports are present and correct. Do not remove existing imports unless they are explicitly unused by the new, correct code. Add only strictly required new imports.
 - **Strict Style Adherence:** Strictly adhere to the original file's existing code style, formatting (indentation, spacing, line breaks, bracket placement), and naming conventions.
 - **Functionality and Correctness:** Ensure the modified code maintains all original functionality and is fully functional and error-free after correction.
+
+**FINAL OUTPUT FORMAT: ABSOLUTELY CRITICAL**
+When providing the refined and corrected code, you MUST return the *complete, full content of the entire file*. The output MUST be a **single, properly formatted markdown code block** (e.g., 
+\`\`\`${languageId}
+...full_file_content...
+\`\`\`
+). Do NOT provide only a partial code snippet, diff, specific function/class, or any conversational text outside the code block. The output must be the *whole, updated file* contained within this single code block.
 
 **Context:**
 ${context.projectContext}

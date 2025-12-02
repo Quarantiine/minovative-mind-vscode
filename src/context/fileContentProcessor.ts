@@ -3,6 +3,12 @@ import {
 	ActiveSymbolDetailedInfo,
 	MAX_REFERENCED_TYPE_CONTENT_CHARS_CONSTANT,
 } from "../services/contextService";
+import {
+	extractContentForRange,
+	getDocumentationRange,
+	getDeclarationRange,
+	formatSymbolStructure,
+} from "../utils/codeAnalysisUtils";
 
 // Define what constitutes a "major" symbol kind for content prioritization
 const MAJOR_SYMBOL_KINDS: vscode.SymbolKind[] = [
@@ -31,41 +37,17 @@ const EXPORTED_SYMBOL_KINDS: vscode.SymbolKind[] = [
 	vscode.SymbolKind.Constant,
 ];
 
-/**
- * Helper to extract content string from a specific VS Code Range within the full file content.
- * Handles multiline ranges correctly.
- * @param fullContent The entire file content as a single string.
- * @param range The VS Code Range object specifying the start and end of the desired content.
- * @returns The extracted string content for the given range.
- */
-function extractContentForRange(
-	fullContent: string,
-	range: vscode.Range
-): string {
-	const lines = fullContent.split("\n");
-	const startLine = range.start.line;
-	const endLine = range.end.line;
-
-	if (startLine < 0 || endLine >= lines.length || startLine > endLine) {
-		return ""; // Invalid range
-	}
-
-	let contentLines: string[] = [];
-	// Iterate through lines within the range
-	for (let i = startLine; i <= endLine; i++) {
-		let line = lines[i];
-		if (i === startLine && i === endLine) {
-			// Single line range
-			line = line.substring(range.start.character, range.end.character);
-		} else if (i === startLine) {
-			line = line.substring(range.start.character);
-		} else if (i === endLine) {
-			line = line.substring(0, range.end.character);
-		}
-		contentLines.push(line);
-	}
-	return contentLines.join("\n");
-}
+// Structural markers for improved AI processing
+const MARKERS = {
+	DOC: "DOC",
+	STRUCT: "STRUCT",
+	SIGNATURE: "SIGNATURE",
+	ACTIVE_SYMBOL: "ACTIVE_SYMBOL",
+	IMPORTS: "IMPORTS",
+	PREAMBLE: "PREAMBLE",
+	CONTEXT: "CONTEXT",
+	END_SECTION: "END_SECTION",
+};
 
 /**
  * Extracts and summarizes relevant content from a file based on symbol information.
@@ -89,22 +71,29 @@ export function intelligentlySummarizeFileContent(
 
 	/**
 	 * Checks if a given range substantially overlaps with any already included ranges.
-	 * "Substantially" means more than 70% of the candidate range is already covered.
+	 * "Substantially" means more than 70% of the candidate range is covered in terms of lines.
 	 * @param candidateRange The range to check for overlap.
 	 * @returns True if there's a substantial overlap, false otherwise.
 	 */
 	const isSubstantiallyOverlapping = (
 		candidateRange: vscode.Range
 	): boolean => {
+		const candidateLineCount =
+			candidateRange.end.line - candidateRange.start.line + 1;
+		if (candidateLineCount <= 0) {
+			return false;
+		}
+
 		for (const existingRange of includedRanges) {
 			const intersection = existingRange.intersection(candidateRange);
-			if (
-				intersection &&
-				!intersection.isEmpty &&
-				intersection.end.line - intersection.start.line + 1 >=
-					(candidateRange.end.line - candidateRange.start.line + 1) * 0.7
-			) {
-				return true; // 70% or more of the candidate range is covered
+			if (intersection && !intersection.isEmpty) {
+				const intersectionLineCount =
+					intersection.end.line - intersection.start.line + 1;
+
+				// 4a. Update isSubstantiallyOverlapping logic
+				if (intersectionLineCount >= candidateLineCount * 0.7) {
+					return true; // 70% or more of the candidate range is covered
+				}
 			}
 		}
 		return false;
@@ -113,30 +102,33 @@ export function intelligentlySummarizeFileContent(
 	/**
 	 * Adds a content block to the summary if space allows and it doesn't significantly overlap
 	 * with already included content.
-	 * @param contentRaw The raw string content to add.
-	 * @param range The VS Code Range of the content.
-	 * @param header Optional header for the section.
-	 * @param footer Optional footer for the section.
+	 * @param contentRaw The raw string content to add (may be pre-formatted, e.g., from formatSymbolStructure).
+	 * @param sourceRange The VS Code Range corresponding to the content's location in the file.
+	 * @param markerType The type of content (e.g., IMPORTS, DOC).
+	 * @param description Optional detailed description for the marker header.
 	 * @param desiredBlockLength Optional preferred maximum length for the raw content part of the block.
 	 * @returns True if content was added, false otherwise.
 	 */
 	const addContentBlock = (
 		contentRaw: string,
-		range: vscode.Range,
-		header?: string,
-		footer?: string,
+		sourceRange: vscode.Range,
+		markerType: string,
+		description: string = "",
 		desiredBlockLength?: number
 	): boolean => {
 		if (currentLength >= maxAllowedLength) {
 			return false;
 		}
 
-		if (isSubstantiallyOverlapping(range)) {
+		if (isSubstantiallyOverlapping(sourceRange)) {
 			return false;
 		}
 
-		const headerPart = header ? `${header}\n` : "";
-		const footerPart = footer ? `\n${footer}` : "";
+		// 4b. Adjust header/footer logic to use new MARKERS
+		const headerContent = description ? `: ${description}` : "";
+		const headerPart = `// [${markerType}${headerContent}]\n`;
+		const footerPart = `\n// [${MARKERS.END_SECTION}: ${markerType}]`;
+
 		let contentToUse = contentRaw;
 
 		// Apply desiredBlockLength if provided and contentRaw exceeds it
@@ -147,27 +139,38 @@ export function intelligentlySummarizeFileContent(
 			contentToUse = contentToUse.substring(0, desiredBlockLength);
 		}
 
-		let combinedContent = headerPart + contentToUse + footerPart;
+		let combinedContent = contentToUse;
+		let combinedLength =
+			headerPart.length + contentToUse.length + footerPart.length;
 
 		const remainingSpace = maxAllowedLength - currentLength;
-		if (combinedContent.length > remainingSpace) {
-			combinedContent = combinedContent.substring(0, remainingSpace);
-			if (remainingSpace > 30) {
-				// Add truncation message if enough space
-				combinedContent += "\n// ... (section truncated)";
+
+		if (combinedLength > remainingSpace) {
+			const truncationMessage = "\n// ... (section truncated)";
+			const availableContentLength =
+				remainingSpace - headerPart.length - footerPart.length;
+
+			if (availableContentLength > 30) {
+				combinedContent =
+					contentToUse.substring(
+						0,
+						availableContentLength - truncationMessage.length
+					) + truncationMessage;
 			} else {
-				// If after truncation, it's too small or empty to be meaningful
+				// Too small to be meaningful after reserving space
 				return false;
 			}
 		}
 
-		if (combinedContent.length > 0) {
+		const finalBlock = headerPart + combinedContent + footerPart;
+
+		if (finalBlock.length > 0) {
 			collectedParts.push({
-				content: combinedContent,
-				startLine: range.start.line,
+				content: finalBlock,
+				startLine: sourceRange.start.line,
 			});
-			currentLength += combinedContent.length;
-			includedRanges.push(range);
+			currentLength += finalBlock.length;
+			includedRanges.push(sourceRange); // 4b. Ensure sourceRange is included
 			return true;
 		}
 		return false;
@@ -176,9 +179,10 @@ export function intelligentlySummarizeFileContent(
 	// --- Prioritized Content Candidates ---
 	interface ContentCandidate {
 		priority: number; // Higher number = higher priority
-		range: vscode.Range;
-		header?: string;
-		footer?: string;
+		range: vscode.Range; // Range to extract content from
+		marker: string; // Marker type
+		description: string; // Description for the marker header
+		contentOverride?: string; // Optional pre-calculated content (e.g., from formatSymbolStructure)
 		desiredBlockLength?: number;
 	}
 
@@ -199,19 +203,19 @@ export function intelligentlySummarizeFileContent(
 
 	// 1. Candidate: Active Symbol's Full Definition (Highest Priority)
 	if (activeSymbolDetailedInfo?.fullRange) {
+		const kindName =
+			activeSymbolDetailedInfo.kind !== undefined
+				? (vscode.SymbolKind as any)[activeSymbolDetailedInfo.kind]
+				: "Unknown";
 		candidates.push({
 			priority: 5, // Highest priority
 			range: activeSymbolDetailedInfo.fullRange,
-			header: `// --- Active Symbol: ${activeSymbolDetailedInfo.name} (${
-				activeSymbolDetailedInfo.kind !== undefined
-					? activeSymbolDetailedInfo.kind
-					: "Unknown"
-			}) ---`,
-			footer: `// --- End Active Symbol ---`,
+			marker: MARKERS.ACTIVE_SYMBOL,
+			description: `${activeSymbolDetailedInfo.name} (${kindName})`,
 		});
 	}
 
-	// 2. Candidate: File Preamble / Top-level comments (e.g., file-level JSDoc, license)
+	// 2. Candidate: File Preamble / Top-level comments
 	let preambleEndLine = -1;
 	for (let i = 0; i < Math.min(fileLines.length, 20); i++) {
 		const line = fileLines[i].trim();
@@ -236,8 +240,8 @@ export function intelligentlySummarizeFileContent(
 				preambleEndLine,
 				fileLines[preambleEndLine]?.length || 0
 			),
-			header: "// --- File Preamble (High-level description) ---",
-			footer: "// --- End File Preamble ---",
+			marker: MARKERS.PREAMBLE, // 4c. Use MARKERS
+			description: "High-level description",
 			desiredBlockLength: Math.floor(maxAllowedLength * 0.15),
 		});
 	}
@@ -274,14 +278,14 @@ export function intelligentlySummarizeFileContent(
 					importAndSetupEndLine,
 					fileLines[importAndSetupEndLine]?.length || 0
 				),
-				header: "// --- Imports and Module Setup ---",
-				footer: "// --- End Imports and Module Setup ---",
+				marker: MARKERS.IMPORTS, // 4c. Use MARKERS
+				description: "Module Setup",
 				desiredBlockLength: Math.floor(maxAllowedLength * 0.2),
 			});
 		}
 	}
 
-	// 4. Candidates: Exported Major Symbols
+	// 4. Candidates: Exported Major Symbols (4d. Implement prioritization)
 	if (documentSymbols) {
 		documentSymbols
 			.filter(
@@ -290,13 +294,51 @@ export function intelligentlySummarizeFileContent(
 					symbol.range.start.line > importAndSetupEndLine
 			)
 			.forEach((symbol) => {
-				candidates.push({
-					priority: 3.5,
-					range: symbol.range,
-					header: `// --- Exported ${vscode.SymbolKind[symbol.kind]}: ${
-						symbol.name
-					} ---`,
-				});
+				const kindName = vscode.SymbolKind[symbol.kind];
+
+				// P3.9: Documentation Range (if available)
+				const docRange = getDocumentationRange(fileContent, symbol);
+				if (docRange) {
+					candidates.push({
+						priority: 3.9,
+						range: docRange,
+						marker: MARKERS.DOC,
+						description: `Exported ${kindName} Documentation: ${symbol.name}`,
+						desiredBlockLength: 512,
+					});
+				}
+
+				// P3.8: Structure (for Interfaces/TypeAliases) - Using pre-formatted content
+				if (
+					symbol.kind === vscode.SymbolKind.Interface ||
+					symbol.kind === vscode.SymbolKind.TypeParameter ||
+					(symbol.kind as number) === 25
+				) {
+					const structuredContent = formatSymbolStructure(symbol, fileContent);
+
+					if (structuredContent) {
+						candidates.push({
+							priority: 3.8,
+							range: symbol.range, // Use full range for overlap tracking
+							marker: MARKERS.STRUCT,
+							description: `Exported ${kindName} Structure: ${symbol.name}`,
+							contentOverride: structuredContent,
+							desiredBlockLength: Math.floor(maxAllowedLength * 0.15),
+						});
+					}
+				}
+
+				// P3.7: Declaration Range (Signature only) for functions, classes, variables, constants
+				const declarationRange = getDeclarationRange(fileContent, symbol);
+				if (declarationRange) {
+					candidates.push({
+						priority: 3.7,
+						range: declarationRange, // Use declaration range (signature)
+						marker: MARKERS.SIGNATURE,
+						description: `Exported ${kindName} Signature: ${symbol.name}`,
+						desiredBlockLength: 1024,
+					});
+				}
 			});
 	}
 
@@ -315,7 +357,8 @@ export function intelligentlySummarizeFileContent(
 				candidates.push({
 					priority: 3.25,
 					range: call.fromRanges[0],
-					header: `// --- Context: Call to active symbol from: ${call.from.name} ---`,
+					marker: MARKERS.CONTEXT,
+					description: `Call to active symbol from: ${call.from.name}`,
 					desiredBlockLength: MAX_REFERENCED_TYPE_CONTENT_CHARS_CONSTANT,
 				});
 			}
@@ -329,24 +372,35 @@ export function intelligentlySummarizeFileContent(
 				candidates.push({
 					priority: 3.25,
 					range: call.to.range,
-					header: `// --- Context: Active symbol calls: ${call.to.name} ---`,
+					marker: MARKERS.CONTEXT,
+					description: `Active symbol calls: ${call.to.name}`,
 					desiredBlockLength: MAX_REFERENCED_TYPE_CONTENT_CHARS_CONSTANT,
 				});
 			}
 		});
 	}
 
-	// 6. Candidates: Other Major Symbol Definitions
+	// 6. Candidates: Other Major Symbol Definitions (Internal definitions)
 	if (documentSymbols) {
 		documentSymbols
-			.filter((symbol) => MAJOR_SYMBOL_KINDS.includes(symbol.kind))
+			.filter(
+				(symbol) =>
+					MAJOR_SYMBOL_KINDS.includes(symbol.kind) &&
+					!EXPORTED_SYMBOL_KINDS.includes(symbol.kind)
+			)
 			.forEach((symbol) => {
+				const kindName = vscode.SymbolKind[symbol.kind];
+
+				// 4e. Refactor Other Major Symbol Candidates (Priority 3)
+				const declarationRange = getDeclarationRange(fileContent, symbol);
+				const rangeToUse = declarationRange || symbol.range;
+
 				candidates.push({
 					priority: 3,
-					range: symbol.range,
-					header: `// --- Definition: ${vscode.SymbolKind[symbol.kind]} ${
-						symbol.name
-					} ---`,
+					range: rangeToUse,
+					marker: MARKERS.SIGNATURE,
+					description: `Internal ${kindName} Signature: ${symbol.name}`,
+					desiredBlockLength: 2048,
 				});
 			});
 	}
@@ -361,16 +415,17 @@ export function intelligentlySummarizeFileContent(
 		if (currentLength >= maxAllowedLength) {
 			break;
 		}
-		const contentExtracted = extractContentForRange(
-			fileContent,
-			candidate.range
-		);
-		if (contentExtracted.trim()) {
+
+		const contentRaw = candidate.contentOverride
+			? candidate.contentOverride
+			: extractContentForRange(fileContent, candidate.range);
+
+		if (contentRaw.trim()) {
 			addContentBlock(
-				contentExtracted,
+				contentRaw,
 				candidate.range,
-				candidate.header,
-				candidate.footer,
+				candidate.marker,
+				candidate.description,
 				candidate.desiredBlockLength
 			);
 		}
@@ -409,14 +464,14 @@ export function intelligentlySummarizeFileContent(
 					fileContent,
 					snippetRange
 				);
+
+				// 4f. Refactor Fallback Logic
 				if (snippetContent.trim()) {
 					addContentBlock(
 						snippetContent,
 						snippetRange,
-						`// --- General Context (Lines ${currentLine + 1}-${
-							blockEndLine + 1
-						}) ---`,
-						undefined,
+						MARKERS.CONTEXT,
+						`Lines ${currentLine + 1}-${blockEndLine + 1}`,
 						maxAllowedLength - currentLength
 					);
 				}
@@ -439,9 +494,10 @@ export function intelligentlySummarizeFileContent(
 	}
 
 	if (!finalContent.trim() && fileContent.length > 0) {
+		// Edge case: If nothing was collected but the file isn't empty
 		return `// File content could not be summarized. Snippet: ${fileContent.substring(
 			0,
-			100
+			Math.min(fileContent.length, 100)
 		)}...`;
 	}
 

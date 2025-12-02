@@ -7,7 +7,7 @@ Minovative Mind is a powerful AI-augmented Visual Studio Code extension that int
 - **Intelligent AI Chat Interface**: Multimodal interaction, context-aware Q&A, and rich file interactions.
 - **Autonomous AI Workflows**: AI-driven planning, execution of multi-step tasks, and intelligent code modification.
 - **Deep Contextual Understanding**: Comprehensive codebase analysis, symbol and dependency graphing, and smart file relevance.
-- **Integrated Git Automation**: AI-generated commit messages and automated conflict resolution.
+- **Integrated Git Automation**: AI-generated commit messages.
 - **Robust Control & Transparency**: Reversible changes, real-time feedback, and secure operations.
 - **Optimized Performance**: Efficient resource management and fast contextual processing.
 - **Flexible Customization**: API key management and model selection.
@@ -29,7 +29,7 @@ Minovative Mind offers an intuitive chat interface for direct interaction with A
 - **Direct Chat from Editor**: Initiate a chat directly from the active editor via right-click context menu or `Ctrl/Cmd+M`, sending selected code or the full file to the AI for discussion.
 - **Dynamic Markdown Responses**: AI-generated Markdown responses are rendered with rich HTML support for interactive content.
 - **Inline Code Actions**: Easily copy code snippets from AI responses or apply changes directly to your active editor.
-- **Slash Command Suggestions**: Utilize intelligent suggestions for commands like `/plan`, `/fix`, `/merge`, and `/commit` to streamline actions.
+- **Slash Command Suggestions**: Utilize intelligent suggestions for commands like `/plan`, `/fix`, and `/commit` to streamline actions.
 - **Editable History**: Edit previous messages to re-evaluate conversations with updated context.
 - **Convert to Plans**: AI-generated responses can be seamlessly converted into actionable `/plan` commands for structured execution.
 - **Interactive File Selector**: A dedicated "Open File List" button provides a dynamic, searchable, and navigable popup. Users can efficiently select workspace files to insert their paths directly into the chat input, complete with search, keyboard navigation, and visual enhancements.
@@ -55,6 +55,7 @@ Minovative Mind can autonomously plan and execute complex development tasks, sig
 ### 2.2 Intelligent Code Modification
 
 - **Flexible Scope**: The AI can refactor, edit, or modify either selected code snippets or the entire active file based on your instructions.
+- **Dedicated Documentation Workflow (`/docs`)**: A specialized Quick Pick command that automatically generates a high-level plan instruction for the AI to simultaneously **add comprehensive documentation** and **remove useless or redundant comments** from the selected code or the entire active file, ensuring immediate standardization and clarity.
 - **Symbol-Aware Context**: Leverages detailed symbol information (functions, classes, types) from your codebase to ensure accurate and contextually relevant modifications.
 - **Quality & Production-Ready Code**: Generates modular, maintainable, and production-ready code, often using diff analysis to validate output quality.
 - **Output Validation**: Employs sophisticated heuristics to sanitize and validate AI-generated code snippets, ensuring functional and high-quality output.
@@ -69,7 +70,6 @@ Minovative Mind can autonomously plan and execute complex development tasks, sig
 
 - **Automated Commit Messages**: Use the `/commit` command to have the AI analyze your staged changes and generate insightful, descriptive Git commit messages.
 - **Review & Edit**: The AI prompts you to review and edit the generated message before committing.
-- **Automated Conflict Resolution**: Assists in resolving Git merge conflicts for files targeted by `/merge` commands or AI plans, including updating VS Code's Git status for resolved files.
 
 ---
 
@@ -90,8 +90,8 @@ Minovative Mind builds a profound understanding of your project to provide highl
 
 ### 3.3 Intelligent File Relevance Engine
 
-- **Hybrid File Selection**: Employs a combination of heuristic (rule-based) and AI-driven (smart) selection strategies to identify the most relevant files for context.
-- **Prioritized Context**: Prioritizes files that are recently modified, linked by symbols, or are directly related to the user's active context, with refined relevance scoring considering file dependency graphs.
+- **Semantic Linking & Conceptual Proximity**: File relevance is augmented by Semantic Linking, and prioritization is based on conceptual topic proximity scoring (e.g., TF-IDF analysis).
+- **Prioritized Context**: Prioritizes files that are recently modified, linked by symbols, or are directly related to the user's active context, with refined relevance scoring considering file dependency graphs and explicit dependency relationship types (`runtime`, `type`).
 - **Intelligent File Summarization**: Summarizes file content to fit within token limits while preserving critical information, including detailed file complexity estimation and enhanced main purpose detection.
 - **Configurable Heuristic Selection**: Utilizes configurable rules (e.g., directory proximity, dependency analysis, symbol relevance) for intelligent file selection.
 - **Dependency Extraction**: Performs expanded and refined dependency extraction directly from code, enriching file summaries.
@@ -110,6 +110,7 @@ Minovative Mind prioritizes user control, project security, and transparent oper
 
 ### 4.1 User Control & Transparency
 
+- **Centralized Concurrency Control**: Concurrency management is now centralized and robust, ensuring predictable behavior and overall system reliability during multi-step AI operations.
 - **Real-time Progress Indicators**: Provides constant, visible feedback on ongoing AI tasks using VS Code notifications.
 - **Cancellable Tasks**: Supports cancellation of most AI-driven tasks via `CancellationToken`, allowing users to interrupt long-running operations.
 - **Transparent UI Updates**: Ensures all UI changes and cancellations are clearly communicated and reflected in the extension's interface.

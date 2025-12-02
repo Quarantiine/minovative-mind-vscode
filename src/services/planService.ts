@@ -12,7 +12,6 @@ import {
 	ParsedPlanResult,
 } from "../ai/workflowPlanner";
 import { FileChangeEntry } from "../types/workflow";
-import { GitConflictResolutionService } from "./gitConflictResolutionService";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import { UrlContextService } from "./urlContextService";
 import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
@@ -35,7 +34,6 @@ export class PlanService {
 	constructor(
 		private provider: SidebarProvider,
 		private workspaceRootUri: vscode.Uri | undefined,
-		private gitConflictResolutionService: GitConflictResolutionService,
 		enhancedCodeGenerator: EnhancedCodeGenerator,
 		private postMessageToWebview: (message: ExtensionToWebviewMessages) => void
 	) {
@@ -58,7 +56,6 @@ export class PlanService {
 			postMessageToWebview,
 			this.urlContextService,
 			enhancedCodeGenerator,
-			this.gitConflictResolutionService,
 			this.MAX_TRANSIENT_STEP_RETRIES
 		);
 	}
@@ -502,14 +499,6 @@ export class PlanService {
 				textualPlanExplanation: textualPlanResponse,
 			};
 			await this.provider.updatePersistedPendingPlanData(dataToPersist);
-
-			// Set isGeneratingUserRequest to true for persistence like /plan
-			this.provider.isGeneratingUserRequest = true;
-			await this.provider.workspaceState.update(
-				"minovativeMind.isGeneratingUserRequest",
-				true
-			);
-			// END ADDED
 
 			finalResult = {
 				success: true,

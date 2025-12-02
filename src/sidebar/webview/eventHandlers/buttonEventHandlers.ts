@@ -26,6 +26,7 @@ import { stopTypingAnimation } from "../ui/typingAnimation";
 import { RequiredDomElements } from "../types/webviewTypes";
 import { clearImagePreviews } from "../utils/imageUtils";
 import { showSuggestions } from "../ui/commandSuggestions"; // Import showSuggestions
+import { getFileNameFromPath } from "../utils/pathHelpers";
 
 /**
  * Initializes all button and interactive element event listeners in the webview.
@@ -391,8 +392,9 @@ export function initializeButtonEventListeners(
 			event.preventDefault();
 			const filePath = fileItem.dataset.filepath;
 			if (filePath) {
+				const fileName = getFileNameFromPath(filePath);
 				postMessageToExtension({ type: "openFile", value: filePath });
-				updateStatus(elements, `Opening file: ${filePath}`); // Pass elements
+				updateStatus(elements, `Opening file: ${fileName}`); // Pass elements
 			}
 			return;
 		}

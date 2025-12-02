@@ -9,6 +9,10 @@ export const MODEL_SELECTION_STORAGE_KEY = "geminiSelectedModel";
 // DONT CHANGE THESE MODELS (NEVER)
 export const MODEL_DETAILS = [
 	{
+		name: "gemini-3-pro-preview",
+		description: "Premium | Ultra 🧠🧠🧠",
+	},
+	{
 		name: "gemini-2.5-pro",
 		description: "Freemium | Powerful 🧠🧠",
 	},
@@ -18,7 +22,7 @@ export const MODEL_DETAILS = [
 	},
 	{
 		name: "gemini-flash-lite-latest",
-		description: "Freemium | Simple ⚡",
+		description: "Freemium | Simple ⚡⚡",
 	},
 ];
 

@@ -8,11 +8,16 @@ import {
 	createProjectCompilerHost,
 } from "../utils/tsConfigLoader";
 
+export interface DependencyRelation {
+	path: string;
+	relationType: "runtime" | "type" | "unknown";
+}
+
 // Cache interface for dependency graphs
 interface DependencyCache {
 	timestamp: number;
-	dependencyGraph: Map<string, string[]>;
-	reverseDependencyGraph: Map<string, string[]>;
+	dependencyGraph: Map<string, DependencyRelation[]>;
+	reverseDependencyGraph: Map<string, DependencyRelation[]>;
 	workspacePath: string;
 	fileCount: number;
 }
@@ -35,7 +40,7 @@ export async function buildDependencyGraph(
 	allScannedFiles: vscode.Uri[],
 	projectRoot: vscode.Uri,
 	options?: DependencyBuildOptions
-): Promise<Map<string, string[]>> {
+): Promise<Map<string, DependencyRelation[]>> {
 	const workspacePath = projectRoot.fsPath;
 	const useCache = options?.useCache ?? true;
 	const cacheTimeout = options?.cacheTimeout ?? 10 * 60 * 1000; // 10 minutes default
@@ -53,7 +58,7 @@ export async function buildDependencyGraph(
 		}
 	}
 
-	const dependencyGraph = new Map<string, string[]>();
+	const dependencyGraph = new Map<string, DependencyRelation[]>();
 	const concurrencyLimit = options?.maxConcurrency ?? 15;
 	const skipLargeFiles = options?.skipLargeFiles ?? true;
 	const maxFileSizeForParsing = options?.maxFileSizeForParsing ?? 1024 * 1024; // 1MB default
@@ -123,7 +128,8 @@ export async function buildDependencyGraph(
 				compilerHost,
 				moduleResolutionCache
 			);
-			dependencyGraph.set(relativePath, imports);
+			const relations: DependencyRelation[] = imports;
+			dependencyGraph.set(relativePath, relations);
 		} catch (error) {
 			if (retryCount < maxRetries && retryFailedFiles) {
 				failedFiles.push({ uri: fileUri, retries: retryCount + 1 });
@@ -201,9 +207,9 @@ export async function buildDependencyGraph(
  * @returns A map where key is an imported file path and value is an array of files that import it.
  */
 export function buildReverseDependencyGraph(
-	fileDependencies: Map<string, string[]>,
+	fileDependencies: Map<string, DependencyRelation[]>,
 	projectRoot?: vscode.Uri
-): Map<string, string[]> {
+): Map<string, DependencyRelation[]> {
 	// Check cache first if projectRoot is provided
 	if (projectRoot) {
 		const workspacePath = projectRoot.fsPath;
@@ -216,17 +222,21 @@ export function buildReverseDependencyGraph(
 		}
 	}
 
-	const reverseDependencyGraph = new Map<string, string[]>();
+	const reverseDependencyGraph = new Map<string, DependencyRelation[]>();
 
 	// More efficient reverse graph building
-	for (const [importerPath, importedPaths] of fileDependencies.entries()) {
-		for (const importedPath of importedPaths) {
+	for (const [importerPath, importedRelations] of fileDependencies.entries()) {
+		for (const importedRelation of importedRelations) {
+			const importedPath = importedRelation.path;
 			// Ensure the importedPath exists as a key in the reverse map
 			if (!reverseDependencyGraph.has(importedPath)) {
 				reverseDependencyGraph.set(importedPath, []);
 			}
 			// Add the current importerPath to the list of files that import importedPath
-			reverseDependencyGraph.get(importedPath)!.push(importerPath);
+			reverseDependencyGraph.get(importedPath)!.push({
+				path: importerPath,
+				relationType: importedRelation.relationType,
+			});
 		}
 	}
 
@@ -287,16 +297,19 @@ export function getDependencyCacheStats(): {
  */
 export function getFileDependencyStats(
 	filePath: string,
-	dependencyGraph: Map<string, string[]>,
-	reverseDependencyGraph: Map<string, string[]>
+	dependencyGraph: Map<string, DependencyRelation[]>,
+	reverseDependencyGraph: Map<string, DependencyRelation[]>
 ): {
 	incoming: number;
 	outgoing: number;
 	imports: string[];
 	importedBy: string[];
 } {
-	const imports = dependencyGraph.get(filePath) || [];
-	const importedBy = reverseDependencyGraph.get(filePath) || [];
+	const importRelations = dependencyGraph.get(filePath) || [];
+	const importedByRelations = reverseDependencyGraph.get(filePath) || [];
+
+	const imports = importRelations.map((rel) => rel.path);
+	const importedBy = importedByRelations.map((rel) => rel.path);
 
 	return {
 		incoming: importedBy.length,

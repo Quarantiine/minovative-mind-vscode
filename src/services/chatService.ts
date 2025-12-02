@@ -4,7 +4,7 @@ import {
 	ERROR_OPERATION_CANCELLED,
 	initializeGenerativeAI,
 } from "../ai/gemini";
-import { GenerationConfig, Tool } from "@google/generative-ai";
+import { GenerationConfig } from "@google/generative-ai";
 import { UrlContextService } from "./urlContextService";
 import { HistoryEntry, HistoryEntryPart } from "../sidebar/common/sidebarTypes";
 import { DEFAULT_FLASH_LITE_MODEL } from "../sidebar/common/sidebarConstants";
@@ -12,7 +12,7 @@ import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import { ContextBuildOptions } from "../types/context";
 
 const AI_CHAT_PROMPT =
-	"Lets discuss and do not code yet. You should only focus on high level thinking in this project, using the project context given to you. Only respone helpfully with production-ready explainations, no placeholders, no TODOs for the user. Make sure to mention what files are being changed or created if any.";
+	"Lets discuss and do not code yet. You should only focus on high level thinking in this project, using the project context given to you. Only respone helpfully with production-ready explainations, no placeholders, no TODOs for the user. Make sure to mention what files are being changed or created if any. Most importantly, only focus on the User's message and the project context, do not make assumptions outside of that. If the User's message is not clear, ask for clarification.";
 
 export class ChatService {
 	private urlContextService: UrlContextService;
@@ -277,15 +277,26 @@ export class ChatService {
 				);
 			}
 		} catch (error: any) {
-			finalAiResponseText = formatUserFacingErrorMessage(
-				error,
-				"Failed to generate AI response.",
-				"AI Response Generation Error: ",
-				this.provider.workspaceRootUri
-			);
-			success = false;
-			if (this.provider.currentAiStreamingState) {
-				this.provider.currentAiStreamingState.isError = true;
+			const isCancellation = error?.message === ERROR_OPERATION_CANCELLED;
+
+			if (isCancellation) {
+				finalAiResponseText = ERROR_OPERATION_CANCELLED;
+				success = true;
+				if (this.provider.currentAiStreamingState) {
+					this.provider.currentAiStreamingState.isError = false;
+					this.provider.currentAiStreamingState.isComplete = true;
+				}
+			} else {
+				finalAiResponseText = formatUserFacingErrorMessage(
+					error,
+					"Failed to generate AI response.",
+					"AI Response Generation Error: ",
+					this.provider.workspaceRootUri
+				);
+				success = false;
+				if (this.provider.currentAiStreamingState) {
+					this.provider.currentAiStreamingState.isError = true;
+				}
 			}
 		} finally {
 			const isThisOperationStillActiveGlobally =
@@ -481,19 +492,27 @@ export class ChatService {
 				);
 			}
 		} catch (error: any) {
-			finalAiResponseText = formatUserFacingErrorMessage(
-				error,
-				"Failed to regenerate AI response.",
-				"AI Response Regeneration Error: ",
-				this.provider.workspaceRootUri
-			);
-			success = false;
-			if (this.provider.currentAiStreamingState) {
-				this.provider.currentAiStreamingState.isError = true;
-			}
-			if (error.message === ERROR_OPERATION_CANCELLED) {
+			const isCancellation = error?.message === ERROR_OPERATION_CANCELLED;
+
+			if (isCancellation) {
+				finalAiResponseText = ERROR_OPERATION_CANCELLED;
+				success = true;
+				if (this.provider.currentAiStreamingState) {
+					this.provider.currentAiStreamingState.isError = false;
+					this.provider.currentAiStreamingState.isComplete = true;
+				}
 				console.log("[ChatService] AI response regeneration cancelled.");
 			} else {
+				finalAiResponseText = formatUserFacingErrorMessage(
+					error,
+					"Failed to regenerate AI response.",
+					"AI Response Regeneration Error: ",
+					this.provider.workspaceRootUri
+				);
+				success = false;
+				if (this.provider.currentAiStreamingState) {
+					this.provider.currentAiStreamingState.isError = true;
+				}
 				console.error("[ChatService] Error regenerating AI response:", error);
 				chatHistoryManager.addHistoryEntry(
 					"model",

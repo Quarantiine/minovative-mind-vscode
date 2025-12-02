@@ -19,6 +19,7 @@ import {
 import {
 	appendMessage,
 	sendEditedMessageToExtension,
+	reenableAllMessageActionButtons,
 } from "../ui/chatMessageRenderer";
 import { startTypingAnimation } from "../ui/typingAnimation";
 
@@ -89,6 +90,12 @@ export function initializeInputEventListeners(
 			// Added null check
 			els.editMessageHelpText.style.display = "none"; // Hide help text
 		}
+
+		// Re-enable action buttons if we are not actively loading a response
+		if (!appState.isLoading) {
+			reenableAllMessageActionButtons(els);
+		}
+
 		if (shouldRefocus) {
 			els.chatInput.focus(); // Return focus to input
 		}

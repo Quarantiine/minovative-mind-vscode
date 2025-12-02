@@ -69,27 +69,42 @@ export function finalizeStreamingMessage(elements: RequiredDomElements): void {
 		console.log("[ChatMessageRenderer] Finalizing AI streaming message.");
 		stopTypingAnimation();
 
-		// Ensure any remaining text in the buffer is added to accumulated text
-		appState.currentAccumulatedText += appState.typingBuffer;
+		// 1. Get parent message container
+		const messageContainer = appState.currentAiMessageContentElement.closest(
+			".message"
+		) as HTMLDivElement | null;
 
-		// Render the final accumulated content
-		appState.currentAiMessageContentElement.innerHTML = md.render(
-			appState.currentAccumulatedText
-		);
-		// Store the original markdown text for copy functionality
-		appState.currentAiMessageContentElement.dataset.originalMarkdown =
-			appState.currentAccumulatedText;
+		// 2. Ensure any remaining text in the buffer is added to accumulated text and trim it
+		appState.currentAccumulatedText += appState.typingBuffer;
+		const finalContent = appState.currentAccumulatedText.trim();
+
+		if (finalContent.length === 0 && messageContainer) {
+			// 3. Handle empty message: remove the container
+			messageContainer.remove();
+			console.log("[ChatMessageRenderer] Removed empty AI message container.");
+		} else if (finalContent.length > 0) {
+			// 4. Execute standard finalization logic for non-empty content
+
+			// Render the final accumulated content
+			appState.currentAiMessageContentElement.innerHTML = md.render(
+				appState.currentAccumulatedText
+			);
+			// Store the original markdown text for copy functionality
+			appState.currentAiMessageContentElement.dataset.originalMarkdown =
+				appState.currentAccumulatedText;
+
+			elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
+		}
 
 		// Re-enable action buttons on all messages, which will handle the just-completed message
 		reenableAllMessageActionButtons(elements);
 
-		// Reset app state variables
+		// 5. Reset state variables unconditionally
 		appState.currentAiMessageContentElement = null;
 		appState.currentAccumulatedText = "";
 		appState.typingBuffer = "";
 		appState.typingTimer = null; // Ensure the timer is cleared
 		clearEditingState(elements);
-		elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
 	} else {
 		console.log(
 			"[ChatMessageRenderer] No active AI streaming message to finalize."
@@ -221,8 +236,6 @@ export function appendMessage(
 			} else {
 				setIconForButton(toggleButton, faChevronUp);
 			}
-			// Ensure the chat scrolls to make the expanded diff visible
-			elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
 		});
 
 		diffHeaderElement.appendChild(toggleButton);

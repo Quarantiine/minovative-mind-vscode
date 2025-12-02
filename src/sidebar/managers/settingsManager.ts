@@ -10,6 +10,10 @@ import {
 import { resetClient } from "../../ai/gemini"; // Adjusted path
 import { ModelInfo } from "../common/sidebarTypes"; // Added ModelInfo import
 
+// Exported Constant for Heuristic Selection setting key
+export const HEURISTIC_SELECTION_ENABLED_KEY =
+	"optimization.heuristicSelectionEnabled";
+
 // Optimization settings keys
 const OPTIMIZATION_SETTINGS_KEYS = {
 	USE_SCAN_CACHE: "optimization.useScanCache",
@@ -51,6 +55,7 @@ const OPTIMIZATION_SETTINGS_KEYS = {
 	DIRECTORY_WEIGHT: "optimization.heuristic.directoryWeight",
 	ENABLE_ENHANCED_DIAGNOSTIC_CONTEXT:
 		"optimization.enableEnhancedDiagnosticContext",
+	HEURISTIC_SELECTION_ENABLED: HEURISTIC_SELECTION_ENABLED_KEY,
 };
 
 // Default optimization settings
@@ -90,6 +95,7 @@ const DEFAULT_OPTIMIZATION_SETTINGS = {
 	dependencyWeight: 5,
 	directoryWeight: 1,
 	enableEnhancedDiagnosticContext: true,
+	heuristicSelectionEnabled: true,
 };
 
 export class SettingsManager {
@@ -102,6 +108,7 @@ export class SettingsManager {
 
 	public initialize(): void {
 		this.loadSettingsFromStorage();
+		this.updateWebviewOptimizationSettings();
 	}
 
 	public getSelectedModelName(): string {
@@ -255,7 +262,33 @@ export class SettingsManager {
 				OPTIMIZATION_SETTINGS_KEYS.ENABLE_ENHANCED_DIAGNOSTIC_CONTEXT,
 				DEFAULT_OPTIMIZATION_SETTINGS.enableEnhancedDiagnosticContext
 			),
+			heuristicSelectionEnabled: this.getSetting(
+				OPTIMIZATION_SETTINGS_KEYS.HEURISTIC_SELECTION_ENABLED,
+				DEFAULT_OPTIMIZATION_SETTINGS.heuristicSelectionEnabled
+			),
 		};
+	}
+
+	public async updateHeuristicSelectionEnabled(
+		isEnabled: boolean
+	): Promise<void> {
+		try {
+			await this.workspaceState.update(
+				HEURISTIC_SELECTION_ENABLED_KEY,
+				isEnabled
+			);
+			console.log(
+				`Heuristic selection enabled status updated to: ${isEnabled}`
+			);
+			this.updateWebviewOptimizationSettings();
+		} catch (error) {
+			console.error("Error updating heuristic selection setting:", error);
+			this.postMessageToWebview({
+				type: "statusUpdate",
+				value: "Error updating heuristic selection setting.",
+				isError: true,
+			});
+		}
 	}
 
 	// Update optimization settings
@@ -362,6 +395,16 @@ export class SettingsManager {
 					DEFAULT_MODEL
 				);
 			}
+
+			// Load and log optimization setting
+			const heuristicEnabled = this.getSetting<boolean>(
+				HEURISTIC_SELECTION_ENABLED_KEY,
+				DEFAULT_OPTIMIZATION_SETTINGS.heuristicSelectionEnabled
+			);
+			console.log(
+				"Loaded heuristic selection enabled status:",
+				heuristicEnabled
+			);
 		} catch (error) {
 			console.error("Error loading settings from storage:", error);
 			this._selectedModelName = DEFAULT_MODEL;

@@ -32,7 +32,7 @@ The extension processes data from your local VS Code workspace to provide contex
 - **Active Editor Content**: The content of the file currently open in your VS Code editor.
 - **VS Code Diagnostics**: Real-time error, warning, and informational messages from your codebase.
 - **Code Structure Information**: Document symbols (functions, classes, types), code references, and workspace-wide dependency graphs derived from your codebase.
-- **Git Changes**: Staged and unstaged changes in your Git repository, particularly for generating commit messages or resolving conflicts.
+- **Git Changes**: Staged and unstaged changes in your Git repository, particularly for generating commit messages.
 - **File Structure Analysis**: Information about file organization used to make contextually aware modifications.
 
 ### 3.3 AI-Generated Data
@@ -59,7 +59,7 @@ The information processed by the Minovative Mind extension is used solely to del
 
 - **Interactive AI Experiences**: To facilitate multimodal chat, generate code, explain selected code, and provide context-aware Q&A.
 - **Autonomous Workflows**: To generate, execute, and monitor multi-step plans that involve creating, modifying, and deleting files, and running shell commands.
-- **Automated Git Operations**: To analyze staged changes for generating insightful Git commit messages and to assist in resolving Git merge conflicts.
+- **Automated Git Operations**: To analyze staged changes for generating insightful Git commit messages.
 
 ### 4.2 For Contextual Understanding & Relevance
 

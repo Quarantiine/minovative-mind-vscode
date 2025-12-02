@@ -2,6 +2,7 @@ import * as ts from "typescript";
 import * as vscode from "vscode";
 import * as path from "path";
 import { TextDecoder } from "util";
+import { DependencyRelation } from "../context/dependencyGraphBuilder";
 
 export async function parseFileImports(
 	filePath: string,
@@ -9,8 +10,8 @@ export async function parseFileImports(
 	compilerOptions: ts.CompilerOptions,
 	compilerHost: ts.CompilerHost,
 	moduleResolutionCache: ts.ModuleResolutionCache
-): Promise<string[]> {
-	const importedPaths = new Set<string>();
+): Promise<DependencyRelation[]> {
+	const importedRelationsMap = new Map<string, "runtime" | "type">();
 
 	try {
 		// Read the file content
@@ -33,11 +34,15 @@ export async function parseFileImports(
 		// Traverse the AST
 		ts.forEachChild(sourceFile, (node) => {
 			let moduleSpecifierText: string | undefined;
+			let relationType: "runtime" | "type" = "runtime";
 
 			// Check for ImportDeclaration nodes
 			if (ts.isImportDeclaration(node) && node.moduleSpecifier) {
 				if (ts.isStringLiteral(node.moduleSpecifier)) {
 					moduleSpecifierText = node.moduleSpecifier.text;
+					if (node.importClause?.isTypeOnly) {
+						relationType = "type";
+					}
 				}
 			}
 			// Check for ExportDeclaration nodes (e.g., `export { A } from './B';`)
@@ -78,7 +83,13 @@ export async function parseFileImports(
 					// Normalize the resulting relative path to use forward slashes (`/`) consistently
 					relativeToProjectRoot = relativeToProjectRoot.replace(/\\/g, "/");
 
-					importedPaths.add(relativeToProjectRoot);
+					const existingRelation = importedRelationsMap.get(
+						relativeToProjectRoot
+					);
+					// If it's already a runtime import, don't downgrade it to a type import.
+					if (existingRelation !== "runtime") {
+						importedRelationsMap.set(relativeToProjectRoot, relationType);
+					}
 				} catch (pathResolutionError) {
 					// Log error if path conversion to relative fails for a specific specifier
 					console.error(
@@ -95,5 +106,10 @@ export async function parseFileImports(
 		return [];
 	}
 
-	return Array.from(importedPaths);
+	return Array.from(importedRelationsMap.entries()).map(
+		([path, relationType]) => ({
+			path,
+			relationType,
+		})
+	);
 }

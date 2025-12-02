@@ -1,12 +1,12 @@
-// src/extension.ts
 import * as vscode from "vscode";
 import { SidebarProvider } from "./sidebar/SidebarProvider";
 import { ERROR_QUOTA_EXCEEDED, resetClient } from "./ai/gemini"; // Import necessary items
 import { cleanCodeOutput } from "./utils/codeUtils";
-import * as sidebarTypes from "./sidebar/common/sidebarTypes";
-import { hasMergeConflicts, getMergeConflictRanges } from "./utils/mergeUtils"; // Added import for mergeUtils
 import { CodeSelectionService } from "./services/codeSelectionService";
-import { getSymbolsInDocument } from "./services/symbolService";
+import {
+	getSymbolsInDocument,
+	serializeDocumentSymbolHierarchy,
+} from "./services/symbolService";
 // Import FormatDiagnosticsOptions type here
 import {
 	DiagnosticService,
@@ -143,6 +143,65 @@ async function executeExplainAction(
 	}
 }
 
+/**
+ * Finds the nearest enclosing symbol for a given position and returns its serialized hierarchy string.
+ * @param position The cursor position.
+ * @param symbols The array of top-level DocumentSymbols.
+ * @param displayFileName The relative file path for serialization.
+ * @returns A formatted string of the symbol structure, or undefined.
+ */
+function findActiveSymbolDetailedInfo(
+	position: vscode.Position,
+	symbols: vscode.DocumentSymbol[] | undefined,
+	displayFileName: string
+): string | undefined {
+	if (!symbols || symbols.length === 0) {
+		return undefined;
+	}
+
+	let deepestSymbol: vscode.DocumentSymbol | undefined = undefined;
+
+	// Helper to find the deepest symbol encompassing the position recursively
+	function findDeepest(
+		currentSymbols: vscode.DocumentSymbol[]
+	): vscode.DocumentSymbol | undefined {
+		let bestMatch: vscode.DocumentSymbol | undefined = undefined;
+
+		for (const symbol of currentSymbols) {
+			if (symbol.range.contains(position)) {
+				// This symbol contains the position. Check children recursively.
+				const childMatch = findDeepest(symbol.children);
+
+				if (childMatch) {
+					// Child is deeper match
+					bestMatch = childMatch;
+				} else {
+					// This symbol is the deepest container found so far in this branch
+					bestMatch = symbol;
+				}
+				// Since we found the deepest match, we can stop searching siblings.
+				break;
+			}
+		}
+		return bestMatch;
+	}
+
+	deepestSymbol = findDeepest(symbols);
+
+	if (deepestSymbol) {
+		// Use serializeDocumentSymbolHierarchy, setting maxDepth to 3 to get context below the function/class
+		const symbolHierarchy = serializeDocumentSymbolHierarchy(
+			deepestSymbol,
+			displayFileName,
+			0, // currentDepth (start at 0 for the deepest symbol found)
+			4 // maxDepth
+		);
+		return `\n\n--- Active Symbol Context ---\n${symbolHierarchy}\n\n--- End Active Symbol Context ---\n`;
+	}
+
+	return undefined;
+}
+
 // --- Helper Function for Diagnostics Formatting ---
 // --- End Helper Function ---
 
@@ -188,7 +247,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	) {
 		workspaceRootUri = vscode.workspace.workspaceFolders[0].uri;
 	} else {
-		// Handle case with no open folder, though /merge implies a Git repo.
+		// Handle case with no open folder.
 		// For robustness, provide a fallback.
 		workspaceRootUri = undefined;
 	}
@@ -234,10 +293,10 @@ export async function activate(context: vscode.ExtensionContext) {
 			let selectedText: string = "";
 			let effectiveRange: vscode.Range = originalSelection;
 			let diagnosticsString: string | undefined = undefined;
-			let mergeConflictString: string | undefined = undefined;
 			let userProvidedMessage: string | undefined = undefined;
 			let instruction: string | undefined;
 			let composedMessage: string;
+			let activeSymbolContext: string | undefined;
 
 			// Determine display file name relative to workspace root
 			let displayFileName: string = fileName;
@@ -251,6 +310,13 @@ export async function activate(context: vscode.ExtensionContext) {
 				}
 			}
 
+			// Calculate active symbol context
+			activeSymbolContext = findActiveSymbolDetailedInfo(
+				cursorPosition,
+				symbols,
+				displayFileName
+			);
+
 			// 2. Implement Action Selection:
 			const quickPickItems: vscode.QuickPickItem[] = [
 				{
@@ -258,8 +324,9 @@ export async function activate(context: vscode.ExtensionContext) {
 					description: "Fix bugs",
 				},
 				{
-					label: "/merge",
-					description: "Resolve merge conflicts",
+					label: "/docs",
+					description:
+						"Add comprehensive documentation and remove useless comments",
 				},
 				{
 					label: "chat",
@@ -424,22 +491,6 @@ export async function activate(context: vscode.ExtensionContext) {
 							);
 						}
 					}
-				} else if (instruction === "/merge") {
-					if (!hasMergeConflicts(fullText)) {
-						vscode.window.showInformationMessage(
-							`No active merge conflicts detected in '${displayFileName}'.`
-						);
-						return; // Exit command if no conflicts
-					}
-					selectedText = fullText;
-					effectiveRange = new vscode.Range(
-						editor.document.positionAt(0),
-						editor.document.positionAt(fullText.length)
-					);
-					mergeConflictString = "Merge conflicts detected in this file.";
-					vscode.window.showInformationMessage(
-						"Minovative Mind: Selected full file for merge operation due to conflicts."
-					);
 				}
 			}
 			// Apply visual update for auto-selected ranges
@@ -474,12 +525,17 @@ export async function activate(context: vscode.ExtensionContext) {
 				const formatOptions: FormatDiagnosticsOptions = {
 					fileContent: fileContent,
 					enableEnhancedDiagnosticContext: enableEnhancedDiagnosticContext,
-					includeSeverities: [vscode.DiagnosticSeverity.Error],
+					includeSeverities: [
+						vscode.DiagnosticSeverity.Error,
+						vscode.DiagnosticSeverity.Warning,
+						vscode.DiagnosticSeverity.Information,
+						vscode.DiagnosticSeverity.Hint,
+					],
 					// Set requestType to a valid literal type, e.g., "full"
 					requestType: "full",
 					// Set optional properties to undefined if not used
 					token: undefined,
-					selection: undefined,
+					selection: effectiveRange, // Changed from undefined to effectiveRange
 					maxTotalChars: undefined,
 					maxPerSeverity: undefined,
 					snippetContextLines: undefined,
@@ -493,9 +549,9 @@ export async function activate(context: vscode.ExtensionContext) {
 					formatOptions
 				);
 			}
-			// For /merge, mergeConflictString is already set above if conflicts exist.
 
 			// 6. Compose Message:
+
 			let contextDescription: string;
 			let contextForMessage: string;
 
@@ -515,28 +571,57 @@ export async function activate(context: vscode.ExtensionContext) {
 			}
 
 			if (instruction === "/fix") {
-				composedMessage = `/plan ONLY fix the following code errors in ${displayFileName}:\n\n${
-					diagnosticsString || "No errors found."
-				}\n\n---\n\nHighlevel thinking first. No coding yet.`;
-			} else if (instruction === "/merge") {
-				composedMessage = `/plan My message: Please resolve the merge conflicts in ${displayFileName}. \n\nInstruction: Provide the implementation solution before code. Here's the full file content with conflicts:\n\n\`\`\`${languageId}\n${fullText}\n\`\`\`\n. Highlevel thinking first. No coding yet.`;
+				const diagnosticsBlock =
+					diagnosticsString ||
+					`--- Relevant Diagnostics ---\nNo errors found in the selected/effective range.\n--- End Relevant Diagnostics ---\n`;
+
+				const symbolContextBlock = activeSymbolContext || "";
+
+				const instructionRefined = `/plan ONLY fix the issues described in the 'Relevant Diagnostics' section within the context of file \`${displayFileName}\` and related files.`;
+
+				composedMessage = `${instructionRefined}\n\n\n${diagnosticsBlock}${symbolContextBlock}\n\nHighlevel thinking first. No coding snippets yet.`;
+			} else if (instruction === "/docs") {
+				const docsInstruction = `/plan Document and Clean Code. Instruction: For the context provided below, perform two simultaneous actions: 
+				\n\n1. **Documentation**: Generate comprehensive, high-quality documentation. 
+				\n\n2. **Cleanup**: Identify and remove all existing comments that are redundant, useless, or do not add significant clarity.`;
+
+				if (!originalSelection.isEmpty) {
+					// User explicitly selected a snippet
+					composedMessage =
+						`${docsInstruction}\n\n` +
+						`In file \`${displayFileName}\`, apply the documentation and cleanup instruction to ${contextDescription}. The relevant code snippet is provided below.\n\n` +
+						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`\n\n` +
+						"No coding snippets yet.";
+				} else {
+					// No selection (auto-selection handled setting up contextDescription and effectiveRange to full file)
+					composedMessage =
+						`${docsInstruction}\n\n` +
+						`In file \`${displayFileName}\`, apply the documentation and cleanup instruction to the entire file content.\n\n` +
+						"No coding snippets yet.";
+				}
 			} else if (instruction === "chat") {
 				if (originalSelection.isEmpty) {
-					composedMessage = `My message: ${userProvidedMessage} \n\nInstruction: In this project, focus on the conversation within the context of file \`${displayFileName}\`. \n\nDo not code yet.`;
+					composedMessage =
+						`My message: ${userProvidedMessage} \n\nInstruction: Right now, in this project, focus on the conversation within the context of file \`${displayFileName}\` and related files. \n\n` +
+						"\n\nNo coding snippets yet.";
 				} else {
 					composedMessage =
 						`Message: ${userProvidedMessage}\n\n` +
-						`Instruction: In this project, From this file \`${displayFileName}\`, focus on the conversation. I've provided ${contextDescription}.\n\n` +
-						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`\ Do not code yet.`;
+						`Instruction: Right now, in this project \`${displayFileName}\`, focus on the conversation and use related files if you have to. I've provided ${contextDescription}.\n\n` +
+						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`` +
+						"\n\nNo coding snippets yet.";
 				}
 			} else if (instruction === "custom prompt") {
 				if (originalSelection.isEmpty) {
-					composedMessage = `/plan My message: ${userProvidedMessage}\n\nInstruction: In this project, Provide the implementation solution within the context of file \`${displayFileName}\`. Highlevel thinking first. No coding yet.`;
+					composedMessage =
+						`/plan My message: ${userProvidedMessage} \n\nInstruction: Right now, in this project, focus on the conversation within the context of file \`${displayFileName}\` and use related files if you have to. \n\n` +
+						"\n\nNo coding snippets yet.";
 				} else {
 					composedMessage =
-						`/plan My message: ${userProvidedMessage}\n\n` +
-						`Instruction: In this project, From this file \`${displayFileName}\`. I've provided ${contextDescription}:\n\n` +
-						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`\n\nHighlevel thinking first. No coding yet.`;
+						`/plan Message: ${userProvidedMessage}\n\n` +
+						`Instruction: In this project, \`${displayFileName}\`, focus on the conversation and use related files if you have to. I've provided ${contextDescription}.\n\n` +
+						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`` +
+						"\n\nNo coding snippets yet.";
 				}
 			} else {
 				vscode.window.showErrorMessage("Unknown instruction received.");

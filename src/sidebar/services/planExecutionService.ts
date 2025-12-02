@@ -70,6 +70,10 @@ export class PlanExecutionService {
 		private readonly enhancedCodeGenerator: EnhancedCodeGenerator
 	) {}
 
+	private _simpleDelay(ms: number): Promise<void> {
+		return new Promise((resolve) => setTimeout(resolve, ms));
+	}
+
 	private _reportErrorAndReturnResult(
 		error: any,
 		defaultMessage: string,
@@ -774,6 +778,7 @@ export class PlanExecutionService {
 			terminal = vscode.window.createTerminal(terminalName);
 		}
 		terminal.show();
+		await this._simpleDelay(2000);
 
 		const fullCommand = `${step.command} ${
 			step.args ? step.args.join(" ") : ""
@@ -915,9 +920,7 @@ export class PlanExecutionService {
 					}
 					try {
 						progress.report({
-							message: `Executing command: ${step.command} ${
-								step.args ? step.args.join(" ") : ""
-							}`,
+							message: `${step.command}`,
 						});
 						await vscode.commands.executeCommand(
 							step.command,
