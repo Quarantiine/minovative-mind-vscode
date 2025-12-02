@@ -4,7 +4,7 @@ import {
 	ERROR_OPERATION_CANCELLED,
 	initializeGenerativeAI,
 } from "../ai/gemini";
-import { GenerationConfig, Tool } from "@google/generative-ai";
+import { GenerationConfig } from "@google/generative-ai";
 import { UrlContextService } from "./urlContextService";
 import { HistoryEntry, HistoryEntryPart } from "../sidebar/common/sidebarTypes";
 import { DEFAULT_FLASH_LITE_MODEL } from "../sidebar/common/sidebarConstants";
@@ -12,7 +12,7 @@ import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import { ContextBuildOptions } from "../types/context";
 
 const AI_CHAT_PROMPT =
-	"Lets discuss and do not code yet. You should only focus on high level thinking in this project, using the project context given to you. Only respone helpfully with production-ready explainations, no placeholders, no TODOs for the user. Make sure to mention what files are being changed or created if any.";
+	"Lets discuss and do not code yet. You should only focus on high level thinking in this project, using the project context given to you. Only respone helpfully with production-ready explainations, no placeholders, no TODOs for the user. Make sure to mention what files are being changed or created if any. Most importantly, only focus on the User's message and the project context, do not make assumptions outside of that. If the User's message is not clear, ask for clarification.";
 
 export class ChatService {
 	private urlContextService: UrlContextService;

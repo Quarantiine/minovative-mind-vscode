@@ -21,7 +21,7 @@
 		"url": "https://github.com/Minovative-Technologies/minovative-mind/issues"
 	},
 	"homepage": "https://github.com/Minovative-Technologies/minovative-mind/blob/main/README.md",
-	"version": "2.40.3",
+	"version": "2.43.0",
 	"publisher": "MinovativeTechnologies",
 	"icon": "media/mino-logo-dark.png",
 	"banner": {
@@ -126,20 +126,20 @@
 		"@types/vscode": "^1.80.0",
 		"@typescript-eslint/eslint-plugin": "^8.37.0",
 		"@typescript-eslint/parser": "^8.37.0",
-		"@vscode/codicons": "^0.0.38",
+		"@vscode/codicons": "^0.0.43",
 		"@vscode/test-electron": "^2.3.9",
 		"eslint": "^9.31.0",
 		"eslint-plugin-import": "^2.32.0",
-		"eslint-plugin-unicorn": "^60.0.0",
-		"glob": "^11.0.3",
+		"eslint-plugin-unicorn": "^62.0.0",
+		"glob": "^13.0.0",
 		"ts-loader": "^9.5.1",
 		"typescript": "^5.8.3",
 		"webpack": "^5.91.0",
 		"webpack-cli": "^6.0.1"
 	},
 	"dependencies": {
-		"@fortawesome/fontawesome-svg-core": "^6.7.2",
-		"@fortawesome/free-solid-svg-icons": "^6.7.2",
+		"@fortawesome/fontawesome-svg-core": "^7.1.0",
+		"@fortawesome/free-solid-svg-icons": "^7.1.0",
 		"@google/generative-ai": "^0.24.1",
 		"@types/markdown-it": "^14.1.2",
 		"bluebird": "^3.7.2",
@@ -148,7 +148,7 @@
 		"ignore": "^7.0.4",
 		"markdown-it": "^14.1.0",
 		"mime": "^4.1.0",
-		"uuid": "^11.1.0",
+		"uuid": "^13.0.0",
 		"vscode-uri": "^3.1.0",
 		"zod": "^4.0.10"
 	}

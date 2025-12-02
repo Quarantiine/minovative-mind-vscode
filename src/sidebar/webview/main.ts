@@ -46,29 +46,69 @@ function toggleTokenUsageDisplay(elements: RequiredDomElements): void {
 }
 
 /**
- * Toggles heuristic context usage and updates the display.
+ * Synchronizes the heuristic context state between the app state and the UI display.
+ * This is used both by the toggle button and the initial state push from the host.
+ *
+ * @param isEnabled - The desired boolean state for heuristic context.
+ * @param elements - An object containing references to all required DOM elements.
  */
-function toggleHeuristicContextDisplay(elements: RequiredDomElements): void {
-	// Flip state
-	const isEnabled = !appState.isHeuristicContextEnabled;
+export function syncHeuristicContextState(
+	isEnabled: boolean,
+	elements: RequiredDomElements
+): void {
+	// 1. Update app state
 	appState.isHeuristicContextEnabled = isEnabled;
 
-	const toggleButton = elements.heuristicContextToggle; // Correctly referencing elements.heuristicContextToggle
+	// 2. Update visual properties (title)
 	const title = isEnabled
 		? "Heuristic Context is ON"
 		: "Heuristic Context is OFF";
+	elements.heuristicContextToggle.title = title;
 
-	// Only update title here. Visual state (active/disabled) is handled by setLoadingState.
-	toggleButton.title = title;
+	// 3. Trigger UI update (which handles active/inactive classes based on appState)
+	// We call setLoadingState here to ensure the active/inactive classes are applied.
+	setLoadingState(appState.isLoading, elements);
+}
 
-	// Send message to extension host
+/**
+ * Handles the 'updateOptimizationSettings' message from the extension host.
+ * Specifically updates the heuristic context toggle state based on persistence.
+ *
+ * NOTE: This function must be called by the logic in initializeMessageBusHandler
+ * when receiving a message of type 'updateOptimizationSettings'.
+ *
+ * @param message The message object containing optimization settings.
+ * @param elements DOM elements.
+ */
+export function handleOptimizationSettingsUpdate(
+	message: { value: { heuristicSelectionEnabled: boolean } },
+	elements: RequiredDomElements
+): void {
+	if (typeof message.value.heuristicSelectionEnabled === "boolean") {
+		syncHeuristicContextState(
+			message.value.heuristicSelectionEnabled,
+			elements
+		);
+	}
+}
+
+/**
+ * Toggles heuristic context usage and updates the display.
+ */
+function toggleHeuristicContextDisplay(elements: RequiredDomElements): void {
+	// 1. Determine the new state
+	const newEnabledState = !appState.isHeuristicContextEnabled;
+
+	// 2. Update UI and internal state using the new synchronization function
+	syncHeuristicContextState(newEnabledState, elements);
+
+	// 3. Send message to extension host to persist the setting
 	postMessageToExtension({
 		type: "toggleHeuristicContextUsage",
-		isEnabled: isEnabled,
+		isEnabled: newEnabledState,
 	});
 
-	// Ensure immediate synchronization
-	setLoadingState(appState.isLoading, elements);
+	// setLoadingState is now called inside syncHeuristicContextState
 }
 
 /**
@@ -416,20 +456,9 @@ function initializeWebview(): void {
 	setIconForButton(elements.tokenUsageToggle, faChartLine);
 
 	// --- Heuristic Context Toggle Initialization ---
-	// Ensure initial visual state reflects appState (defaulting to false if unset)
-	const isHeuristicEnabledInitially = !!appState.isHeuristicContextEnabled;
-
-	elements.heuristicContextToggle.classList.toggle(
-		"active",
-		isHeuristicEnabledInitially
-	);
-	elements.heuristicContextToggle.classList.toggle(
-		"inactive",
-		!isHeuristicEnabledInitially
-	);
-	elements.heuristicContextToggle.title = isHeuristicEnabledInitially
-		? "Heuristic Context is ON (Click to disable file relationship analysis)"
-		: "Heuristic Context is OFF (Click to enable file relationship analysis)";
+	// Set initial visual state based on appState (default is false).
+	// The host message will quickly override this state after webviewReady.
+	syncHeuristicContextState(!!appState.isHeuristicContextEnabled, elements);
 
 	// Attach event listener
 	elements.heuristicContextToggle.addEventListener("click", () => {

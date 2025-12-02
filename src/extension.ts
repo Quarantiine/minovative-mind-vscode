@@ -278,6 +278,11 @@ export async function activate(context: vscode.ExtensionContext) {
 					description: "Fix bugs",
 				},
 				{
+					label: "/docs",
+					description:
+						"Add comprehensive documentation and remove useless comments",
+				},
+				{
 					label: "chat",
 					description: "General conversations",
 				},
@@ -529,6 +534,25 @@ export async function activate(context: vscode.ExtensionContext) {
 				const instructionRefined = `/plan ONLY fix the issues described in the 'Relevant Diagnostics' section within the context of file \`${displayFileName}\` and related files.`;
 
 				composedMessage = `${instructionRefined}\n\n\n${diagnosticsBlock}${symbolContextBlock}\n\nHighlevel thinking first. No coding snippets yet.`;
+			} else if (instruction === "/docs") {
+				const docsInstruction = `/plan Document and Clean Code. Instruction: For the context provided below, perform two simultaneous actions: 
+				\n\n1. **Documentation**: Generate comprehensive, high-quality documentation. 
+				\n\n2. **Cleanup**: Identify and remove all existing comments that are redundant, useless, or do not add significant clarity.`;
+
+				if (!originalSelection.isEmpty) {
+					// User explicitly selected a snippet
+					composedMessage =
+						`${docsInstruction}\n\n` +
+						`In file \`${displayFileName}\`, apply the documentation and cleanup instruction to ${contextDescription}. The relevant code snippet is provided below.\n\n` +
+						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`\n\n` +
+						"No coding snippets yet.";
+				} else {
+					// No selection (auto-selection handled setting up contextDescription and effectiveRange to full file)
+					composedMessage =
+						`${docsInstruction}\n\n` +
+						`In file \`${displayFileName}\`, apply the documentation and cleanup instruction to the entire file content.\n\n` +
+						"No coding snippets yet.";
+				}
 			} else if (instruction === "chat") {
 				if (originalSelection.isEmpty) {
 					composedMessage =
@@ -552,15 +576,6 @@ export async function activate(context: vscode.ExtensionContext) {
 						`Instruction: In this project, \`${displayFileName}\`, focus on the conversation and use related files if you have to. I've provided ${contextDescription}.\n\n` +
 						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`` +
 						"\n\nNo coding snippets yet.";
-				}
-			} else if (instruction === "custom prompt") {
-				if (originalSelection.isEmpty) {
-					composedMessage = `/plan My message: ${userProvidedMessage}\n\nInstruction: Right now, in this project, Provide the implementation solution within the context of file \`${displayFileName}\` and use related files if you have to. Highlevel thinking first. No coding snippets yet.`;
-				} else {
-					composedMessage =
-						`/plan My message: ${userProvidedMessage}\n\n` +
-						`Instruction: In this project, \`${displayFileName}\`. I've provided ${contextDescription}:\n\n` +
-						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`\n\nHighlevel thinking first. No coding snippets yet and use related files if you have to.`;
 				}
 			} else {
 				vscode.window.showErrorMessage("Unknown instruction received.");

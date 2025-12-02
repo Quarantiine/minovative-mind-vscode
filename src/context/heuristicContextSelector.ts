@@ -45,16 +45,19 @@ export async function getHeuristicRelevantFiles(
 	cancellationToken?: vscode.CancellationToken,
 	options?: Partial<HeuristicSelectionOptions>
 ): Promise<vscode.Uri[]> {
-	if (options?.heuristicSelectionEnabled === false) {
+	const isHeuristicSelectionEnabled =
+		options?.heuristicSelectionEnabled === true;
+
+	if (!isHeuristicSelectionEnabled) {
 		console.log(
-			"[HeuristicContextSelector] Heuristic selection explicitly disabled. Skipping scoring."
+			"[HeuristicContextSelector] Heuristic selection is not explicitly true. Skipping scoring."
 		);
 		return [];
 	}
 
 	// Initialize effective options with provided options or default weights
 	const effectiveOptions: HeuristicSelectionOptions = {
-		heuristicSelectionEnabled: options?.heuristicSelectionEnabled,
+		heuristicSelectionEnabled: true,
 		maxHeuristicFilesTotal: options?.maxHeuristicFilesTotal ?? 30,
 		maxSameDirectoryFiles: options?.maxSameDirectoryFiles ?? 15,
 		maxDirectDependencies: options?.maxDirectDependencies ?? 10,

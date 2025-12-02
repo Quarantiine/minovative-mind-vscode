@@ -1,7 +1,58 @@
-// src/sidebar/services/gitService.ts
 import * as vscode from "vscode"; // For workspaceFolders, though rootPath is passed
 import { exec, ChildProcess } from "child_process";
 import * as util from "util";
+import * as path from "path";
+
+const BINARY_FILE_EXTENSIONS = new Set([
+	".png",
+	".jpg",
+	".jpeg",
+	".gif",
+	".bmp",
+	".ico",
+	".svg",
+	".webp",
+	".mp4",
+	".webm",
+	".mov",
+	".avi",
+	".mp3",
+	".wav",
+	".ogg",
+	".zip",
+	".tar",
+	".gz",
+	".tgz",
+	".7z",
+	".rar",
+	".pdf",
+	".doc",
+	".docx",
+	".xls",
+	".xlsx",
+	".ppt",
+	".pptx",
+	".exe",
+	".dll",
+	".obj",
+	".class",
+	".bin",
+	".dat",
+	".woff",
+	".woff2",
+	".ttf",
+	".eot",
+]);
+
+/**
+ * Checks if a file path corresponds to a known binary file extension.
+ * @param filePath The path to the file.
+ * @returns True if the file should be skipped for content reading, false otherwise.
+ */
+function shouldSkipContentForPath(filePath: string): boolean {
+	const extension = path.extname(filePath).toLowerCase();
+	return BINARY_FILE_EXTENSIONS.has(extension);
+}
 
 const execPromise = util.promisify(exec);
 
@@ -158,40 +209,35 @@ export function constructGitCommitCommand(commitMessage: string): {
 
 /**
  * Retrieves the content of a file from the Git index (staged version).
- * Logs stderr as a warning but returns stdout if present.
  *
  * @param rootPath The root path of the Git repository.
  * @param filePath The path to the file relative to the rootPath.
- * @returns The content of the file from the Git index.
- * @throws Error if the command fails to execute or returns an empty stdout with stderr.
+ * @returns The content of the file from the Git index, or an empty string if binary or deleted.
+ * @throws Error if the command fails to execute for reasons other than file deletion.
  */
 export async function getGitFileContentFromIndex(
 	rootPath: string,
 	filePath: string
 ): Promise<string> {
+	if (shouldSkipContentForPath(filePath)) {
+		console.log(
+			`[GitService] Skipping content fetch for staged binary file: ${filePath}`
+		);
+		return "";
+	}
+
 	try {
 		// Use proper quoting for filePath to handle spaces or special characters
-		// Replace existing double quotes with escaped ones to ensure correct shell parsing.
 		const command = `git show :"${filePath.replace(/"/g, '\\"')}"`;
 		const { stdout, stderr } = await execPromise(command, { cwd: rootPath });
 
-		if (stderr) {
-			// Log stderr as a warning. If stdout is present, it means the command was largely successful.
-			if (stdout.trim().length > 0) {
-				console.warn(
-					`[GitService] stderr from 'git show :"${filePath}"' (non-fatal): ${stderr.trim()}`
-				);
-			} else {
-				// If stdout is empty but stderr exists, it typically indicates an error or no content.
-				// Re-throwing here allows the calling function to decide how to handle an empty result with warnings/errors.
-				console.error(
-					`[GitService] Error or no content from index for '${filePath}': ${stderr.trim()}`
-				);
-				throw new Error(
-					`Failed to get file content from index for '${filePath}': ${stderr.trim()}`
-				);
-			}
+		if (stderr && stdout.trim().length > 0) {
+			// Log stderr as a warning if we successfully got content
+			console.warn(
+				`[GitService] stderr from 'git show index :"${filePath}"' (non-fatal): ${stderr.trim()}`
+			);
 		}
+
 		return stdout.trim();
 	} catch (error: any) {
 		const errorOutput = error.stderr || error.message || String(error);
@@ -201,7 +247,6 @@ export async function getGitFileContentFromIndex(
 
 		if (deletedFileInIndexErrorRegex.test(errorOutput)) {
 			// If the file is deleted and thus not in the index, return an empty string.
-			// This signals to the diffing logic that there is no "new" content.
 			console.log(
 				`[GitService] File '${filePath}' is marked as deleted in the index. Returning empty string for staged content.`
 			);
@@ -224,41 +269,39 @@ export async function getGitFileContentFromIndex(
  *
  * @param rootPath The root path of the Git repository.
  * @param filePath The path to the file relative to the rootPath.
- * @returns The content of the file from Git HEAD, or an empty string if the file is new.
+ * @returns The content of the file from Git HEAD, or an empty string if the file is new or binary.
  * @throws Error for any other unhandled Git errors.
  */
 export async function getGitFileContentFromHead(
 	rootPath: string,
 	filePath: string
 ): Promise<string> {
+	if (shouldSkipContentForPath(filePath)) {
+		console.log(
+			`[GitService] Skipping content fetch for HEAD binary file: ${filePath}`
+		);
+		return "";
+	}
+
 	try {
 		// Use proper quoting for filePath to handle spaces or special characters
-		// Replace existing double quotes with escaped ones to ensure correct shell parsing.
 		const command = `git show HEAD:"${filePath.replace(/"/g, '\\"')}"`;
 		const { stdout, stderr } = await execPromise(command, { cwd: rootPath });
 
-		if (stderr) {
-			// Log stderr as a warning, similar to getGitFileContentFromIndex.
-			if (stdout.trim().length > 0) {
-				console.warn(
-					`[GitService] stderr from 'git show HEAD:"${filePath}"' (non-fatal): ${stderr.trim()}`
-				);
-			} else {
-				console.error(
-					`[GitService] Error or no content from HEAD for '${filePath}': ${stderr.trim()}`
-				);
-				throw new Error(
-					`Failed to get file content from HEAD for '${filePath}': ${stderr.trim()}`
-				);
-			}
+		if (stderr && stdout.trim().length > 0) {
+			// Log stderr as a warning if we successfully got content
+			console.warn(
+				`[GitService] stderr from 'git show HEAD:"${filePath}"' (non-fatal): ${stderr.trim()}`
+			);
 		}
+
 		return stdout.trim();
 	} catch (error: any) {
 		const errorOutput = error.stderr || error.message || String(error);
 		const lowerErrorMessage = errorOutput.toLowerCase();
 
 		// Use a single, comprehensive regex to match common "file not found in HEAD" errors.
-		// The 'i' flag ensures case-insensitive matching for robustness, though lowerErrorMessage is already lowercased.
+		// The 'i' flag ensures case-insensitive matching for robustness.
 		const gitHeadFileNotFoundRegex =
 			/(unknown revision|path not in the working tree|exists on disk, but not in 'head')/i;
 

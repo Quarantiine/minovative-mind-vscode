@@ -55,6 +55,7 @@ Minovative Mind can autonomously plan and execute complex development tasks, sig
 ### 2.2 Intelligent Code Modification
 
 - **Flexible Scope**: The AI can refactor, edit, or modify either selected code snippets or the entire active file based on your instructions.
+- **Dedicated Documentation Workflow (`/docs`)**: A specialized Quick Pick command that automatically generates a high-level plan instruction for the AI to simultaneously **add comprehensive documentation** and **remove useless or redundant comments** from the selected code or the entire active file, ensuring immediate standardization and clarity.
 - **Symbol-Aware Context**: Leverages detailed symbol information (functions, classes, types) from your codebase to ensure accurate and contextually relevant modifications.
 - **Quality & Production-Ready Code**: Generates modular, maintainable, and production-ready code, often using diff analysis to validate output quality.
 - **Output Validation**: Employs sophisticated heuristics to sanitize and validate AI-generated code snippets, ensuring functional and high-quality output.

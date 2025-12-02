@@ -1184,7 +1184,7 @@ export class ContextService {
 			let finalContextString = rawContextString; // Initialize with the originally built context string
 			// Prepend verboseHeaderMarker if present
 			if (verboseHeaderMarker) {
-				finalContextString = `${verboseHeaderMarker}\n${rawContextString}`;
+				finalContextString = `${verboseHeaderMarker}\n\n${rawContextString}`;
 			}
 
 			// Wrap the persona/preamble logic within the includePersona condition

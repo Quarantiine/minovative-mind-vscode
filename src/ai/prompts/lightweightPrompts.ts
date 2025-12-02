@@ -11,12 +11,21 @@ export async function generateLightweightPlanPrompt(
 ): Promise<string> {
 	const prompt = `
 
-Provide a concise, actionable summary of the AI’s response. Extract only the concrete steps needed to modify the code. Exclude all explanations, reasoning, and non-actionable text. Keep the output focused and direct to build production-ready code.
-	
-Start the response with
-- "/plan with highlevel thinking, no coding yet, in the best way, generate a plan about this below (use related files if needed to implement plan):".
+Analyze the AI's previous response to create a high-level plan for code implementation. Focus on a structured, step-by-step outline of key changes, integrations, and considerations, without code. Use this as a blueprint for production-ready code.
 
-	AI Response: ${aiMessageContent}.`;
+Guidelines:
+- Concise and actionable: Extract essential steps, dependencies, and logic.
+- High-level: Describe actions, brief rationale if key, and interactions; no details or code.
+- Reference files/modules: Mention existing ones if implied for context.
+- Structure: Use numbered/bulleted lists; group tasks (e.g., setup, logic, testing).
+- Complete: Include error handling, edges, performance, prerequisites if relevant.
+- Production-ready: Highlight modularity, scalability, security, maintainability.
+
+Begin the plan exactly with this:
+"/plan with high-level thinking, no coding yet, in the best way, generate a plan about this below (use related files if needed to implement plan):"
+
+AI Response: ${aiMessageContent}
+`;
 
 	try {
 		const result = await aiRequestService.generateWithRetry(
