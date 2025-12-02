@@ -2,11 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { SidebarProvider } from "../sidebar/SidebarProvider";
 import * as sidebarTypes from "../sidebar/common/sidebarTypes";
-import {
-	ExtensionToWebviewMessages,
-	PlanTimelineInitializeMessage,
-	PlanTimelineProgressMessage,
-} from "../sidebar/common/sidebarTypes";
+import { ExtensionToWebviewMessages } from "../sidebar/common/sidebarTypes";
 import { ERROR_OPERATION_CANCELLED } from "../ai/gemini";
 import {
 	ExecutionPlan,
@@ -85,38 +81,9 @@ export class PlanExecutorService {
 		// 2.b. Prepare steps and send PlanTimelineInitializeMessage
 		const orderedSteps = this._prepareAndOrderSteps(plan.steps!);
 
-		// 1. Filter orderedSteps to create trackableSteps containing only non-RunCommand steps.
-		const trackableSteps = orderedSteps.filter(
-			(step) => !isRunCommandStep(step)
-		);
-
-		const stepDescriptions = trackableSteps.map((step) => {
-			// Extract a simplified description for the timeline initialization.
-			// Prioritize the basename of the path for FS operations over generic descriptions.
-			let description: string;
-
-			if (isModifyFileStep(step)) {
-				description = `Modified file: ${path.basename(step.step.path)}`;
-			} else if (isCreateFileStep(step)) {
-				description = `Created file: ${path.basename(step.step.path)}`;
-			} else if (isCreateDirectoryStep(step)) {
-				description = `Created directory: ${path.basename(step.step.path)}`;
-			} else if (step.step.description && step.step.description.trim() !== "") {
-				// Use AI provided description for non-FS steps if available
-				description = step.step.description;
-			} else {
-				description = `Executed action: ${(
-					step as PlanStep
-				).step.action.replace(/_/g, " ")}`;
-			}
-
-			return description;
-		});
-
-		this.postMessageToWebview({
-			type: "planTimelineInitialize",
-			stepDescriptions: stepDescriptions,
-		});
+		// Removed: filtering logic to create trackableSteps (lines 90-92)
+		// Removed: logic that calculates stepDescriptions (lines 94-108)
+		// Removed: invocation of planTimelineInitialize message (lines 110-113)
 
 		try {
 			await vscode.window.withProgress(
@@ -150,7 +117,6 @@ export class PlanExecutorService {
 
 						await this._executePlanSteps(
 							orderedSteps, // Pass all steps
-							trackableSteps, // 3. Pass trackableSteps as new second argument
 							rootUri,
 							planContext,
 							combinedToken,
@@ -306,7 +272,6 @@ export class PlanExecutorService {
 
 	private async _executePlanSteps(
 		orderedSteps: PlanStep[],
-		trackableSteps: PlanStep[], // Instruction 1 (Signature update)
 		rootUri: vscode.Uri,
 		context: sidebarTypes.PlanGenerationContext,
 		combinedToken: vscode.CancellationToken,
@@ -316,10 +281,7 @@ export class PlanExecutorService {
 		const affectedFileUris = new Set<vscode.Uri>();
 		const { changeLogger } = this.provider;
 
-		// Initialize tracking variables (Instruction 2)
 		const totalOrderedSteps = orderedSteps.length;
-		const totalTrackableSteps = trackableSteps.length;
-		let trackableStepIndex = 0;
 
 		let relevantSnippets = "";
 		const relevantFiles = context.relevantFiles ?? [];
@@ -340,43 +302,32 @@ export class PlanExecutorService {
 		let index = 0;
 		while (index < totalOrderedSteps) {
 			const step = orderedSteps[index];
-			const isCurrentStepTrackable = !isRunCommandStep(step); // Instruction 3
+			const currentStepNumber = index + 1;
+			const totalSteps = totalOrderedSteps;
 			let currentStepCompletedSuccessfullyOrSkipped = false;
 			let currentTransientAttempt = 0;
+			const isCommandStep = isRunCommandStep(step);
 
 			while (!currentStepCompletedSuccessfullyOrSkipped) {
 				if (combinedToken.isCancellationRequested) {
 					throw new Error(ERROR_OPERATION_CANCELLED);
 				}
 
-				// Conditional index calculation for descriptions (Instruction 4)
-				const currentStepNumberForDescription = isCurrentStepTrackable
-					? trackableStepIndex + 1
-					: index + 1;
-				const totalStepsForDescription = isCurrentStepTrackable
-					? totalTrackableSteps
-					: totalOrderedSteps;
-
 				const detailedStepDescription = this._getStepDescription(
 					step,
-					currentStepNumberForDescription - 1,
-					totalStepsForDescription,
+					index, // 0-based index
+					totalSteps,
 					currentTransientAttempt
 				);
 
-				// Conditional progress logging (Instruction 4)
-				if (isCurrentStepTrackable) {
-					this._logStepProgress(
-						currentStepNumberForDescription,
-						totalStepsForDescription,
-						detailedStepDescription,
-						currentTransientAttempt,
-						this.MAX_TRANSIENT_STEP_RETRIES
+				// Replaced conditional progress logging with console.log
+				if (isCommandStep) {
+					console.log(
+						`Minovative Mind (Command Step ${currentStepNumber}/${totalSteps}): Starting ${detailedStepDescription}`
 					);
 				} else {
-					// Internal logging for non-trackable steps
 					console.log(
-						`Minovative Mind (Command Step): Starting ${detailedStepDescription}`
+						`Minovative Mind (Execution Step ${currentStepNumber}/${totalSteps}): Starting ${detailedStepDescription}`
 					);
 				}
 
@@ -386,8 +337,8 @@ export class PlanExecutorService {
 					} else if (isCreateFileStep(step)) {
 						await this._handleCreateFileStep(
 							step as CreateFileStep,
-							trackableStepIndex + 1, // 1-based index (Instruction 7)
-							totalTrackableSteps, // (Instruction 7)
+							currentStepNumber,
+							totalSteps,
 							rootUri,
 							context,
 							relevantSnippets,
@@ -398,8 +349,8 @@ export class PlanExecutorService {
 					} else if (isModifyFileStep(step)) {
 						await this._handleModifyFileStep(
 							step as ModifyFileStep,
-							trackableStepIndex + 1,
-							totalTrackableSteps,
+							currentStepNumber,
+							totalSteps,
 							rootUri,
 							context,
 							relevantSnippets,
@@ -407,11 +358,11 @@ export class PlanExecutorService {
 							changeLogger,
 							combinedToken
 						);
-					} else if (isRunCommandStep(step)) {
+					} else if (isCommandStep) {
 						await this._handleRunCommandStep(
 							step,
 							index,
-							totalOrderedSteps,
+							totalSteps,
 							rootUri,
 							context,
 							progress,
@@ -432,20 +383,19 @@ export class PlanExecutorService {
 						throw error;
 					}
 
-					// If the step is NOT trackable (RunCommandStep) and it fails, immediately throw (Instruction 5)
-					if (!isCurrentStepTrackable) {
+					// If it's a command step failure, throw immediately (no retries for commands)
+					if (isCommandStep) {
 						console.error(
-							`Minovative Mind: RunCommandStep failed, immediately throwing error.`
+							`Minovative Mind: Command Step ${currentStepNumber} failed, immediately throwing error: ${errorMsg}`
 						);
 						throw error;
 					}
 
+					// For FS steps (non-command steps), proceed to user intervention/retry
 					const shouldRetry = await this._reportStepError(
 						error,
 						rootUri,
 						detailedStepDescription,
-						currentStepNumberForDescription,
-						totalStepsForDescription,
 						currentTransientAttempt,
 						this.MAX_TRANSIENT_STEP_RETRIES
 					);
@@ -455,6 +405,11 @@ export class PlanExecutorService {
 							? 0
 							: currentTransientAttempt + 1;
 						const delayMs = 10000 + currentTransientAttempt * 5000;
+
+						console.warn(
+							`Minovative Mind: Step ${currentStepNumber} failed, delaying ${delayMs}ms before retrying.`
+						);
+
 						await new Promise<void>((resolve, reject) => {
 							if (combinedToken.isCancellationRequested) {
 								return reject(new Error(ERROR_OPERATION_CANCELLED));
@@ -472,25 +427,13 @@ export class PlanExecutorService {
 						});
 					} else if (shouldRetry.type === "skip") {
 						currentStepCompletedSuccessfullyOrSkipped = true;
-						this._logStepProgress(
-							currentStepNumberForDescription,
-							totalStepsForDescription,
-							`Step SKIPPED by user.`,
-							0,
-							0
-						);
 						console.log(
-							`Minovative Mind: User chose to skip Step ${currentStepNumberForDescription}.`
+							`Minovative Mind: User chose to skip Step ${currentStepNumber}.`
 						);
 					} else {
 						throw new Error(ERROR_OPERATION_CANCELLED);
 					}
 				}
-			}
-
-			// If the step was trackable, update index (Instruction 6)
-			if (isCurrentStepTrackable) {
-				trackableStepIndex++;
 			}
 
 			index++;
@@ -579,61 +522,10 @@ export class PlanExecutorService {
 		}/${totalSteps}: ${detailedStepDescription}${retrySuffix}`;
 	}
 
-	// 1. Modify _logStepProgress method
-	private _logStepProgress(
-		currentStepNumber: number,
-		totalSteps: number,
-		message: string,
-		currentTransientAttempt: number,
-		maxTransientRetries: number,
-		isError: boolean = false
-	): void {
-		// Log to console first
-		if (isError) {
-			console.error(`Minovative Mind: ${message}`);
-		} else {
-			console.log(`Minovative Mind: ${message}`);
-		}
-
-		// Ignore internal batch update logs (currentStepNumber=0)
-		if (currentStepNumber === 0) {
-			return;
-		}
-
-		let status: PlanTimelineProgressMessage["status"];
-
-		if (isError) {
-			status = "failed";
-		} else if (message.includes("SKIPPED")) {
-			status = "skipped";
-		} else if (
-			message.includes(`Step ${currentStepNumber}/${totalSteps}`) &&
-			!message.includes("already has the desired content") &&
-			!message.includes("Command completed successfully")
-		) {
-			// This covers the logging that occurs before execution starts (Line 348), providing the "Running..." message.
-			status = "running";
-		} else {
-			// Successful completion log (e.g., created file, modified file, command success, already desired content).
-			status = "success";
-		}
-
-		// 3.b. Replace original logic block with PlanTimelineProgressMessage
-		this.postMessageToWebview({
-			type: "planTimelineProgress",
-			stepIndex: currentStepNumber - 1, // 0-based index
-			status: status,
-			detail: message,
-			// diffContent removed
-		});
-	}
-
 	private async _reportStepError(
 		error: any,
 		rootUri: vscode.Uri,
 		stepDescription: string,
-		currentStepNumber: number,
-		totalSteps: number,
 		currentTransientAttempt: number,
 		maxTransientRetries: number
 	): Promise<{
@@ -664,29 +556,20 @@ export class PlanExecutorService {
 			isRetryableTransientError &&
 			currentTransientAttempt < maxTransientRetries
 		) {
-			this._logStepProgress(
-				currentStepNumber,
-				totalSteps,
-				`FAILED (transient, auto-retrying): ${errorMsg}`,
-				currentTransientAttempt + 1,
-				maxTransientRetries,
-				true
-			);
+			// Replaced _logStepProgress (Line 485)
 			console.warn(
-				`Minovative Mind: Step ${currentStepNumber} failed, auto-retrying due to transient error: ${errorMsg}`
+				`Minovative Mind: FAILED (transient, auto-retrying): ${stepDescription}. Attempt ${
+					currentTransientAttempt + 1
+				}/${maxTransientRetries}. Error: ${errorMsg}`
 			);
 			return { type: "retry" };
 		} else {
-			this._logStepProgress(
-				currentStepNumber,
-				totalSteps,
-				`FAILED: ${errorMsg}. Requires user intervention.`,
-				currentTransientAttempt,
-				maxTransientRetries,
-				true
+			// Replaced _logStepProgress (Line 497)
+			console.error(
+				`Minovative Mind: FAILED: ${stepDescription}. Requires user intervention. Error: ${errorMsg}`
 			);
 			const choice = await vscode.window.showErrorMessage(
-				`Step ${currentStepNumber}/${totalSteps} failed: ${errorMsg}. What would you like to do?`,
+				`Plan step failed: ${stepDescription} failed with error: ${errorMsg}. What would you like to do?`,
 				"Retry Step",
 				"Skip Step",
 				"Cancel Plan"
@@ -861,7 +744,7 @@ export class PlanExecutorService {
 
 	private async _handleCreateFileStep(
 		step: CreateFileStep,
-		currentStepNumber: number, // Renamed parameter
+		currentStepNumber: number,
 		totalSteps: number,
 		rootUri: vscode.Uri,
 		context: sidebarTypes.PlanGenerationContext,
@@ -931,12 +814,10 @@ export class PlanExecutorService {
 
 		const cleanedDesiredContent = cleanCodeOutput(desiredContent ?? "");
 
-		this._logStepProgress(
-			currentStepNumber,
-			totalSteps,
-			`Creating file \`${path.basename(step.step.path)}\`...`,
-			0,
-			0
+		console.log(
+			`Minovative Mind: [Step ${currentStepNumber}/${totalSteps}] Creating file \`${path.basename(
+				step.step.path
+			)}\`...`
 		);
 
 		try {
@@ -946,14 +827,10 @@ export class PlanExecutorService {
 			).toString("utf-8");
 
 			if (existingContent === cleanedDesiredContent) {
-				this._logStepProgress(
-					currentStepNumber,
-					totalSteps,
-					`File \`${path.basename(
+				console.log(
+					`Minovative Mind: [Step ${currentStepNumber}/${totalSteps}] File \`${path.basename(
 						step.step.path
-					)}\` already has the desired content. Skipping.`,
-					0,
-					0
+					)}\` already has the desired content. Skipping.`
 				);
 			} else {
 				const document = await vscode.workspace.openTextDocument(fileUri);
@@ -973,17 +850,14 @@ export class PlanExecutorService {
 					step.step.path
 				);
 
-				// 1. In the existing file modification path (the `try` block), change the success message passed to `this._logStepProgress` from 'Created file' to 'Modified file'.
-				this._logStepProgress(
-					currentStepNumber,
-					totalSteps,
-					`Modified file \`${path.basename(step.step.path)}\``,
-					0,
-					0,
-					false
+				// Replaced _logStepProgress (Modification success)
+				console.log(
+					`Minovative Mind: [Step ${currentStepNumber}/${totalSteps}] Modified file \`${path.basename(
+						step.step.path
+					)}\``
 				);
 
-				// 2. In the existing file modification path, update the `chatMessageText` string to use the format: `Step ${currentStepNumber}/${totalSteps}: Modified file: \`${path.basename(step.step.path)}\`\n\n${summary}`.
+				// 2. In the existing file modification path (the `try` block), update the `chatMessageText` string to use the format: `Step ${currentStepNumber}/${totalSteps}: Modified file: \`${path.basename(step.step.path)}\`\n\n${summary}`.
 				const chatMessageText = `Step ${currentStepNumber}/${totalSteps}: Modified file: \`${path.basename(
 					step.step.path
 				)}\`\n\n${summary}`;
@@ -1025,14 +899,11 @@ export class PlanExecutorService {
 					step.step.path
 				);
 
-				// 2. Modify _logStepProgress to remove diffContent
-				this._logStepProgress(
-					currentStepNumber,
-					totalSteps,
-					`Created file \`${path.basename(step.step.path)}\``,
-					0,
-					0,
-					false
+				// Replaced _logStepProgress (Creation success)
+				console.log(
+					`Minovative Mind: [Step ${currentStepNumber}/${totalSteps}] Created file \`${path.basename(
+						step.step.path
+					)}\``
 				);
 
 				// 3. In the new file creation path (the `catch` block), update the `chatMessageText` string to use the format: `Step ${currentStepNumber}/${totalSteps}: Created file: \`${path.basename(step.step.path)}\`\n\n${summary}`.
@@ -1134,14 +1005,10 @@ export class PlanExecutorService {
 		const newContent = cleanCodeOutput(modifiedResult.content);
 
 		if (originalContent === newContent) {
-			this._logStepProgress(
-				currentStepNumber,
-				totalSteps,
-				`File \`${path.basename(
+			console.log(
+				`Minovative Mind: [Step ${currentStepNumber}/${totalSteps}] File \`${path.basename(
 					step.step.path
-				)}\` content is already as desired, no substantial modifications needed.`,
-				0,
-				0
+				)}\` content is already as desired, no substantial modifications needed.`
 			);
 		} else {
 			const document = await vscode.workspace.openTextDocument(fileUri);
@@ -1161,13 +1028,10 @@ export class PlanExecutorService {
 			);
 
 			// Update the _logStepProgress message
-			this._logStepProgress(
-				currentStepNumber,
-				totalSteps,
-				`Modified file \`${path.basename(step.step.path)}\``,
-				0,
-				0,
-				false
+			console.log(
+				`Minovative Mind: [Step ${currentStepNumber}/${totalSteps}] Modified file \`${path.basename(
+					step.step.path
+				)}\``
 			);
 
 			// Update the chatMessageText string format
