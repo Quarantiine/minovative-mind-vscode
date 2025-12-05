@@ -585,7 +585,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		// Always load essential data first, regardless of active operations
 		this.apiKeyManager.loadKeysFromStorage();
 		this.settingsManager.updateWebviewModelList();
-		this.settingsManager.updateWebviewOptimizationSettings();
 		this.chatHistoryManager.restoreChatHistoryToWebview();
 
 		// Restore UI state based on potential ongoing operations
