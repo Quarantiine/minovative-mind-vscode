@@ -83,8 +83,7 @@ function _handleGeminiError(
 		throw new Error(ERROR_STREAM_PARSING_FAILED);
 	} else if (
 		lowerErrorMessage.includes("api key not valid") ||
-		status === 400 ||
-		status === 403
+		status === 400
 	) {
 		const errorMessage = `Invalid API Key for Gemini model ${modelName}. Please verify your key.`;
 		geminiLogger.error(modelName, errorMessage);
@@ -101,6 +100,7 @@ function _handleGeminiError(
 		throw new Error(errorMessage);
 	} else if (
 		status === 503 ||
+		status === 403 ||
 		lowerErrorMessage.includes("service unavailable")
 	) {
 		throw new Error(ERROR_SERVICE_UNAVAILABLE);

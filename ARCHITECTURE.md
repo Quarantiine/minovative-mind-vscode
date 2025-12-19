@@ -37,12 +37,12 @@ This system ensures that diagnostic information, particularly 'Information' and 
 
 **Process Overview:**
 
-1. **Capture and Formatting**: The `DiagnosticService` (or utilities within `src/utils/diagnosticUtils.ts`) captures VS Code diagnostics. These diagnostics are then formatted into a human-readable string representation, including severity, message, file path, and line/character information.
-2. **Contextual Embedding**: The formatted diagnostic information (`formattedDiagnostics`) is incorporated into the `EnhancedGenerationContext`. Prompt generation functions check for and include this data if it exists.
+1. **Capture and Formatting**: The `DiagnosticService` (implemented within `src/utils/diagnosticUtils.ts`) captures VS Code diagnostics for the active file (if available) and formats them into a human-readable string representation, including severity, message, file path, and line/character information, potentially including rich code snippets.
+2. **Contextual Embedding**: The formatted diagnostic string is injected directly into the main context assembly flow managed by `ContextService.buildProjectContext`.
 3. **Prompt Engineering**: Prompts dynamically construct a context that presents the AI with code, project structure, and crucially, the relevant diagnostic information alongside other contextual elements.
 4. **Informed AI Decisions**: By receiving this integrated diagnostic context within the prompt, the AI can leverage hints and informational messages to refine its output, address potential issues proactively, and align its actions more closely with the project's current state and quality requirements.
 
-**Key Components Involved**: `DiagnosticService` (conceptual, likely implemented within `diagnosticUtils.ts`), `EnhancedGenerationContext` (type definition), `createEnhancedGenerationPrompt`, `createEnhancedModificationPrompt`, `AIRequestService` (for sending the prompt).
+**Key Components Involved**: `DiagnosticService` (`formatContextualDiagnostics`), `ContextService` (responsible for fetching live diagnostics and embedding the result into the final context string), `AIRequestService` (for sending the prompt).
 
 **Goal**: To enrich the AI's understanding with real-time diagnostic insights, leading to higher quality and more contextually appropriate code generation and modification.
 
@@ -191,14 +191,14 @@ The assembled payload (both the current turn and the previous history) must be t
 - **Responsibility**: Manages the full lifecycle of AI-generated action plans, from initial conceptualization to automated execution and post-execution handling.
 - **Structured Plan Generation**: Relies on `FunctionCallingMode.ANY` when interacting with `aiRequestService.generateFunctionCall` to force deterministic JSON output adhering to the `ExecutionPlan` schema.
 - **Quick Action Prompt Engineering**: Specialized quick menu commands (like `/docs` and `/fix`) bypass standard chat prompt construction. Instead, they utilize pre-engineered, complex instructional payloads that explicitly force a high-level AI planning workflow for targeted outcomes (e.g., standardizing documentation and code cleanup).
-- **Validation & Repair**: Employs `parseAndValidatePlanWithFix` for rigorous validation and programmatic repair of plans.
+- **Validation & Repair**: Employs `parseAndValidatePlanWithFix` for rigorous validation and programmatic repair of plans, which internally uses `repairJsonEscapeSequences` to handle common JSON formatting errors before validation against the execution schema.
 - **Step Execution Logic**: Interprets and executes each step, managing retries and providing user intervention options.
-- **Deep Integration**: Utilizes `EnhancedCodeGenerator` for file operations, `ProjectChangeLogger` for recording changes, and `commandExecution.ts` for shell commands.
-- **Command Security & Validation**: Implements hardcoded, rigorous security checks within `PlanExecutorService` to validate `run_command` steps, specifically enforcing executable allowlisting and actively restricting shell meta-characters (like `&&`, `||`, `;`) to prevent injection risks.
+- **Deep Integration**: Utilizes `EnhancedCodeGenerator` for file operations, `ProjectChangeLogger` for recording changes, and `executeCommand` utility for shell commands.
+- **Command Security & Validation**: The `PlanExecutorService` (dependency of `PlanService`) implements hardcoded, rigorous security checks to validate `run_command` steps, specifically enforcing executable allowlisting and actively restricting shell meta-characters (like `&&`, `||`, `;`) to prevent injection risks before calling `executeCommand`.
 - **User Interaction & Monitoring**: Manages user prompts, provides real-time progress updates, reports errors, and notifies on completion or cancellation.
 - **Model Usage Distinction**: Dynamically retrieves model names, using `DEFAULT_FLASH_LITE_MODEL` for initial textual plans and optimized models for function calling.
 - **Enhanced Execution Modularity (PlanExecutorService)**: This service optimizes execution ordering and resource management. Terminal cleanup (`_disposeExecutionTerminals`) is now guaranteed by being called in a `finally` block, ensuring resource hygiene. Additionally, local step retries are preempted by a global cancellation signal, allowing for immediate termination of the plan.
-- **Key Files**: `src/services/planService.ts` (`PlanService` class, `handleInitialPlanRequest`, `initiatePlanFromEditorAction`, `generateStructuredPlanAndExecute`, `_executePlan`, `_executePlanSteps`, `parseAndValidatePlanWithFix`), `src/ai/workflowPlanner.ts`, `src/services/aiRequestService.ts`, `src/ai/enhancedCodeGeneration.ts`, `src/utils/commandExecution.ts`, `src/workflow/ProjectChangeLogger.ts`, `src/services/RevertService.ts`
+- **Key Files**: `src/services/planService.ts` (`PlanService` class, `handleInitialPlanRequest`, `initiatePlanFromEditorAction`, `generateStructuredPlanAndExecute`, `_executePlan`, `_executePlanSteps`, `parseAndValidatePlanWithFix`), `src/ai/workflowPlanner.ts`, `src/services/aiRequestService.ts`, `src/ai/enhancedCodeGeneration.ts`, `src/utils/commandExecution.ts`, `src/workflow/ProjectChangeLogger.ts`, `src/services/RevertService.ts`, `src/services/planExecutorService.ts` (Added for completeness, as it is explicitly mentioned regarding security checks.)
 
 #### 3. Project Change Logging
 
@@ -220,8 +220,8 @@ The assembled payload (both the current turn and the previous history) must be t
 
 #### 1. Multimodal Interaction
 
-- The system supports multimodal input, allowing users to engage with the AI using both text prompts and image uploads. Image data is processed as Base64 strings encapsulated within `ImageInlineData` objects, which are then part of the `HistoryEntryPart` union type defined in `src/sidebar/common/sidebarTypes.ts`.
-- User-sent chat messages are structured as `chatMessage` objects (type `WebviewToExtensionChatMessageType`) which can include an optional `imageParts` array.
+- The system supports multimodal input, allowing users to engage with the AI using both text prompts and image uploads. Image data is processed as Base64 strings encapsulated within objects matching the structure of `HistoryEntryPart` containing `inlineData` ({ mimeType, data }), which are then part of the `imageParts` array defined on the `WebviewToExtensionChatMessageType` type in `src/sidebar/common/sidebarTypes.ts`.
+- User-sent chat messages are structured as `chatMessage` objects (type `WebviewToExtensionChatMessageType`) which can include an optional `imageParts` array containing these image structure wrappers.
 - These messages are initially handled by `src/sidebar/webview/messageSender.ts` on the webview side and dispatched to the extension for processing by `src/services/chatService.ts`.
 
 #### 2. Message Flow and Communication
@@ -305,19 +305,13 @@ The assembled payload (both the current turn and the previous history) must be t
 
 - **Responsibility**: Provides a **secure**, **robust**, and **auditable** mechanism for executing external shell commands, critical for AI-driven workflows to interact with the file system and external tools.
 - **Key Features**:
-  - **Direct Command Execution**: Utilizes `child_process.spawn` for direct command invocation without `shell: true`, passing commands as an executable and an explicit argument array to prevent shell injection vulnerabilities.
-  - **Robust Security Validation**: A built-in, hardcoded security configuration within `PlanExecutorService` rigorously validates all commands before execution. This includes:
-    - **Executable Allowlisting**: Only predefined, safe executables (e.g., `git`, `npm`, `mkdir`) are permitted.
-    - **Path Restrictions**: Disallows absolute and relative paths for executables, enforcing execution via the system's `PATH` for trusted binaries.
-    - **Dangerous Command/Argument Blocking**: Explicitly blocks known dangerous operations such as `rm -rf`, `git reset --hard`, `npm exec`, and `npx` when they attempt to run arbitrary scripts without explicit user confirmation.
-    - **Shell Meta-character Prevention**: Actively prevents the interpretation of shell meta-characters (e.g., `&&`, `||`, `;`, `$(`, `` ` ``) in commands and arguments to guard against injection attacks.
-    - **High-Risk Executable Handling**: Powerful interpreters (e.g., `npx`, `node`, `python`, `bash`, `sh`) are either disallowed by default or require explicit user confirmation due to their potential for arbitrary code execution.
-  - **Hardcoded Security Policy**: The security rules are fixed internally within `PlanExecutorService`, providing a consistent and non-modifiable security posture, replacing any external configuration.
-  - **Improved User Prompts**: Enhanced prompts provide clearer warnings for high-risk commands and offer more granular user choices (Allow/Skip/Cancel) to ensure informed consent.
-  - **Real-time Terminal Output**: Pipes `stdout` and `stderr` to a dedicated VS Code terminal in real-time, providing transparency and detailed feedback during command execution.
-  - **Cancellation Integration**: Integrates with VS Code cancellation tokens for graceful termination of running processes, allowing users to stop long-running or unwanted commands.
+  - **Direct Command Execution**: `executeCommand` in `src/utils/commandExecution.ts` utilizes `child_process.spawn` without `shell: true`, passing commands as an executable and an explicit argument array to prevent shell injection vulnerabilities at the execution layer. It fully manages process lifecycle, capturing streams and integrating directly with VS Code `CancellationToken` for graceful termination (killing the child process upon cancellation signal).
+  - **Security & Confirmation**: Security enforcement is layered:
+    1. **Runtime Security (PlanExecutorService)**: The `PlanExecutorService._handleRunCommandStep` method handles complex pre-execution security checks: it parses arguments using internal utilities, explicitly prompts the user for confirmation via a modal dialog (`Allow`/`Skip`), and blocks execution if any shell meta-characters (`&&`, `||`, `;`, `$(`, etc.) are detected in the input command string, effectively preventing injection attacks before `executeCommand` is invoked.
+    2. **Argument Sanitization**: Static helpers in `planExecutorService.ts` (`_parseCommandArguments`, `_sanitizeArgumentForDisplay`) are used to safely structure the executable and arguments array required by `spawn`.
+  - **Transparency**: Pipes `stdout` and `stderr` to a dedicated VS Code terminal in real-time (though collection via streams is performed internally for logging/auditing regardless of terminal piping status).
 - **Key Interfaces**: `CommandResult`.
-- **Key Files**: `src/utils/commandExecution.ts` (`executeCommand` function), `src/services/planExecutorService.ts` (`_handleRunCommandStep`, `_isCommandSafe` methods)
+- **Key Files**: `src/utils/commandExecution.ts` (`executeCommand` function), `src/services/planExecutorService.ts` (`_handleRunCommandStep`, `_parseCommandArguments`, `_sanitizeArgumentForDisplay`)
 
 ---
 

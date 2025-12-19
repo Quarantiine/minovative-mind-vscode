@@ -531,7 +531,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 				const symbolContextBlock = activeSymbolContext || "";
 
-				const instructionRefined = `/plan ONLY fix the issues described in the 'Relevant Diagnostics' section within the context of file \`${displayFileName}\` and related files.`;
+				const instructionRefined = `/plan ONLY fix the issues described in the 'Relevant Diagnostics' section within the context of file \`${displayFileName}\` and related files (if needed) and more.`;
 
 				composedMessage = `${instructionRefined}\n\n\n${diagnosticsBlock}${symbolContextBlock}\n\nHighlevel thinking first. No coding snippets yet.`;
 			} else if (instruction === "/docs") {
@@ -545,35 +545,35 @@ export async function activate(context: vscode.ExtensionContext) {
 						`${docsInstruction}\n\n` +
 						`In file \`${displayFileName}\`, apply the documentation and cleanup instruction to ${contextDescription}. The relevant code snippet is provided below.\n\n` +
 						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`\n\n` +
-						"No coding snippets yet.";
+						"Highlevel thinking first, No coding snippets yet.";
 				} else {
 					// No selection (auto-selection handled setting up contextDescription and effectiveRange to full file)
 					composedMessage =
 						`${docsInstruction}\n\n` +
 						`In file \`${displayFileName}\`, apply the documentation and cleanup instruction to the entire file content.\n\n` +
-						"No coding snippets yet.";
+						"Highlevel thinking first, No coding snippets yet.";
 				}
 			} else if (instruction === "chat") {
 				if (originalSelection.isEmpty) {
 					composedMessage =
-						`My message: ${userProvidedMessage} \n\nInstruction: Right now, in this project, focus on the conversation within the context of file \`${displayFileName}\` and related files. \n\n` +
+						`My message: ${userProvidedMessage} \n\nInstruction: Right now, in this project, focus on the conversation within the context of file \`${displayFileName}\` and related files (if needed) and more. \n\n` +
 						"\n\nNo coding snippets yet.";
 				} else {
 					composedMessage =
 						`Message: ${userProvidedMessage}\n\n` +
-						`Instruction: Right now, in this project \`${displayFileName}\`, focus on the conversation and use related files if you have to. I've provided ${contextDescription}.\n\n` +
+						`Instruction: Right now, in this project \`${displayFileName}\`, focus on the conversation and use related files if you have to and more. I've provided ${contextDescription}.\n\n` +
 						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`` +
 						"\n\nNo coding snippets yet.";
 				}
 			} else if (instruction === "custom prompt") {
 				if (originalSelection.isEmpty) {
 					composedMessage =
-						`/plan My message: ${userProvidedMessage} \n\nInstruction: Right now, in this project, focus on the conversation within the context of file \`${displayFileName}\` and use related files if you have to. \n\n` +
+						`/plan My message: ${userProvidedMessage} \n\nInstruction: Right now, in this project, focus on the conversation within the context of file \`${displayFileName}\` and use related files if you have to and more. \n\n` +
 						"\n\nNo coding snippets yet.";
 				} else {
 					composedMessage =
 						`/plan Message: ${userProvidedMessage}\n\n` +
-						`Instruction: In this project, \`${displayFileName}\`, focus on the conversation and use related files if you have to. I've provided ${contextDescription}.\n\n` +
+						`Instruction: In this project, \`${displayFileName}\`, focus on the conversation and use related files if you have to and more. I've provided ${contextDescription}.\n\n` +
 						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`` +
 						"\n\nNo coding snippets yet.";
 				}

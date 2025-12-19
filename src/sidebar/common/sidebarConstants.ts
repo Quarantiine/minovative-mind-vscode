@@ -10,15 +10,15 @@ export const MODEL_SELECTION_STORAGE_KEY = "geminiSelectedModel";
 export const MODEL_DETAILS = [
 	{
 		name: "gemini-3-pro-preview",
-		description: "Premium | Ultra 🧠🧠🧠",
+		description: "Premium | Ultra Powerful 🧠🧠🧠",
 	},
 	{
-		name: "gemini-2.5-pro",
-		description: "Freemium | Powerful 🧠🧠",
+		name: "gemini-3-flash-preview",
+		description: "Freemium | Powerful Everyday Use 🧠🧠⚡",
 	},
 	{
 		name: "gemini-flash-latest",
-		description: "Freemium | Everyday Use 🧠⚡",
+		description: "Freemium | Simple Daily Use 🧠⚡",
 	},
 	{
 		name: "gemini-flash-lite-latest",
@@ -28,7 +28,7 @@ export const MODEL_DETAILS = [
 
 export const AVAILABLE_GEMINI_MODELS = MODEL_DETAILS.map((model) => model.name);
 
-export const DEFAULT_PRO_MODEL = "gemini-2.5-pro";
+export const DEFAULT_PRO_MODEL = "gemini-3-pro-preview";
 export const DEFAULT_FLASH_MODEL = "gemini-flash-latest";
 export const DEFAULT_FLASH_LITE_MODEL = "gemini-flash-lite-latest";
 export const DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001";

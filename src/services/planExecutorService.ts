@@ -39,6 +39,9 @@ export class PlanExecutorService {
 		private readonly MAX_TRANSIENT_STEP_RETRIES: number
 	) {}
 
+	/**
+	 * Delays execution for a specified number of milliseconds, supporting cancellation.
+	 */
 	private _delay(ms: number, token: vscode.CancellationToken): Promise<void> {
 		if (token.isCancellationRequested) {
 			return Promise.reject(new Error(ERROR_OPERATION_CANCELLED));
@@ -62,6 +65,37 @@ export class PlanExecutorService {
 		});
 	}
 
+	/**
+	 * Helper to race a UI promise (like showInformationMessage) against the cancellation token.
+	 * If cancelled, it resolves to undefined immediately, effectively simulating a dismissal.
+	 */
+	private _raceWithCancellation<T>(
+		promise: Thenable<T | undefined>,
+		token: vscode.CancellationToken
+	): Promise<T | undefined> {
+		if (token.isCancellationRequested) {
+			return Promise.resolve(undefined);
+		}
+
+		return new Promise<T | undefined>((resolve, reject) => {
+			const disposable = token.onCancellationRequested(() => {
+				disposable.dispose();
+				resolve(undefined);
+			});
+
+			promise.then(
+				(result) => {
+					disposable.dispose();
+					resolve(result);
+				},
+				(error) => {
+					disposable.dispose();
+					reject(error);
+				}
+			);
+		});
+	}
+
 	public async executePlan(
 		plan: ExecutionPlan,
 		planContext: sidebarTypes.PlanGenerationContext,
@@ -80,10 +114,6 @@ export class PlanExecutorService {
 
 		// 2.b. Prepare steps and send PlanTimelineInitializeMessage
 		const orderedSteps = this._prepareAndOrderSteps(plan.steps!);
-
-		// Removed: filtering logic to create trackableSteps (lines 90-92)
-		// Removed: logic that calculates stepDescriptions (lines 94-108)
-		// Removed: invocation of planTimelineInitialize message (lines 110-113)
 
 		try {
 			await vscode.window.withProgress(
@@ -397,7 +427,8 @@ export class PlanExecutorService {
 						rootUri,
 						detailedStepDescription,
 						currentTransientAttempt,
-						this.MAX_TRANSIENT_STEP_RETRIES
+						this.MAX_TRANSIENT_STEP_RETRIES,
+						combinedToken // Pass token to race UI
 					);
 
 					if (shouldRetry.type === "retry") {
@@ -410,21 +441,8 @@ export class PlanExecutorService {
 							`Minovative Mind: Step ${currentStepNumber} failed, delaying ${delayMs}ms before retrying.`
 						);
 
-						await new Promise<void>((resolve, reject) => {
-							if (combinedToken.isCancellationRequested) {
-								return reject(new Error(ERROR_OPERATION_CANCELLED));
-							}
-							let disposable: vscode.Disposable;
-							const timeout = setTimeout(() => {
-								disposable.dispose();
-								resolve();
-							}, delayMs);
-							disposable = combinedToken.onCancellationRequested(() => {
-								clearTimeout(timeout);
-								disposable.dispose();
-								reject(new Error(ERROR_OPERATION_CANCELLED));
-							});
-						});
+						// Use _delay which handles cancellation during the wait
+						await this._delay(delayMs, combinedToken);
 					} else if (shouldRetry.type === "skip") {
 						currentStepCompletedSuccessfullyOrSkipped = true;
 						console.log(
@@ -527,7 +545,8 @@ export class PlanExecutorService {
 		rootUri: vscode.Uri,
 		stepDescription: string,
 		currentTransientAttempt: number,
-		maxTransientRetries: number
+		maxTransientRetries: number,
+		token?: vscode.CancellationToken
 	): Promise<{
 		type: "retry" | "skip" | "cancel";
 		resetTransientCount?: boolean;
@@ -568,12 +587,21 @@ export class PlanExecutorService {
 			console.error(
 				`Minovative Mind: FAILED: ${stepDescription}. Requires user intervention. Error: ${errorMsg}`
 			);
-			const choice = await vscode.window.showErrorMessage(
+
+			// Use raceWithCancellation to allow terminating the prompt if operation is cancelled
+			let choice: string | undefined;
+			const showMessagePromise = vscode.window.showErrorMessage(
 				`Plan step failed: ${stepDescription} failed with error: ${errorMsg}. What would you like to do?`,
 				"Retry Step",
 				"Skip Step",
 				"Cancel Plan"
 			);
+
+			if (token) {
+				choice = await this._raceWithCancellation(showMessagePromise, token);
+			} else {
+				choice = await showMessagePromise;
+			}
 
 			if (choice === undefined) {
 				return { type: "cancel" };
@@ -798,7 +826,7 @@ export class PlanExecutorService {
 						console.warn(
 							`AI generation for ${step.step.path} failed, retrying (${attempt}/${this.MAX_TRANSIENT_STEP_RETRIES})... Error: ${errorMsg}`
 						);
-						await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+						await this._delay(2000 * attempt, combinedToken);
 					} else {
 						throw error;
 					}
@@ -991,7 +1019,7 @@ export class PlanExecutorService {
 					console.warn(
 						`AI modification for ${step.step.path} failed, retrying (${attempt}/${this.MAX_TRANSIENT_STEP_RETRIES})... Error: ${errorMsg}`
 					);
-					await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+					await this._delay(2000 * attempt, combinedToken);
 				} else {
 					throw error;
 				}
@@ -1096,11 +1124,16 @@ export class PlanExecutorService {
 			}/${totalSteps}] About to display command execution prompt: ${displayCommand}`
 		);
 
-		const userChoice = await vscode.window.showInformationMessage(
+		// Use raceWithCancellation for the modal prompt
+		const userChoicePromise = vscode.window.showInformationMessage(
 			promptMessage,
 			{ modal: true },
 			"Allow",
 			"Skip"
+		);
+		const userChoice = await this._raceWithCancellation(
+			userChoicePromise,
+			combinedToken
 		);
 
 		// Remove all calls to this._logStepProgress (Instruction 1)
@@ -1115,7 +1148,7 @@ export class PlanExecutorService {
 			throw new Error(ERROR_OPERATION_CANCELLED);
 		}
 
-		// Handle undefined userChoice (prompt dismissed) (Instruction 2)
+		// Handle undefined userChoice (prompt dismissed or cancelled) (Instruction 2)
 		if (userChoice === undefined) {
 			console.log(
 				`Minovative Mind: [Command Step ${

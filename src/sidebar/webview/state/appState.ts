@@ -55,6 +55,11 @@ export const appState: WebviewAppState = {
 	isCommandSuggestionsVisible: false,
 
 	/**
+	 * Flag indicating whether heuristic context inclusion is currently enabled.
+	 */
+	isHeuristicContextEnabled: true,
+
+	/**
 	 * Reference to the DOM element for the plan confirmation container.
 	 */
 	planConfirmationContainer: null,
@@ -138,11 +143,6 @@ export const appState: WebviewAppState = {
 	 * Currently selected index for file or command suggestions (shared index).
 	 */
 	activeIndex: -1,
-
-	/**
-	 * Flag indicating whether heuristic context inclusion is currently enabled.
-	 */
-	isHeuristicContextEnabled: false,
 
 	/**
 	 * Flag indicating whether the token usage statistics should be displayed.

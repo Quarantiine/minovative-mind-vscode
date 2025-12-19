@@ -61,6 +61,33 @@ export class PlanService {
 	}
 
 	/**
+	 * Delays execution for a specified number of milliseconds, supporting cancellation.
+	 * If the token is cancelled during the delay, the promise rejects immediately.
+	 */
+	private _delay(ms: number, token: vscode.CancellationToken): Promise<void> {
+		if (token.isCancellationRequested) {
+			return Promise.reject(new Error(ERROR_OPERATION_CANCELLED));
+		}
+		return new Promise<void>((resolve, reject) => {
+			let disposable: vscode.Disposable | undefined;
+			const timeout = setTimeout(() => {
+				if (disposable) {
+					disposable.dispose();
+				}
+				resolve();
+			}, ms);
+
+			disposable = token.onCancellationRequested(() => {
+				clearTimeout(timeout);
+				if (disposable) {
+					disposable.dispose();
+				}
+				reject(new Error(ERROR_OPERATION_CANCELLED));
+			});
+		});
+	}
+
+	/**
 	 * Triggers the UI to display the textual plan for review.
 	 * This public method acts as a wrapper for the private _handlePostTextualPlanGenerationUI.
 	 * @param planContext The context containing the generated plan and associated data.
@@ -830,9 +857,8 @@ export class PlanService {
 					);
 					// Removed: x;
 					if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
-						await new Promise((resolve) =>
-							setTimeout(resolve, 15000 + attempt * 2000)
-						); // Exponential backoff for retries
+						// Replaced static timeout with cancellation-aware delay
+						await this._delay(15000 + attempt * 2000, token);
 						continue;
 					} else {
 						throw lastError; // Re-throw the last error after max retries

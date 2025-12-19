@@ -12,6 +12,7 @@ import * as gemini from "../ai/gemini";
 import {
 	ERROR_OPERATION_CANCELLED,
 	ERROR_QUOTA_EXCEEDED,
+	ERROR_SERVICE_UNAVAILABLE,
 	generateContentStream,
 	countGeminiTokens,
 } from "../ai/gemini";
@@ -28,6 +29,41 @@ export class AIRequestService {
 		private postMessageToWebview: (message: any) => void,
 		private tokenTrackingService: TokenTrackingService // Made tokenTrackingService a required dependency
 	) {}
+
+	/**
+	 * Helper method to race a promise against a cancellation token.
+	 * If the token is cancelled, the promise rejects immediately with ERROR_OPERATION_CANCELLED.
+	 */
+	private async raceWithCancellation<T>(
+		promise: Promise<T>,
+		token?: vscode.CancellationToken
+	): Promise<T> {
+		if (!token) {
+			return promise;
+		}
+
+		if (token.isCancellationRequested) {
+			throw new Error(ERROR_OPERATION_CANCELLED);
+		}
+
+		return new Promise<T>((resolve, reject) => {
+			const disposable = token.onCancellationRequested(() => {
+				disposable.dispose();
+				reject(new Error(ERROR_OPERATION_CANCELLED));
+			});
+
+			promise.then(
+				(result) => {
+					disposable.dispose();
+					resolve(result);
+				},
+				(error) => {
+					disposable.dispose();
+					reject(error);
+				}
+			);
+		});
+	}
 
 	/**
 	 * Transforms an array of internal HistoryEntry objects into the format required by the Gemini API's `Content` type.
@@ -142,15 +178,17 @@ export class AIRequestService {
 
 		if (this.tokenTrackingService && currentApiKey) {
 			try {
-				finalInputTokens = await countGeminiTokens(
-					currentApiKey,
-					modelName,
-					requestContentsForGemini
+				finalInputTokens = await this.raceWithCancellation(
+					countGeminiTokens(currentApiKey, modelName, requestContentsForGemini),
+					token
 				);
 				console.log(
 					`[AIRequestService] Accurately counted ${finalInputTokens} input tokens for model ${modelName}.`
 				);
 			} catch (e) {
+				if ((e as Error).message === ERROR_OPERATION_CANCELLED) {
+					throw e;
+				}
 				console.warn(
 					`[AIRequestService] Failed to get accurate input token count from Gemini API (${modelName}), falling back to estimate. Error:`,
 					e
@@ -227,15 +265,19 @@ export class AIRequestService {
 				if (this.tokenTrackingService && currentApiKey) {
 					try {
 						// Update call to countGeminiTokens to pass only the output text for output token count
-						finalOutputTokens = await countGeminiTokens(
-							currentApiKey,
-							modelName,
-							[{ role: "model", parts: [{ text: accumulatedResult }] }]
+						finalOutputTokens = await this.raceWithCancellation(
+							countGeminiTokens(currentApiKey, modelName, [
+								{ role: "model", parts: [{ text: accumulatedResult }] },
+							]),
+							token
 						);
 						console.log(
 							`[AIRequestService] Accurately counted ${finalOutputTokens} output tokens for model ${modelName}.`
 						);
 					} catch (e) {
+						if ((e as Error).message === ERROR_OPERATION_CANCELLED) {
+							throw e;
+						}
 						console.warn(
 							`[AIRequestService] Failed to get accurate output token count from Gemini API (${modelName}), falling back to estimate. Error:`,
 							e
@@ -281,13 +323,24 @@ export class AIRequestService {
 					throw err; // Re-throw cancellation immediately, do NOT retry
 				}
 
-				if (errorMessage === ERROR_QUOTA_EXCEEDED) {
+				if (
+					errorMessage === ERROR_QUOTA_EXCEEDED ||
+					errorMessage === ERROR_SERVICE_UNAVAILABLE
+				) {
+					const isQuotaError = errorMessage === ERROR_QUOTA_EXCEEDED;
+					const transientReason = isQuotaError
+						? "Quota/Rate limit hit"
+						: "Service temporarily unavailable";
+					const displayReason = isQuotaError
+						? "API Quota Exceeded. Retrying automatically."
+						: "AI Service Unavailable. Retrying automatically.";
+
 					const currentDelay = Math.min(
 						maxDelayMs,
 						baseDelayMs * 2 ** consecutiveTransientErrorCount
 					);
 					console.warn(
-						`[AIRequestService] Quota/Rate limit hit for key ...${currentApiKey?.slice(
+						`[AIRequestService] ${transientReason} for key ...${currentApiKey?.slice(
 							-4
 						)}. Pausing for ${(currentDelay / 1000).toFixed(0)} seconds.`
 					);
@@ -296,38 +349,46 @@ export class AIRequestService {
 						type: "aiRetryNotification",
 						value: {
 							currentDelay: currentDelay / 1000, // Convert to seconds for UI
-							reason: "API Quota Exceeded. Retrying automatically.",
+							reason: displayReason,
 						},
 					});
 
-					// Await a cancellable delay
-					await new Promise<void>((resolve) => {
-						if (!token) {
-							setTimeout(resolve, currentDelay);
-							return;
-						}
+					// Await a cancellable delay with immediate rejection
+					try {
+						await new Promise<void>((resolve, reject) => {
+							if (!token) {
+								setTimeout(resolve, currentDelay);
+								return;
+							}
+							if (token.isCancellationRequested) {
+								reject(new Error(ERROR_OPERATION_CANCELLED));
+								return;
+							}
 
-						const timer = setTimeout(() => {
-							cancellationListener.dispose();
-							resolve();
-						}, currentDelay);
+							const timer = setTimeout(() => {
+								cancellationListener.dispose();
+								resolve();
+							}, currentDelay);
 
-						const cancellationListener = token.onCancellationRequested(() => {
-							clearTimeout(timer);
-							cancellationListener.dispose();
-							resolve(); // Resolve immediately to allow cancellation check to fire
+							const cancellationListener = token.onCancellationRequested(() => {
+								clearTimeout(timer);
+								cancellationListener.dispose();
+								reject(new Error(ERROR_OPERATION_CANCELLED));
+							});
 						});
-					});
-
-					if (token?.isCancellationRequested) {
-						console.log(
-							"[AIRequestService] Operation cancelled during quota backoff delay."
-						);
-						if (streamCallbacks?.onComplete) {
-							streamCallbacks.onComplete();
+					} catch (delayError: any) {
+						if (delayError.message === ERROR_OPERATION_CANCELLED) {
+							console.log(
+								"[AIRequestService] Operation cancelled during backoff delay."
+							);
+							if (streamCallbacks?.onComplete) {
+								streamCallbacks.onComplete();
+							}
+							throw delayError; // Break the loop by throwing
 						}
-						throw new Error(ERROR_OPERATION_CANCELLED);
+						throw delayError;
 					}
+
 					consecutiveTransientErrorCount++;
 					continue;
 				} else {
@@ -503,11 +564,17 @@ export class AIRequestService {
 
 		// 1. Count input tokens
 		try {
-			inputTokens = await gemini.countGeminiTokens(apiKey, modelName, contents);
+			inputTokens = await this.raceWithCancellation(
+				gemini.countGeminiTokens(apiKey, modelName, contents),
+				token
+			);
 			console.log(
 				`[AIRequestService] Accurately counted ${inputTokens} input tokens for function call (${modelName}).`
 			);
 		} catch (e) {
+			if ((e as Error).message === ERROR_OPERATION_CANCELLED) {
+				throw e;
+			}
 			console.warn(
 				`[AIRequestService] Failed to get accurate input token count from Gemini API for function call (${modelName}), falling back to estimate. Error:`,
 				e
@@ -518,12 +585,16 @@ export class AIRequestService {
 			);
 		}
 
-		const functionCall = await gemini.generateFunctionCall(
-			apiKey,
-			modelName,
-			contents,
-			tools,
-			functionCallingMode
+		// 2. Generate function call with cancellation support
+		const functionCall = await this.raceWithCancellation(
+			gemini.generateFunctionCall(
+				apiKey,
+				modelName,
+				contents,
+				tools,
+				functionCallingMode
+			),
+			token
 		);
 
 		if (functionCall === null) {
@@ -549,15 +620,21 @@ export class AIRequestService {
 			args: functionCall.args,
 		});
 
-		// 2. Count output tokens
+		// 3. Count output tokens
 		try {
-			outputTokens = await gemini.countGeminiTokens(apiKey, modelName, [
-				{ role: "model", parts: [{ text: functionCallString }] },
-			]);
+			outputTokens = await this.raceWithCancellation(
+				gemini.countGeminiTokens(apiKey, modelName, [
+					{ role: "model", parts: [{ text: functionCallString }] },
+				]),
+				token
+			);
 			console.log(
 				`[AIRequestService] Accurately counted ${outputTokens} output tokens for function call (${modelName}).`
 			);
 		} catch (e) {
+			if ((e as Error).message === ERROR_OPERATION_CANCELLED) {
+				throw e;
+			}
 			console.warn(
 				`[AIRequestService] Failed to get accurate output token count from Gemini API for function call (${modelName}), falling back to estimate. Error:`,
 				e
@@ -572,7 +649,7 @@ export class AIRequestService {
 		console.log(
 			`[AIRequestService] generateFunctionCall: Tracking usage for model: ${modelName}, contextString: ${contextString}`
 		);
-		// 3. Track token usage
+		// 4. Track token usage
 		this.tokenTrackingService.trackTokenUsage(
 			inputTokens,
 			outputTokens,

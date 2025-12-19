@@ -6,11 +6,9 @@ Minovative Mind is a powerful AI-augmented Visual Studio Code extension that int
 
 - **Intelligent AI Chat Interface**: Multimodal interaction, context-aware Q&A, and rich file interactions.
 - **Autonomous AI Workflows**: AI-driven planning, execution of multi-step tasks, and intelligent code modification.
-- **Deep Contextual Understanding**: Comprehensive codebase analysis, symbol and dependency graphing, and smart file relevance.
-- **Integrated Git Automation**: AI-generated commit messages.
-- **Robust Control & Transparency**: Reversible changes, real-time feedback, and secure operations.
-- **Optimized Performance**: Efficient resource management and fast contextual processing.
-- **Flexible Customization**: API key management and model selection.
+- **Project Context & Intelligence**: Deep codebase analysis, dependency graphing, semantic relevance scoring, and efficient context management.
+- **Reliability, Control & Performance**: Centralized concurrency, secure filesystem operations, reversible changes, and optimized resource handling.
+- **Flexible Customization**: API key management, model selection, and granular context filtering.
 
 ---
 
@@ -73,30 +71,29 @@ Minovative Mind can autonomously plan and execute complex development tasks, sig
 
 ---
 
-## 3. Deep Code & Project Understanding
+## 3. Project Context & Intelligence
 
-Minovative Mind builds a profound understanding of your project to provide highly relevant and accurate AI assistance.
+Minovative Mind builds a profound understanding of your project using comprehensive analysis, intelligent filtering, and advanced context optimization techniques.
 
-### 3.1 Comprehensive Context Awareness
+### 3.1 Core Context Engine
 
 - **Rich Data Integration**: Integrates various contextual data points, including VS Code diagnostics, user selection, document symbols, and code references.
 - **Dynamic Memory Updates**: Tracks recent changes in the workspace to continually update the AI's contextual understanding.
 - **External Content Processing**: Extracts and processes content directly from URLs or linked files, enhancing its comprehension and actionability.
-
-### 3.2 Workspace & Project Analysis
-
 - **Efficient Workspace Scanning**: Utilizes an intelligent workspace scanner with filtering to quickly identify and process relevant project files, respecting `.gitignore` rules.
 - **Symbol & Dependency Graphing**: Builds a comprehensive symbol tree and provides persistent, cached workspace-wide dependency graphs, enabling deep, context-aware analysis and type resolution.
 
-### 3.3 Intelligent File Relevance Engine
+### 3.2 Advanced Relevance & Optimization
 
 - **Semantic Linking & Conceptual Proximity**: File relevance is augmented by Semantic Linking, and prioritization is based on conceptual topic proximity scoring (e.g., TF-IDF analysis).
 - **Prioritized Context**: Prioritizes files that are recently modified, linked by symbols, or are directly related to the user's active context, with refined relevance scoring considering file dependency graphs and explicit dependency relationship types (`runtime`, `type`).
 - **Intelligent File Summarization**: Summarizes file content to fit within token limits while preserving critical information, including detailed file complexity estimation and enhanced main purpose detection.
-- **Configurable Heuristic Selection**: Utilizes configurable rules (e.g., directory proximity, dependency analysis, symbol relevance) for intelligent file selection.
 - **Dependency Extraction**: Performs expanded and refined dependency extraction directly from code, enriching file summaries.
+- **Configurable Heuristic Selection**: Utilizes configurable rules (e.g., directory proximity, dependency analysis, symbol relevance) for intelligent file selection.
+- **Cached Analysis**: Caches and batches dependency graph analysis to improve performance for symbol and reference lookups. It also includes internal file caching to prevent redundant processing.
+- **Smart Truncation & Progressive Loading**: Employs intelligent truncation and progressive loading of content to optimize token usage and response times.
 
-### 3.4 Resilient Context Construction
+### 3.3 Resilient Context Construction
 
 - **Large Project Handling**: Designed to efficiently handle large projects by strategically skipping oversized files (e.g., 1MB+ files).
 - **Intelligent File Exclusion**: Automatically excludes binary files and adheres to `.gitignore` rules to optimize context and avoid irrelevant data.
@@ -104,77 +101,62 @@ Minovative Mind builds a profound understanding of your project to provide highl
 
 ---
 
-## 4. Reliability, Control & Transparency
+## 4. Reliability, Control & Performance
 
-Minovative Mind prioritizes user control, project security, and transparent operation.
+Minovative Mind prioritizes user control, project security, transparent operation, and optimized resource utilization.
 
-### 4.1 User Control & Transparency
+### 4.1 Core System Reliability & Concurrency
 
-- **Centralized Concurrency Control**: Concurrency management is now centralized and robust, ensuring predictable behavior and overall system reliability during multi-step AI operations.
-- **Real-time Progress Indicators**: Provides constant, visible feedback on ongoing AI tasks using VS Code notifications.
-- **Cancellable Tasks**: Supports cancellation of most AI-driven tasks via `CancellationToken`, allowing users to interrupt long-running operations.
-- **Transparent UI Updates**: Ensures all UI changes and cancellations are clearly communicated and reflected in the extension's interface.
-- **Seamless State Restoration**: Preserves and restores critical extension states (e.g., pending plans, active AI operations, user preferences) across VS Code restarts for continuity.
+- **Centralized Concurrency Control**: Concurrency management is centralized and robust, ensuring predictable behavior and overall system reliability during multi-step AI operations.
+- **Optimized AI Request Handling**: Employs parallel processing and batching for concurrent AI calls, enhancing scalability and managing workload efficiently.
+- **LRU Cache**: Implements an LRU (Least Recently Used) cache with preloading for frequently accessed data, minimizing latency.
+- **Dynamic Content Limits**: Enforces file size and context limits to manage memory and API token usage effectively.
+- **Progressive Analysis**: Utilizes progressive analysis and refinement of context, ensuring efficiency even with complex tasks.
 
 ### 4.2 Security & Filesystem Safety
 
 - **Workspace-Bound Operations**: All file system modifications and creations are strictly confined to the user's active VS Code workspace directory, preventing unintended changes outside the project scope.
 - **Shell Command Approval**: Requires explicit user confirmation for every `run_command` step within an AI-generated plan. Users have the power to allow, skip, or cancel individual execution steps.
 
-### 4.3 Reversible Changes & Auditing
+### 4.3 Change Auditing & Reversibility
 
 - **Project Change Logging**: Accurately tracks all file system changes (additions, modifications, deletions) made by AI-driven workflows.
 - **Reversible AI Plans**: Enables safe experimentation by allowing users to easily revert entire AI plans with a dedicated button.
 - **Auditable Change Log**: Maintains a detailed log of all AI-driven changes for transparency and auditing.
 
-### 4.4 Token Management
+### 4.4 Transparency & Monitoring
 
+- **Real-time Progress Indicators**: Provides constant, visible feedback on ongoing AI tasks using VS Code notifications.
+- **Cancellable Tasks**: Supports cancellation of most AI-driven tasks via `CancellationToken`, allowing users to interrupt long-running operations.
+- **Transparent UI Updates**: Ensures all UI changes and cancellations are clearly communicated and reflected in the extension's interface.
+- **Seamless State Restoration**: Preserves and restores critical extension states (e.g., pending plans, active AI operations, user preferences) across VS Code restarts for continuity.
 - **Accurate API Token Counting**: Precisely measures token consumption for all AI requests.
 - **Real-time Token Usage Display**: Provides immediate feedback on token usage directly within the sidebar.
-
-### 4.5 Error Handling & Diagnostics
-
-- **Context Fallback Strategy**: Implements a layered fallback mechanism for context building (smart → heuristic → minimal) to ensure AI always receives some relevant information.
-- **Real-time Status Feedback**: Provides clear status feedback on the progress of plan generation and context building to the user.
+- **Error Handling & Fallbacks**: Implements a layered fallback mechanism for context building (smart → heuristic → minimal) to ensure AI always receives some relevant information.
 - **Error and Diff Highlighting**: Highlights errors and code differences in the UI for quick identification and review.
 
 ---
 
-### 5 Search & Context Optimization
-
-- **Efficient Workspace Scanner**: Utilizes an intelligent workspace scanner with filtering to quickly identify and process relevant project files.
-- **Cached Dependency Graphing**: Caches and batches dependency graph analysis to improve performance for symbol and reference lookups. It also includes internal file caching to prevent redundant processing.
-- **Smart Truncation & Progressive Loading**: Employs intelligent truncation and progressive loading of content to optimize token usage and response times.
-- **Optimized AI Request Handling**: Employs parallel processing and batching for concurrent AI calls, enhancing scalability and managing workload efficiently.
-
-### 5.1 Efficient Resource Management
-
-- **LRU Cache**: Implements an LRU (Least Recently Used) cache with preloading for frequently accessed data, minimizing latency.
-- **Dynamic Content Limits**: Enforces file size and context limits to manage memory and API token usage effectively.
-- **Progressive Analysis**: Utilizes progressive analysis and refinement of context, ensuring efficiency even with complex tasks.
-
----
-
-## 6. Customization & Personalization
+## 5. Customization & Personalization
 
 Tailor Minovative Mind to your specific needs and preferences.
 
-### 6.1 API & Model Settings
+### 5.1 API & Model Settings
 
 - **Secure API Key Management**: Facilitates secure setup and storage of the Gemini API key(s). The system supports the secure management and utilization of _multiple_ API keys, allowing users to configure and switch between them as needed.
 - **Flexible Model Selection**: Allows users to select preferred Gemini models (`gemini-2.5-pro`, `flash`, `flash-lite` - Thinking Mode) for different tasks, offering control over performance and cost.
 
-### 6.2 Context Filtering
+### 5.2 Context Filtering
 
 - **Granular Inclusions/Exclusions**: Provides explicit options for users to include or exclude specific files and directories from AI context processing.
 
-### 6.3 Enhanced Chat History Management
+### 5.3 Enhanced Chat History Management
 
 - **Persistent Chat & Diff Storage**: Chat conversations, including associated file diffs, can be saved and loaded as JSON for continuity.
 - **Session Restoration**: Restores conversation context and file states after VS Code reloads, maintaining workflow consistency.
 - **Flexible History Management**: Provides options to clear/reset the entire conversation or delete individual messages.
 
-### 6.4 Persistent UI States
+### 5.4 Persistent UI States
 
 - **UI State Retention**: Retains UI states and settings across VS Code restarts for a seamless user experience.
 
