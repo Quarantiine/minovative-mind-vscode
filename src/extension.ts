@@ -584,6 +584,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
 			// 7. Prefill Chat Input:
 			await vscode.commands.executeCommand("minovative-mind.activitybar.focus"); // Ensure sidebar is open
+			// Wait for the sidebar webview to become visible and ready after opening
+			await sleep(100);
 			sidebarProvider.postMessageToWebview({
 				type: "PrefillChatInput",
 				payload: { text: composedMessage },

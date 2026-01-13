@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import * as fs from "fs";
 import type { GenerationConfig } from "@google/generative-ai";
 import {
 	HistoryEntry,
@@ -246,6 +247,25 @@ export async function selectRelevantFilesAI(
 					50
 				)}...`
 			);
+			if (postMessageToWebview) {
+				postMessageToWebview({
+					type: "contextAgentLog",
+					value: {
+						text: `[Context Agent] Using cached context analysis for this request.`,
+					},
+				});
+				// Also simulate the loading state toggle for consistent UX
+				postMessageToWebview({
+					type: "setContextAgentLoading",
+					value: true,
+				});
+				setTimeout(() => {
+					postMessageToWebview({
+						type: "setContextAgentLoading",
+						value: false,
+					});
+				}, 600);
+			}
 			return cached.selectedFiles;
 		}
 	}
@@ -253,6 +273,23 @@ export async function selectRelevantFilesAI(
 	const relativeFilePaths = allScannedFiles.map((uri) =>
 		path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/")
 	);
+
+	// Start logging for visibility
+	if (postMessageToWebview) {
+		postMessageToWebview({
+			type: "setContextAgentLoading",
+			value: true,
+		});
+		postMessageToWebview({
+			type: "contextAgentLog",
+			value: {
+				text: `[Context Agent] Analysis started for: "${userRequest.substring(
+					0,
+					50
+				)}..."`,
+			},
+		});
+	}
 
 	let contextPrompt = `User Request: "${userRequest}"\n`;
 
@@ -398,11 +435,14 @@ export async function selectRelevantFilesAI(
 	let investigationInstruction: string;
 	if (alwaysRunInvestigation || isLikelyErrorRequest) {
 		investigationInstruction = `2.  **Investigate (REQUIRED)**: You MUST run at least one \`run_terminal_command\` to explore the codebase before selecting files. This is especially important for error-fixing requests.
-    *   **ERROR DETECTION TIP**: If the user mentions an error, extract file paths, function names, or error messages and use \`grep\` to find them.
-    *   **Example**: Error says \"Cannot read property 'foo' of undefined in authService.ts:42\". Run \`cat src/services/authService.ts\` or \`grep -n "foo" src/\` to investigate.`;
+    *   **ERROR DETECTION TIP**: If the user mentions an error, extract file paths, function names, or error messages and use \`grep -i\` (case insensitive) to find them.
+    *   **IMPORTANT**: No pipes (|), OR chaining (||), or AND chaining (&&) allowed. Run ONE command at a time.
+    *   **CHECK BEFORE READING**: Use \`wc -l file\` to check size. Use \`file file\` to check type (avoid binary).
+    *   **PEEK**: Use \`head -n 50 file\` or \`tail -n 20 file\` to verify content without reading the whole file.
+    *   **EXIT STRATEGY**: As soon as you find the relevant file path or line number using grep/find/ls, **STOP** investigating. Call \`finish_selection\` immediately with that file. Do NOT cat the file to verify if you are sure.`;
 	} else {
 		investigationInstruction =
-			"2.  **Investigate (Optional)**: If the 'Available Project Files' list is not enough, or if you need to find specific code patterns, USE THE `run_terminal_command` tool.";
+			"2.  **Investigate (Highly Recommended)**: Unless you are 100% certain of the file path, use `run_terminal_command` to verify. It is better to check than to guess wrong.";
 	}
 
 	const selectionPrompt = `
@@ -421,12 +461,18 @@ ${fileListString}
 			: ""
 	}
 ${investigationInstruction}
-    *   Example: User asks "Where is the auth logic?". You can run \`grep -r "auth" src/\` to find it.
-    *   Example: User asks "Fix the login bug". You run \`grep -r "login" .\`
+    *   **Loop Prevention**: Do not run the same command twice. If a command returns the same output, stop and proceed to selection.
+    *   **Peek Content**: Use \`head -n 50 src/file.ts\` to verify the header/imports or \`tail -n 20 src/file.ts\` to check the end.
+    *   **View Specific Lines**: If you MUST view specific lines (rare), use \`sed -n '10,20p' src/file.ts\`. **NEVER** use \`cat src/file.ts:10\`.
+2b. **Symbol Lookup (PREFERRED for finding definitions)**: If you see a symbol used (like \`auth.User\`, \`PlanGenerationContext\`, or \`handleLogin\`), use \`lookup_workspace_symbol\` to find its definition. This is more accurate than guessing file paths with grep.
+    *   Example: You see \`sidebarTypes.PlanGenerationContext\` in the code. Run \`lookup_workspace_symbol\` with query "PlanGenerationContext" to find the exact file and line number.
 3.  **Select**: Once you have identified the files, call \`finish_selection\` with the list of file paths.
-    *   **LINE RANGES (OPTIONAL)**: To save tokens, you can specify line ranges: \`filepath:startLine-endLine\`
+    *   **LINE RANGES (ONLY in finish_selection)**: To save tokens, you can specify line ranges in finish_selection: \`filepath:startLine-endLine\`
     *   Example: \`src/auth.ts:40-80\` returns only lines 40-80. \`src/auth.ts:42\` returns just line 42.
-    *   Use line ranges when you've identified specific code sections via \`grep -n\` or \`cat\`.
+    *   **CRITICAL WARNING - INVALID SYNTAX**: Line range syntax (e.g. \`:10\`) is **ONLY** allowed inside \`finish_selection\`.
+        *   ❌ **WRONG**: \`cat src/file.ts:10\` (This will fail)
+        *   ❌ **WRONG**: \`grep "foo" src/file.ts:10\` (This will fail)
+        *   ✅ **CORRECT**: \`finish_selection(selectedFiles=["src/file.ts:10"])\`
 4.  **Constraint**: Return ONLY the function call. Do not return markdown text.
 `.trim();
 
@@ -443,14 +489,14 @@ ${investigationInstruction}
 					{
 						name: "run_terminal_command",
 						description:
-							"Execute a safe terminal command (ls, grep, find, cat, git grep) to investigate the codebase. Use this to find files relevant to the user request. Returns stdout/stderr.",
+							"Execute a safe terminal command (ls, grep, find, cat, git grep, sed, head, tail, wc, file) to investigate the codebase. Use this to find files relevant to the user request. Returns stdout/stderr. NOTE: To read specific lines, use `sed -n 'start,endp' file`. DO NOT use `cat file:line` syntax.",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {
 								command: {
 									type: SchemaType.STRING,
 									description:
-										"The terminal command to execute. Must be one of: ls, grep, find, cat, git grep. No pipes/chaining allowed.",
+										"The terminal command to execute. Must be one of: ls, grep, find, cat, git grep, sed, head, tail, wc, file. NO chaining allowed (no |, ||, or &&). Run one command at a time.",
 								},
 							},
 							required: ["command"],
@@ -471,6 +517,22 @@ ${investigationInstruction}
 								},
 							},
 							required: ["selectedFiles"],
+						},
+					},
+					{
+						name: "lookup_workspace_symbol",
+						description:
+							"Search the workspace for a symbol by name (class, interface, function, etc.). Returns an array of matching symbols with their file paths and locations. Use this FIRST when you need to find where a type or function is defined, instead of guessing file paths with grep.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								query: {
+									type: SchemaType.STRING,
+									description:
+										"The symbol name to search for (e.g., 'PlanGenerationContext', 'UserService', 'handleLogin').",
+								},
+							},
+							required: ["query"],
 						},
 					},
 				],
@@ -494,10 +556,12 @@ ${investigationInstruction}
 				},
 			];
 
-			const MAX_TURNS = 5;
+			const MAX_TURNS = 15;
 
 			for (let turn = 0; turn < MAX_TURNS; turn++) {
-				if (cancellationToken?.isCancellationRequested) break;
+				if (cancellationToken?.isCancellationRequested) {
+					break;
+				}
 
 				// Generate
 				let functionCall: FunctionCall;
@@ -615,6 +679,85 @@ ${investigationInstruction}
 								functionResponse: {
 									name: "run_terminal_command",
 									response: { result: output.substring(0, 10000) }, // Truncate for prompt limit
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "lookup_workspace_symbol") {
+					const args = functionCall.args as any;
+					const query = args["query"] as string;
+
+					// Log to Chat
+					const symbolLogText = `Looking up symbol \`${query}\`...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: {
+								text: symbolLogText,
+							},
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(symbolLogText);
+					}
+
+					// Execute workspace symbol search
+					let output = "";
+					try {
+						const symbols: vscode.SymbolInformation[] =
+							await vscode.commands.executeCommand(
+								"vscode.executeWorkspaceSymbolProvider",
+								query
+							);
+
+						if (symbols && symbols.length > 0) {
+							// Format results with relative paths
+							const results = symbols.slice(0, 10).map((s) => {
+								const relativePath = path
+									.relative(projectRoot.fsPath, s.location.uri.fsPath)
+									.replace(/\\/g, "/");
+								return `${s.name} (${
+									vscode.SymbolKind[s.kind]
+								}) - ${relativePath}:${s.location.range.start.line + 1}`;
+							});
+							output = `Found ${symbols.length} symbol(s):\n${results.join(
+								"\n"
+							)}`;
+						} else {
+							output = `No symbols found matching "${query}".`;
+						}
+					} catch (e: any) {
+						output = `Error looking up symbol: ${e.message}`;
+					}
+
+					// Log output to chat
+					const displayOutput =
+						output.length > 300 ? output.substring(0, 300) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: {
+								text: outputLogText,
+							},
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					// Update History
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "lookup_workspace_symbol",
+									response: { result: output },
 								},
 							},
 						],
@@ -779,6 +922,25 @@ function _processSelectedPaths(
 						endLine,
 					});
 				}
+			}
+		} else {
+			// Allow files not in the scanned list if they exist on disk (e.g. found via terminal commands)
+			try {
+				const absolutePath = path.resolve(projectRoot.fsPath, normalizedPath);
+				// Check if file exists and is inside the project
+				if (
+					absolutePath.startsWith(projectRoot.fsPath) &&
+					fs.existsSync(absolutePath)
+				) {
+					const newUri = vscode.Uri.file(absolutePath);
+					finalSelections.set(newUri.fsPath, {
+						uri: newUri,
+						startLine,
+						endLine,
+					});
+				}
+			} catch (e) {
+				// Ignore invalid paths
 			}
 		}
 	}

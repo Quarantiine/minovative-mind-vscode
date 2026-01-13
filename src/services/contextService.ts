@@ -33,6 +33,7 @@ import {
 	FormatDiagnosticsOptions,
 } from "../utils/diagnosticUtils";
 import { intelligentlySummarizeFileContent } from "../context/fileContentProcessor"; // Import for file content summarization
+import { getHeuristicRelevantFiles } from "../context/heuristicContextSelector";
 import { SequentialContextService } from "./sequentialContextService"; // Import sequential context service
 import {
 	detectProjectType,
@@ -852,6 +853,18 @@ export class ContextService {
 
 			// Populate heuristicSelectedFiles by awaiting a call to getHeuristicRelevantFiles
 			try {
+				heuristicSelectedFiles = await getHeuristicRelevantFiles(
+					allScannedFiles,
+					rootFolder.uri,
+					editorContext,
+					fileDependencies,
+					this._convertDependencyMapToStringMap(reverseFileDependencies),
+					activeSymbolDetailedInfo,
+					undefined, // semanticGraph
+					cancellationToken,
+					this.settingsManager.getOptimizationSettings()
+				);
+
 				if (heuristicSelectedFiles.length > 0) {
 					this.postMessageToWebview({
 						type: "statusUpdate",
@@ -1134,6 +1147,12 @@ export class ContextService {
 							});
 						}
 						filesForContextBuilding = fallbackFiles; // Assign fallback files
+					} finally {
+						// Ensure log loading state is cleared
+						this.postMessageToWebview({
+							type: "setContextAgentLoading",
+							value: false,
+						});
 					}
 				}
 			}

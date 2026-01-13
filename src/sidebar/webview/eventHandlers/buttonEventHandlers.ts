@@ -355,7 +355,11 @@ export function initializeButtonEventListeners(
 		) as HTMLButtonElement | null;
 
 		if (generatePlanButton && !generatePlanButton.disabled) {
-			const messageIndexStr = generatePlanButton.dataset.messageIndex;
+			const messageElement = generatePlanButton.closest(
+				".message"
+			) as HTMLElement;
+			const messageIndexStr = messageElement?.dataset.messageIndex;
+
 			if (messageIndexStr) {
 				const parsedIndex = parseInt(messageIndexStr, 10);
 				if (!isNaN(parsedIndex)) {
@@ -378,7 +382,9 @@ export function initializeButtonEventListeners(
 					);
 				}
 			} else {
-				console.error("data-message-index not found on generate-plan-button.");
+				console.error(
+					"data-message-index not found on parent message of generate-plan-button."
+				);
 				updateStatus(
 					elements,
 					"Error: Missing message index for plan generation.",
@@ -437,7 +443,6 @@ export function initializeButtonEventListeners(
 				return;
 			}
 
-			const originalIconHTML = copyContextButton.innerHTML;
 			const originalTitle = copyContextButton.title;
 
 			try {
@@ -624,26 +629,33 @@ export function initializeButtonEventListeners(
 			}
 		} else if (deleteButton && !deleteButton.disabled) {
 			const messageElementToDelete = deleteButton.closest(
-				".message[data-is-history='true']"
-			);
-			if (messageElementToDelete) {
-				// Find all history messages to determine the index
-				// IMPORTANT: Filter out context-agent-log messages as they have their own
-				// history entries but should not affect the index of regular messages
-				const allHistoryMessages = Array.from(
-					chatContainer.querySelectorAll(".message[data-is-history='true']")
-				).filter((el) => !(el as HTMLElement).dataset.isContextAgentLog);
-				const messageIndex = allHistoryMessages.indexOf(messageElementToDelete);
+				".message"
+			) as HTMLElement;
 
-				if (messageIndex !== -1) {
-					postMessageToExtension({
-						type: "deleteSpecificMessage",
-						messageIndex: messageIndex,
-					});
-					updateStatus(elements, "Requesting message deletion..."); // Pass elements
+			if (
+				messageElementToDelete &&
+				messageElementToDelete.dataset.isHistory === "true"
+			) {
+				const messageIndexStr = messageElementToDelete.dataset.messageIndex;
+
+				if (messageIndexStr) {
+					const messageIndex = parseInt(messageIndexStr, 10);
+
+					if (!isNaN(messageIndex)) {
+						postMessageToExtension({
+							type: "deleteSpecificMessage",
+							messageIndex: messageIndex,
+						});
+						updateStatus(elements, "Requesting message deletion...");
+					} else {
+						console.warn(
+							"Delete button clicked, but data-message-index is invalid:",
+							messageIndexStr
+						);
+					}
 				} else {
 					console.warn(
-						"Could not find index of history message to delete (after data-is-history filter)."
+						"Delete button clicked, but data-message-index is missing on message element."
 					);
 				}
 			} else {

@@ -7,6 +7,11 @@ export class SafeCommandExecutor {
 		"grep",
 		"cat",
 		"git", // specifically git grep or git ls-files
+		"sed",
+		"head",
+		"tail",
+		"wc",
+		"file",
 	]);
 
 	private static readonly BLOCKED_FLAGS = new Set([
@@ -48,7 +53,9 @@ export class SafeCommandExecutor {
 
 	private static isSafe(command: string): boolean {
 		const trimmed = command.trim();
-		if (!trimmed) return false;
+		if (!trimmed) {
+			return false;
+		}
 
 		// Check for chaining operators or redirection which might indicate shell injection or unwanted complexity
 		if (this.BLOCKED_FLAGS.has(trimmed) || /([;&|]|\n)/.test(trimmed)) {

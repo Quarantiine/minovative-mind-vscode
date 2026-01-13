@@ -1,22 +1,18 @@
-// src/sidebar/managers/settingsManager.ts
 import * as vscode from "vscode";
 import {
 	MODEL_SELECTION_STORAGE_KEY,
 	AVAILABLE_GEMINI_MODELS,
 	DEFAULT_MODEL,
 	DEFAULT_SIZE,
-	MODEL_DETAILS, // Added MODEL_DETAILS import
+	MODEL_DETAILS,
 } from "../common/sidebarConstants";
-import { resetClient } from "../../ai/gemini"; // Adjusted path
-import { ModelInfo } from "../common/sidebarTypes"; // Added ModelInfo import
+import { resetClient } from "../../ai/gemini";
 
-// Exported Constant for Heuristic Selection setting key
 export const HEURISTIC_SELECTION_ENABLED_KEY =
 	"optimization.heuristicSelectionEnabled";
 export const ALWAYS_RUN_INVESTIGATION_KEY =
 	"optimization.alwaysRunInvestigation";
 
-// Optimization settings keys
 const OPTIMIZATION_SETTINGS_KEYS = {
 	USE_SCAN_CACHE: "optimization.useScanCache",
 	USE_DEPENDENCY_CACHE: "optimization.useDependencyCache",
@@ -61,7 +57,6 @@ const OPTIMIZATION_SETTINGS_KEYS = {
 	ALWAYS_RUN_INVESTIGATION: ALWAYS_RUN_INVESTIGATION_KEY,
 };
 
-// Default optimization settings
 const DEFAULT_OPTIMIZATION_SETTINGS = {
 	useScanCache: true,
 	useDependencyCache: true,
@@ -70,9 +65,9 @@ const DEFAULT_OPTIMIZATION_SETTINGS = {
 	enablePerformanceMonitoring: true,
 	skipLargeFiles: true,
 	maxFileSize: DEFAULT_SIZE,
-	scanCacheTimeout: 5 * 60 * 1000, // 5 minutes
-	dependencyCacheTimeout: 10 * 60 * 1000, // 10 minutes
-	aiSelectionCacheTimeout: 5 * 60 * 1000, // 5 minutes
+	scanCacheTimeout: 5 * 60 * 1000,
+	dependencyCacheTimeout: 10 * 60 * 1000,
+	aiSelectionCacheTimeout: 5 * 60 * 1000,
 	maxFilesForSymbolProcessing: 500,
 	maxFilesForDetailedProcessing: 1000,
 	enableSmartContext: true,
@@ -104,6 +99,7 @@ const DEFAULT_OPTIMIZATION_SETTINGS = {
 
 export class SettingsManager {
 	private _selectedModelName: string = DEFAULT_MODEL;
+	private _isWebviewReady: boolean = false;
 
 	constructor(
 		private readonly workspaceState: vscode.Memento,
@@ -112,6 +108,11 @@ export class SettingsManager {
 
 	public initialize(): void {
 		this.loadSettingsFromStorage();
+	}
+
+	public handleWebviewReady(): void {
+		this._isWebviewReady = true;
+		this.updateWebviewModelList();
 		this.updateWebviewOptimizationSettings();
 	}
 
@@ -123,7 +124,6 @@ export class SettingsManager {
 		return this.workspaceState.get<T>(key, defaultValue);
 	}
 
-	// Get optimization settings
 	public getOptimizationSettings() {
 		return {
 			useScanCache: this.getSetting(
@@ -285,9 +285,6 @@ export class SettingsManager {
 				HEURISTIC_SELECTION_ENABLED_KEY,
 				isEnabled
 			);
-			console.log(
-				`Heuristic selection enabled status updated to: ${isEnabled}`
-			);
 			this.updateWebviewOptimizationSettings();
 		} catch (error) {
 			console.error("Error updating heuristic selection setting:", error);
@@ -299,7 +296,6 @@ export class SettingsManager {
 		}
 	}
 
-	// Update optimization settings
 	public async updateOptimizationSettings(
 		settings: Partial<typeof DEFAULT_OPTIMIZATION_SETTINGS>
 	): Promise<void> {
@@ -313,7 +309,7 @@ export class SettingsManager {
 					await this.workspaceState.update(settingKey, value);
 				}
 			}
-			console.log("Optimization settings updated successfully");
+			this.updateWebviewOptimizationSettings();
 			this.postMessageToWebview({
 				type: "statusUpdate",
 				value: "Optimization settings updated successfully.",
@@ -328,7 +324,6 @@ export class SettingsManager {
 		}
 	}
 
-	// Reset optimization settings to defaults
 	public async resetOptimizationSettings(): Promise<void> {
 		try {
 			for (const [key, defaultValue] of Object.entries(
@@ -342,7 +337,7 @@ export class SettingsManager {
 					await this.workspaceState.update(settingKey, defaultValue);
 				}
 			}
-			console.log("Optimization settings reset to defaults");
+			this.updateWebviewOptimizationSettings();
 			this.postMessageToWebview({
 				type: "statusUpdate",
 				value: "Optimization settings reset to defaults.",
@@ -357,10 +352,7 @@ export class SettingsManager {
 		}
 	}
 
-	// Get cache statistics
 	public getCacheStatistics() {
-		// This would need to be implemented by importing the cache functions
-		// For now, return a placeholder
 		return {
 			scanCache: { size: 0, entries: [] },
 			dependencyCache: { size: 0, entries: [] },
@@ -368,11 +360,8 @@ export class SettingsManager {
 		};
 	}
 
-	// Clear all caches
 	public async clearAllCaches(): Promise<void> {
 		try {
-			// This would need to be implemented by importing the cache functions
-			// For now, just log the action
 			console.log("Cache clear requested");
 			this.postMessageToWebview({
 				type: "statusUpdate",
@@ -395,30 +384,14 @@ export class SettingsManager {
 			);
 			if (savedModel && AVAILABLE_GEMINI_MODELS.includes(savedModel)) {
 				this._selectedModelName = savedModel;
-				console.log("Loaded selected model:", this._selectedModelName);
 			} else {
 				this._selectedModelName = DEFAULT_MODEL;
-				console.log(
-					"No saved model or invalid model found. Using default:",
-					DEFAULT_MODEL
-				);
 			}
-
-			// Load and log optimization setting
-			const heuristicEnabled = this.getSetting<boolean>(
-				HEURISTIC_SELECTION_ENABLED_KEY,
-				DEFAULT_OPTIMIZATION_SETTINGS.heuristicSelectionEnabled
-			);
-			console.log(
-				"Loaded heuristic selection enabled status:",
-				heuristicEnabled
-			);
 		} catch (error) {
 			console.error("Error loading settings from storage:", error);
 			this._selectedModelName = DEFAULT_MODEL;
 			vscode.window.showErrorMessage("Failed to load extension settings.");
 		}
-		// No need to call updateWebviewModelList here, SidebarProvider can do it after initialization.
 	}
 
 	public async saveSettingsToStorage(): Promise<void> {
@@ -427,19 +400,18 @@ export class SettingsManager {
 				MODEL_SELECTION_STORAGE_KEY,
 				this._selectedModelName
 			);
-			console.log("Saved selected model:", this._selectedModelName);
-			resetClient(); // Assuming resetClient may depend on model settings
+			resetClient();
+			this.updateWebviewModelList();
 		} catch (error) {
 			console.error("Error saving settings to storage:", error);
 			vscode.window.showErrorMessage("Failed to save extension settings.");
 		}
-		this.updateWebviewModelList();
 	}
 
 	public async handleModelSelection(modelName: string): Promise<void> {
 		if (AVAILABLE_GEMINI_MODELS.includes(modelName)) {
 			this._selectedModelName = modelName;
-			await this.saveSettingsToStorage(); // This will also call updateWebviewModelList
+			await this.saveSettingsToStorage();
 			this.postMessageToWebview({
 				type: "statusUpdate",
 				value: `Switched to AI model: ${modelName}.`,
@@ -451,22 +423,27 @@ export class SettingsManager {
 				value: `Error: Invalid model selected: ${modelName}.`,
 				isError: true,
 			});
-			this.updateWebviewModelList(); // Ensure UI reflects current (unchanged) state
+			this.updateWebviewModelList();
 		}
 	}
 
 	public updateWebviewModelList(): void {
+		if (!this._isWebviewReady) {
+			return;
+		}
 		this.postMessageToWebview({
 			type: "updateModelList",
 			value: {
-				availableModels: MODEL_DETAILS, // Changed to MODEL_DETAILS
+				availableModels: MODEL_DETAILS,
 				selectedModel: this._selectedModelName,
 			},
 		});
 	}
 
-	// Update webview with optimization settings
 	public updateWebviewOptimizationSettings(): void {
+		if (!this._isWebviewReady) {
+			return;
+		}
 		this.postMessageToWebview({
 			type: "updateOptimizationSettings",
 			value: this.getOptimizationSettings(),

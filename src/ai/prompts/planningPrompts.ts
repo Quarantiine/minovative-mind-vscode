@@ -15,7 +15,9 @@ export function createInitialPlanningExplanationPrompt(
 	const createFileJsonRules = `
 JSON Plan Rules for \`create_file\` steps:
 - Must include \`path\`.
-- Provide *exactly one* of \`content\` (literal file content) or \`generate_prompt\` (prompt for content generation). Never both, never neither.
+- **MANDATORY STREAMING RULE**: You MUST use \`generate_prompt\` for ALL code files (e.g., .ts, .tsx, .js, .jsx, .py, .java, .css, etc.). This is NON-NEGOTIABLE. Using \`generate_prompt\` enables the live streaming visualization which users require.
+- Use \`content\` ONLY for non-code configuration files (e.g., .gitignore, .env.example, package.json with static content).
+- Never use \`content\` for any file containing actual code logic, regardless of file size.
 `;
 
 	const newDependencyInstructionsForExplanation = `
@@ -222,13 +224,14 @@ Crucial Rules for \`generateExecutionPlan\` Tool:
 - **Single Comprehensive \`modification_prompt\`**: For each file path requiring changes, construct EXACTLY ONE detailed \`modification_prompt\` that comprehensively describes ALL intended additions, deletions, refactorings, or other edits for that specific file.
 - **Enforce One \`ModifyFileStep\` Per File**: Generate PRECISELY ONE \`ModifyFileStep\` for any given file path within the \`ExecutionPlan\`. All changes for a file MUST be included in that single step's \`modification_prompt\`.
 - **Prevent Redundant Steps**: AVOID generating multiple, fragmented \`ModifyFileStep\` entries for the same file path within a single \`ExecutionPlan\`.
-- \`create_file\`: Provide *either* \`content\` *or* \`generate_prompt\`; never both or neither.
+- \`create_file\`: You MUST use \`generate_prompt\` for ALL code files (.ts, .tsx, .js, .jsx, .py, .java, .css, etc.) regardless of size.
+- **MANDATORY STREAMING RULE**: Using \`generate_prompt\` for code files is NON-NEGOTIABLE. It enables real-time streaming which the user requires. Use \`content\` ONLY for non-code config files (.gitignore, .env.example).
 - \`modify_file\`: Always provide a non-empty \`modification_prompt\`.
 - All \`path\` fields must be relative to workspace root, no \`..\` or leading \`/\`.
 - Each step (create/modify) should be a single step.
 - A single \`modification_prompt\` should cohesively describe multiple changes for one file, one step if they're part of one logical task.
 - Avoid over-fragmentation.
-- For \`create_file\`, prefer \`content\` for known file content; use \`generate_prompt\` only if dynamic generation is truly needed.
+- For \`create_file\` with code files, \`generate_prompt\` is MANDATORY, not optional. Never use \`content\` for code.
 - All generated code/instructions must be production-ready (complete, functional, no placeholders/TODOs). The best code you can give.
 
 Goal: Ensure all relevant information is passed accurately and comprehensively to the \`generateExecutionPlan\` function. 

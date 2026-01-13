@@ -1257,7 +1257,13 @@ export function initializeMessageBusHandler(
 				const chatInput = elements.chatInput;
 				if (chatInput) {
 					chatInput.value = text; // Set the chat input field's value
-					chatInput.focus(); // Set focus to the input field for user interaction
+					// Use requestAnimationFrame + setTimeout to ensure the webview is fully rendered
+					// and ready to receive keyboard focus (especially when sidebar was just opened)
+					requestAnimationFrame(() => {
+						setTimeout(() => {
+							chatInput.focus();
+						}, 50);
+					});
 					// Update the status bar message to inform the user
 					updateStatus(
 						elements,

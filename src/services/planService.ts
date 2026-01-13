@@ -4,7 +4,6 @@ import { FunctionCall, FunctionCallingMode } from "@google/generative-ai";
 import { SidebarProvider } from "../sidebar/SidebarProvider";
 import * as sidebarTypes from "../sidebar/common/sidebarTypes";
 import { ExtensionToWebviewMessages } from "../sidebar/common/sidebarTypes";
-import * as sidebarConstants from "../sidebar/common/sidebarConstants";
 import { ERROR_OPERATION_CANCELLED } from "../ai/gemini";
 import {
 	ExecutionPlan,
@@ -24,12 +23,11 @@ import { PlanExecutorService } from "./planExecutorService";
 import { generateExecutionPlanTool } from "../ai/prompts/planFunctions";
 
 export class PlanService {
-	// Audited retry constants and made configurable via VS Code settings
 	private readonly MAX_PLAN_PARSE_RETRIES: number;
 	private readonly MAX_TRANSIENT_STEP_RETRIES: number;
 	private urlContextService: UrlContextService;
 	private enhancedCodeGenerator: EnhancedCodeGenerator;
-	private planExecutorService: PlanExecutorService; // Added class member
+	private planExecutorService: PlanExecutorService;
 
 	constructor(
 		private provider: SidebarProvider,
@@ -37,19 +35,15 @@ export class PlanService {
 		enhancedCodeGenerator: EnhancedCodeGenerator,
 		private postMessageToWebview: (message: ExtensionToWebviewMessages) => void
 	) {
-		// As per instructions, ensure UrlContextService is initialized consistently.
-		// And enhancedCodeGenerator parameter is assigned directly.
 		this.urlContextService = new UrlContextService();
 		this.enhancedCodeGenerator = enhancedCodeGenerator;
 
-		// Read retry constants from VS Code settings, with fallbacks to defaults
 		const config = vscode.workspace.getConfiguration(
 			"minovativeMind.planExecution"
 		);
 		this.MAX_PLAN_PARSE_RETRIES = config.get("maxPlanParseRetries", 3);
 		this.MAX_TRANSIENT_STEP_RETRIES = config.get("maxTransientStepRetries", 3);
 
-		// Initialize PlanExecutorService
 		this.planExecutorService = new PlanExecutorService(
 			provider,
 			this.workspaceRootUri!,
@@ -60,10 +54,6 @@ export class PlanService {
 		);
 	}
 
-	/**
-	 * Delays execution for a specified number of milliseconds, supporting cancellation.
-	 * If the token is cancelled during the delay, the promise rejects immediately.
-	 */
 	private _delay(ms: number, token: vscode.CancellationToken): Promise<void> {
 		if (token.isCancellationRequested) {
 			return Promise.reject(new Error(ERROR_OPERATION_CANCELLED));
@@ -87,261 +77,19 @@ export class PlanService {
 		});
 	}
 
-	/**
-	 * Triggers the UI to display the textual plan for review.
-	 * This public method acts as a wrapper for the private _handlePostTextualPlanGenerationUI.
-	 * @param planContext The context containing the generated plan and associated data.
-	 */
 	public async triggerPostTextualPlanUI(
 		planContext: sidebarTypes.PlanGenerationContext
 	): Promise<void> {
 		return this._handlePostTextualPlanGenerationUI(planContext);
 	}
 
-	// --- CHAT-INITIATED PLAN ---
 	public async handleInitialPlanRequest(userRequest: string): Promise<void> {
-		const { apiKeyManager, changeLogger } = this.provider;
-		const modelName = this.provider.settingsManager.getSelectedModelName(); // Use selected model for initial plan generation
-		const apiKey = apiKeyManager.getActiveApiKey();
-
-		// Start a new user operation, which creates a new cancellation token source and operation ID
-		await this.provider.startUserOperation("plan");
-		const operationId =
-			this.provider.currentActiveChatOperationId ?? "unknown-operation";
-
-		if (!this.provider.activeOperationCancellationTokenSource) {
-			console.error(
-				"[PlanService] activeOperationCancellationTokenSource is undefined in handleInitialPlanRequest after startUserOperation."
-			);
-			this.provider.postMessageToWebview({
-				type: "aiResponseEnd",
-				success: false,
-				error: "Internal error: Failed to initialize cancellation token.",
-				operationId: operationId as string,
-			});
-			await this.provider.endUserOperation("failed");
-			return;
-		}
-		const token = this.provider.activeOperationCancellationTokenSource.token;
-
-		if (!apiKey) {
-			// Fix: Ensure operation is ended if no API key is found
-			this.provider.postMessageToWebview({
-				type: "statusUpdate",
-				value:
-					"Action blocked: No active API key found. Please add or select an API key in the sidebar settings.",
-				isError: true,
-			});
-			await this.provider.endUserOperation("failed"); // END OPERATION
-			return;
-		}
-
-		changeLogger.clear();
-
-		const rootFolder = vscode.workspace.workspaceFolders?.[0];
-		if (!rootFolder) {
-			this.provider.postMessageToWebview({
-				type: "aiResponseEnd",
-				success: false,
-				error:
-					"Action blocked: No VS Code workspace folder is currently open. Please open a project folder to proceed.",
-				operationId: operationId as string,
-			});
-			this.provider.clearActiveOperationState(); // CLEAR STATE
-			return;
-		}
-
-		let success = false;
-		let textualPlanResponse: string | null = null;
-		let finalErrorForDisplay: string | null = null;
-
-		try {
-			this.provider.pendingPlanGenerationContext = null;
-
-			const buildContextResult =
-				await this.provider.contextService.buildProjectContext(
-					token,
-					userRequest,
-					undefined, // Pass undefined for editorContext
-					undefined, // Pass undefined for initialDiagnosticsString
-					undefined, // Pass undefined for options
-					false, // CRITICAL: Pass false to exclude the AI persona
-					false // Add false for includeVerboseHeaders
-				);
-			const { contextString, relevantFiles } = buildContextResult;
-
-			// Refactored: Call new helper method to initialize streaming state
-			this._initializeStreamingState(
-				modelName,
-				relevantFiles,
-				operationId as string
-			);
-
-			if (contextString.startsWith("[Error")) {
-				throw new Error(contextString);
-			}
-
-			// Process URLs in user request for context
-			const urlContexts =
-				await this.urlContextService.processMessageForUrlContext(
-					userRequest,
-					operationId
-				);
-			const urlContextString =
-				this.urlContextService.formatUrlContexts(urlContexts);
-
-			const textualPlanPrompt = createInitialPlanningExplanationPrompt(
-				contextString,
-				userRequest,
-				undefined,
-				undefined,
-				[...this.provider.chatHistoryManager.getChatHistory()],
-				urlContextString
-			);
-
-			let accumulatedTextualResponse = "";
-			// Line 164: Modify first argument to wrap string prompt in HistoryEntryPart array
-			textualPlanResponse =
-				await this.provider.aiRequestService.generateWithRetry(
-					[{ text: textualPlanPrompt }],
-					modelName,
-					undefined,
-					"initial plan explanation",
-					undefined,
-					{
-						onChunk: (chunk: string) => {
-							accumulatedTextualResponse += chunk;
-							if (this.provider.currentAiStreamingState) {
-								this.provider.currentAiStreamingState.content += chunk;
-							}
-							this.provider.postMessageToWebview({
-								type: "aiResponseChunk",
-								value: chunk,
-								operationId: operationId as string, // Cast as requested
-							});
-						},
-					},
-					token
-				);
-
-			if (token.isCancellationRequested) {
-				throw new Error(ERROR_OPERATION_CANCELLED);
-			}
-			if (textualPlanResponse.toLowerCase().startsWith("error:")) {
-				throw new Error(
-					formatUserFacingErrorMessage(
-						new Error(textualPlanResponse),
-						"AI failed to generate initial plan explanation.",
-						"AI response error: ",
-						rootFolder.uri
-					)
-				);
-			}
-
-			this.provider.chatHistoryManager.addHistoryEntry(
-				"model",
-				textualPlanResponse,
-				undefined,
-				relevantFiles,
-				relevantFiles && relevantFiles.length <= 3,
-				true // Added: Mark as plan explanation
-			);
-			this.provider.chatHistoryManager.restoreChatHistoryToWebview();
-			success = true;
-
-			this.provider.pendingPlanGenerationContext = {
-				type: "chat",
-				originalUserRequest: userRequest,
-				projectContext: contextString,
-				relevantFiles,
-				activeSymbolDetailedInfo: buildContextResult.activeSymbolDetailedInfo,
-				initialApiKey: apiKey,
-				modelName,
-				chatHistory: [...this.provider.chatHistoryManager.getChatHistory()],
-				textualPlanExplanation: textualPlanResponse,
-				workspaceRootUri: rootFolder.uri,
-			};
-			this.provider.lastPlanGenerationContext = {
-				...this.provider.pendingPlanGenerationContext,
-				relevantFiles,
-			};
-
-			// Add the following code here
-			const dataToPersist: sidebarTypes.PersistedPlanData = {
-				type: this.provider.pendingPlanGenerationContext.type,
-				originalUserRequest:
-					this.provider.pendingPlanGenerationContext.originalUserRequest,
-				originalInstruction:
-					this.provider.pendingPlanGenerationContext.editorContext?.instruction,
-				relevantFiles: this.provider.pendingPlanGenerationContext.relevantFiles,
-				textualPlanExplanation: textualPlanResponse, // Pass the full generated text
-			};
-			await this.provider.updatePersistedPendingPlanData(dataToPersist);
-			// End of added code
-		} catch (error: any) {
-			if (this.provider.currentAiStreamingState) {
-				this.provider.currentAiStreamingState.isError = true;
-			}
-			finalErrorForDisplay = error.message;
-		} finally {
-			if (this.provider.currentAiStreamingState) {
-				this.provider.currentAiStreamingState.isComplete = true;
-			}
-			const isCancellation = finalErrorForDisplay === ERROR_OPERATION_CANCELLED;
-
-			// Determine if the generated response is a confirmable plan
-			const isConfirmablePlanResponse =
-				success &&
-				!!this.provider.pendingPlanGenerationContext?.textualPlanExplanation;
-
-			// Construct and post the aiResponseEnd message directly
-			this.provider.postMessageToWebview({
-				type: "aiResponseEnd",
-				success: success,
-				operationId: operationId as string, // Cast as requested
-				error: success
-					? null
-					: isCancellation
-					? "Plan generation cancelled."
-					: formatUserFacingErrorMessage(
-							finalErrorForDisplay
-								? new Error(finalErrorForDisplay)
-								: new Error("Unknown error during initial plan generation."), // Pass an actual Error instance
-							"An unexpected error occurred during initial plan generation.",
-							"AI response error: ",
-							rootFolder.uri
-					  ),
-				// Conditionally include plan-related data if it's a confirmable plan response
-				...(isConfirmablePlanResponse &&
-					this.provider.pendingPlanGenerationContext && {
-						isPlanResponse: true,
-						requiresConfirmation: true,
-						planData: {
-							type: "textualPlanPending", // Use "textualPlanPending" for webview message
-							originalRequest:
-								this.provider.pendingPlanGenerationContext.type === "chat"
-									? this.provider.pendingPlanGenerationContext
-											.originalUserRequest
-									: undefined,
-							originalInstruction:
-								this.provider.pendingPlanGenerationContext.type === "editor"
-									? this.provider.pendingPlanGenerationContext.editorContext
-											?.instruction
-									: undefined,
-							relevantFiles:
-								this.provider.pendingPlanGenerationContext.relevantFiles,
-							textualPlanExplanation:
-								this.provider.pendingPlanGenerationContext
-									.textualPlanExplanation,
-						},
-					}),
-			});
-
-			this.provider.clearActiveOperationState(); // ENSURE STATE IS CLEARED AFTER RESPONSE
-		}
+		await this._executePlanExplanationWorkflow({
+			type: "chat",
+			userRequest,
+		});
 	}
 
-	// --- EDITOR-INITIATED PLAN ---
 	public async initiatePlanFromEditorAction(
 		instruction: string,
 		selectedText: string,
@@ -354,94 +102,117 @@ export class PlanService {
 		diagnosticsString?: string,
 		isMergeOperation: boolean = false
 	): Promise<sidebarTypes.PlanGenerationResult> {
-		const { apiKeyManager, changeLogger } = this.provider;
-		const modelName = this.provider.settingsManager.getSelectedModelName(); // Use selected model for editor-initiated plan generation
-		const apiKey = apiKeyManager.getActiveApiKey();
-
-		// Start a new user operation, which creates a new cancellation token source and operation ID
-		await this.provider.startUserOperation("plan");
-		const operationId = this.provider.currentActiveChatOperationId;
-
-		if (!this.provider.activeOperationCancellationTokenSource) {
-			console.error(
-				"[PlanService] activeOperationCancellationTokenSource is undefined in initiatePlanFromEditorAction after startUserOperation."
-			);
-			await this.provider.endUserOperation("failed");
-			return {
-				success: false,
-				error: "Internal error: Failed to initialize cancellation token.",
-			};
-		}
-		const activeOpToken =
-			this.provider.activeOperationCancellationTokenSource.token;
-
 		const rootFolder = vscode.workspace.workspaceFolders?.[0];
 		if (!rootFolder) {
-			// Fix: Clear state if no root folder
 			initialProgress?.report({
 				message: "Error: No workspace folder open.",
 				increment: 100,
 			});
-			await this.provider.endUserOperation("failed"); // END OPERATION
 			return {
 				success: false,
-				error:
-					"Action blocked: No VS Code workspace folder is currently open. Please open a project folder to proceed.",
+				error: "Action blocked: No VS Code workspace folder is currently open.",
 			};
 		}
 
-		const disposable = initialToken?.onCancellationRequested(() => {
+		const relativeFilePath = path
+			.relative(rootFolder.uri.fsPath, documentUri.fsPath)
+			.replace(/\\/g, "/");
+
+		const editorCtx: sidebarTypes.EditorContext = {
+			instruction,
+			selectedText,
+			fullText,
+			languageId,
+			filePath: relativeFilePath,
+			documentUri,
+			selection,
+		};
+
+		return this._executePlanExplanationWorkflow({
+			type: "editor",
+			editorContext: editorCtx,
+			diagnosticsString,
+			initialProgress,
+			initialToken,
+			isMergeOperation,
+		});
+	}
+
+	private async _executePlanExplanationWorkflow(config: {
+		type: "chat" | "editor";
+		userRequest?: string;
+		editorContext?: sidebarTypes.EditorContext;
+		diagnosticsString?: string;
+		initialProgress?: vscode.Progress<{ message?: string; increment?: number }>;
+		initialToken?: vscode.CancellationToken;
+		isMergeOperation?: boolean;
+	}): Promise<sidebarTypes.PlanGenerationResult> {
+		const { apiKeyManager, changeLogger } = this.provider;
+		const modelName = this.provider.settingsManager.getSelectedModelName();
+		const apiKey = apiKeyManager.getActiveApiKey();
+
+		await this.provider.startUserOperation("plan");
+		const operationId =
+			this.provider.currentActiveChatOperationId ?? "unknown-operation";
+
+		if (!this.provider.activeOperationCancellationTokenSource) {
+			const error = "Internal error: Failed to initialize cancellation token.";
+			this.provider.postMessageToWebview({
+				type: "aiResponseEnd",
+				success: false,
+				error,
+				operationId: operationId as string,
+			});
+			await this.provider.endUserOperation("failed");
+			return { success: false, error };
+		}
+
+		const token = this.provider.activeOperationCancellationTokenSource.token;
+		const rootFolder = vscode.workspace.workspaceFolders?.[0];
+		const disposable = config.initialToken?.onCancellationRequested(() => {
 			this.provider.activeOperationCancellationTokenSource?.cancel();
 		});
 
-		if (activeOpToken.isCancellationRequested) {
-			initialProgress?.report({
-				message: "Plan generation cancelled.",
-				increment: 100,
-			});
-			disposable?.dispose();
-			this.provider.clearActiveOperationState(); // CLEAR STATE
-			return { success: false, error: "Plan generation cancelled." };
-		}
-
-		changeLogger.clear();
-
-		let finalResult: sidebarTypes.PlanGenerationResult = {
-			success: false,
-			error: "An unexpected error occurred during plan generation.",
-		};
-		let isCancellation: boolean = false; // Declared as let to extend scope
+		let success = false;
+		let finalError: string | null = null;
+		let textualPlanResponse: string | null = null;
 
 		try {
+			if (!apiKey) {
+				const errorMsg =
+					"Action blocked: No active API key found. Please add or select an API key in the sidebar settings.";
+				this.provider.postMessageToWebview({
+					type: "statusUpdate",
+					value: errorMsg,
+					isError: true,
+				});
+				throw new Error(errorMsg);
+			}
+
+			if (!rootFolder) {
+				const errorMsg =
+					"Action blocked: No VS Code workspace folder is currently open. Please open a project folder to proceed.";
+				throw new Error(errorMsg);
+			}
+
+			changeLogger.clear();
 			this.provider.pendingPlanGenerationContext = null;
-
-			const relativeFilePath = path
-				.relative(rootFolder.uri.fsPath, documentUri.fsPath)
-				.replace(/\\/g, "/");
-
-			const editorCtx: sidebarTypes.EditorContext = {
-				instruction,
-				selectedText,
-				fullText,
-				languageId,
-				filePath: relativeFilePath,
-				documentUri,
-				selection,
-			};
 
 			const buildContextResult =
 				await this.provider.contextService.buildProjectContext(
-					activeOpToken,
-					editorCtx.instruction,
-					editorCtx,
-					diagnosticsString,
-					undefined, // Pass undefined for options
-					false, // CRITICAL: Pass false to exclude the AI persona
-					false // Add false for includeVerboseHeaders
+					token,
+					config.type === "chat"
+						? config.userRequest!
+						: config.editorContext!.instruction,
+					config.editorContext,
+					config.diagnosticsString,
+					undefined,
+					false,
+					false
 				);
+
 			const { contextString, relevantFiles } = buildContextResult;
 
-			// Refactored: Call new helper method to initialize streaming state
 			this._initializeStreamingState(
 				modelName,
 				relevantFiles,
@@ -452,44 +223,61 @@ export class PlanService {
 				throw new Error(contextString);
 			}
 
+			let urlContextString = "";
+			if (config.type === "chat" && config.userRequest) {
+				const urlContexts =
+					await this.urlContextService.processMessageForUrlContext(
+						config.userRequest,
+						operationId as string
+					);
+				urlContextString =
+					this.urlContextService.formatUrlContexts(urlContexts);
+			}
+
 			const textualPlanPrompt = createInitialPlanningExplanationPrompt(
 				contextString,
-				undefined,
-				editorCtx,
-				diagnosticsString,
-				[...this.provider.chatHistoryManager.getChatHistory()]
+				config.userRequest,
+				config.editorContext,
+				config.diagnosticsString,
+				[...this.provider.chatHistoryManager.getChatHistory()],
+				urlContextString
 			);
 
-			initialProgress?.report({
+			config.initialProgress?.report({
 				message: "Generating textual plan explanation...",
 				increment: 20,
 			});
 
-			let textualPlanResponse = "";
-			// Line 421: Modify first argument to wrap string prompt in HistoryEntryPart array
+			let accumulatedTextualResponse = "";
 			textualPlanResponse =
 				await this.provider.aiRequestService.generateWithRetry(
 					[{ text: textualPlanPrompt }],
 					modelName,
 					undefined,
-					"editor action plan explanation",
+					config.type === "chat"
+						? "initial plan explanation"
+						: "editor action plan explanation",
 					undefined,
 					{
 						onChunk: (chunk: string) => {
-							textualPlanResponse += chunk;
+							accumulatedTextualResponse += chunk;
+							if (this.provider.currentAiStreamingState) {
+								this.provider.currentAiStreamingState.content += chunk;
+							}
 							this.provider.postMessageToWebview({
 								type: "aiResponseChunk",
 								value: chunk,
-								operationId: operationId as string, // Cast as requested
+								operationId: operationId as string,
 							});
 						},
 					},
-					activeOpToken
+					token
 				);
 
-			if (activeOpToken.isCancellationRequested) {
+			if (token.isCancellationRequested) {
 				throw new Error(ERROR_OPERATION_CANCELLED);
 			}
+
 			if (textualPlanResponse.toLowerCase().startsWith("error:")) {
 				throw new Error(textualPlanResponse);
 			}
@@ -502,90 +290,91 @@ export class PlanService {
 				relevantFiles && relevantFiles.length <= 3,
 				true
 			);
-			initialProgress?.report({
+
+			config.initialProgress?.report({
 				message: "Textual plan generated.",
 				increment: 100,
 			});
 
-			this.provider.pendingPlanGenerationContext = {
-				type: "editor",
-				editorContext: editorCtx,
+			const planContext: sidebarTypes.PlanGenerationContext = {
+				type: config.type,
+				originalUserRequest: config.userRequest,
+				editorContext: config.editorContext,
 				projectContext: contextString,
 				relevantFiles,
 				activeSymbolDetailedInfo: buildContextResult.activeSymbolDetailedInfo,
-				diagnosticsString,
-				initialApiKey: apiKey!,
+				diagnosticsString: config.diagnosticsString,
+				initialApiKey: apiKey,
 				modelName,
 				chatHistory: [...this.provider.chatHistoryManager.getChatHistory()],
 				textualPlanExplanation: textualPlanResponse,
 				workspaceRootUri: rootFolder.uri,
-				isMergeOperation: isMergeOperation,
-			};
-			this.provider.lastPlanGenerationContext = {
-				...this.provider.pendingPlanGenerationContext,
-				relevantFiles,
+				isMergeOperation: config.isMergeOperation,
 			};
 
-			// ADDED: Persist the pending plan data here for editor-initiated plans
+			this.provider.pendingPlanGenerationContext = planContext;
+			this.provider.lastPlanGenerationContext = { ...planContext };
+
 			const dataToPersist: sidebarTypes.PersistedPlanData = {
-				type: "editor",
-				originalInstruction: editorCtx.instruction,
+				type: config.type,
+				originalUserRequest: config.userRequest,
+				originalInstruction: config.editorContext?.instruction,
 				relevantFiles: relevantFiles,
 				textualPlanExplanation: textualPlanResponse,
 			};
 			await this.provider.updatePersistedPendingPlanData(dataToPersist);
 
-			finalResult = {
+			success = true;
+			return {
 				success: true,
 				textualPlanExplanation: textualPlanResponse,
-				context: this.provider.pendingPlanGenerationContext,
+				context: planContext,
 			};
-		} catch (genError: any) {
-			isCancellation = genError.message === ERROR_OPERATION_CANCELLED; // Assignment to existing let variable
+		} catch (error: any) {
 			if (this.provider.currentAiStreamingState) {
 				this.provider.currentAiStreamingState.isError = true;
 			}
-			finalResult = {
+			finalError = error.message;
+			return {
 				success: false,
-				error: isCancellation
-					? "Plan generation cancelled."
-					: formatUserFacingErrorMessage(
-							genError,
-							"An unexpected error occurred during editor action plan generation.",
-							"Error: ",
-							rootFolder.uri
-					  ),
+				error:
+					finalError === ERROR_OPERATION_CANCELLED
+						? "Plan generation cancelled."
+						: formatUserFacingErrorMessage(
+								error,
+								`An unexpected error occurred during ${
+									config.type === "chat" ? "initial" : "editor action"
+								} plan generation.`,
+								"Error: ",
+								rootFolder?.uri
+						  ),
 			};
 		} finally {
-			// Mark streaming state as complete
 			if (this.provider.currentAiStreamingState) {
 				this.provider.currentAiStreamingState.isComplete = true;
 			}
 
-			// Determine if the generated response is a confirmable plan
+			const isCancellation = finalError === ERROR_OPERATION_CANCELLED;
 			const isConfirmablePlanResponse =
-				finalResult.success &&
+				success &&
 				!!this.provider.pendingPlanGenerationContext?.textualPlanExplanation;
 
-			// Construct and post the aiResponseEnd message directly
 			this.provider.postMessageToWebview({
 				type: "aiResponseEnd",
-				success: finalResult.success,
-				operationId: operationId as string, // Cast as requested
-				error: finalResult.success
+				success: success,
+				operationId: operationId as string,
+				error: success
 					? null
 					: isCancellation
 					? "Plan generation cancelled."
-					: finalResult.error || // If finalResult.error already contains formatted message
-					  formatUserFacingErrorMessage(
-							new Error(
-								"Unknown error occurred during editor action plan generation."
-							), // Fallback Error
-							"An unexpected error occurred during editor action generation.",
+					: formatUserFacingErrorMessage(
+							finalError ? new Error(finalError) : new Error("Unknown error."),
+							`An unexpected error occurred during ${
+								config.type === "chat" ? "initial" : "editor action"
+							} plan generation.`,
 							"Error: ",
-							rootFolder.uri
+							rootFolder?.uri
 					  ),
-				// Conditionally include plan-related data if it's a confirmable plan response
 				...(isConfirmablePlanResponse &&
 					this.provider.pendingPlanGenerationContext && {
 						isPlanResponse: true,
@@ -593,15 +382,10 @@ export class PlanService {
 						planData: {
 							type: "textualPlanPending",
 							originalRequest:
-								this.provider.pendingPlanGenerationContext.type === "chat"
-									? this.provider.pendingPlanGenerationContext
-											.originalUserRequest
-									: undefined,
+								this.provider.pendingPlanGenerationContext.originalUserRequest,
 							originalInstruction:
-								this.provider.pendingPlanGenerationContext.type === "editor"
-									? this.provider.pendingPlanGenerationContext.editorContext
-											?.instruction
-									: undefined,
+								this.provider.pendingPlanGenerationContext.editorContext
+									?.instruction,
 							relevantFiles:
 								this.provider.pendingPlanGenerationContext.relevantFiles,
 							textualPlanExplanation:
@@ -610,84 +394,47 @@ export class PlanService {
 						},
 					}),
 			});
+
 			disposable?.dispose();
-			this.provider.activeOperationCancellationTokenSource?.dispose();
 			this.provider.chatHistoryManager.restoreChatHistoryToWebview();
-			this.provider.activeOperationCancellationTokenSource = undefined;
-			return finalResult;
+			this.provider.clearActiveOperationState();
 		}
 	}
 
-	/**
-	 * Attempts to parse and validate JSON, applying programmatic repair for escape sequence errors.
-	 * @param jsonString The raw JSON string to parse.
-	 * @param workspaceRootUri The root URI of the workspace for context.
-	 * @returns A promise resolving to the parsed plan or an error.
-	 */
 	private async parseAndValidatePlanWithFix(
 		jsonString: string,
 		workspaceRootUri: vscode.Uri
 	): Promise<ParsedPlanResult> {
 		try {
-			// 1. Attempt initial parse and validation.
 			let parsedResult = await parseAndValidatePlan(
 				jsonString,
 				workspaceRootUri
 			);
 
-			// 2. If initial parsing failed, attempt repair and re-validation.
 			if (!parsedResult.plan && parsedResult.error) {
-				console.log(
-					"[PlanService] Initial JSON parsing failed. Attempting programmatic repair."
-				);
-
 				const repairedJsonString = repairJsonEscapeSequences(jsonString);
 
-				// Only re-parse if the repair function actually changed the string.
 				if (repairedJsonString !== jsonString) {
-					console.log(
-						"[PlanService] JSON string modified by repair function. Re-parsing after programmatic repair."
-					);
 					const reParsedResult = await parseAndValidatePlan(
 						repairedJsonString,
 						workspaceRootUri
 					);
 
 					if (reParsedResult.plan) {
-						// Repair was successful. Return the repaired plan.
-						console.log("[PlanService] Programmatic JSON repair successful.");
 						return reParsedResult;
 					} else {
-						// Repair failed. Report a combined error for better diagnostics.
-						console.warn(
-							"[PlanService] Programmatic JSON repair failed. Original error:",
-							parsedResult.error,
-							"Repair attempt error:",
-							reParsedResult.error
-						);
 						return {
 							plan: null,
 							error: `JSON parsing failed: Original error: "${parsedResult.error}". Repair attempt also failed with: "${reParsedResult.error}".`,
 						};
 					}
 				} else {
-					// Repair function didn't change the string, so no repair was applied or possible for this specific issue.
-					console.log(
-						"[PlanService] Repair function did not alter JSON. Proceeding with original parsing error."
-					);
-					// Fallback to the original error.
 					return parsedResult;
 				}
 			} else {
-				// Initial parse was successful.
 				return parsedResult;
 			}
 		} catch (e: any) {
-			// Catch any exceptions during the process (e.g., parseAndValidatePlan itself throws).
-			console.error(
-				"[PlanService] Exception during parseAndValidatePlanWithFix:",
-				e
-			);
 			return {
 				plan: null,
 				error: `An unexpected error occurred during JSON parsing/validation: ${e.message}`,
@@ -695,7 +442,6 @@ export class PlanService {
 		}
 	}
 
-	// New private method to encapsulate streaming state initialization
 	private _initializeStreamingState(
 		modelName: string,
 		relevantFiles: string[] | undefined,
@@ -703,7 +449,7 @@ export class PlanService {
 	): void {
 		this.provider.currentAiStreamingState = {
 			content: "",
-			relevantFiles: relevantFiles ?? [], // Ensure relevantFiles is always string[]
+			relevantFiles: relevantFiles ?? [],
 			isComplete: false,
 			isError: false,
 			operationId: operationId,
@@ -714,25 +460,21 @@ export class PlanService {
 				modelName,
 				relevantFiles: relevantFiles ?? [],
 				operationId: operationId,
-			}, // Ensure relevantFiles is always string[]
+			},
 		});
 		this.provider.postMessageToWebview({
 			type: "updateStreamingRelevantFiles",
-			value: relevantFiles ?? [], // Ensure relevantFiles is always string[]
+			value: relevantFiles ?? [],
 		});
 	}
-	// --- PLAN GENERATION & EXECUTION ---
+
 	public async generateStructuredPlanAndExecute(
 		planContext: sidebarTypes.PlanGenerationContext
 	): Promise<void> {
 		const token = this.provider.activeOperationCancellationTokenSource?.token;
-		// Add check for token immediately after retrieval
 		if (!token) {
-			console.error(
-				"[PlanService] activeOperationCancellationTokenSource or its token is undefined in generateStructuredPlanAndExecute."
-			);
-			await this.provider.endUserOperation("failed"); // Signal failure
-			return; // Exit early if token is not available
+			await this.provider.endUserOperation("failed");
+			return;
 		}
 
 		let executablePlan: ExecutionPlan | null = null;
@@ -741,27 +483,23 @@ export class PlanService {
 		try {
 			await this.provider.setPlanExecutionActive(true);
 
-			// Notify webview that structured plan generation is starting - this will hide the stop button
 			this.provider.postMessageToWebview({
 				type: "updateLoadingState",
 				value: true,
 			});
 
-			await this.provider.updatePersistedPendingPlanData(null); // Clear persisted data as it's no longer pending confirmation
+			await this.provider.updatePersistedPendingPlanData(null);
 
 			if (token.isCancellationRequested) {
 				throw new Error(ERROR_OPERATION_CANCELLED);
 			}
 
-			// Removed: jsonGenerationConfig is no longer needed for function calling.
-
 			const recentChanges = this.provider.changeLogger.getChangeLog();
 			const formattedRecentChanges =
 				this._formatRecentChangesForPrompt(recentChanges);
 
-			const operationId = this.provider.currentActiveChatOperationId; // Retrieve operationId
+			const operationId = this.provider.currentActiveChatOperationId;
 
-			// Process URLs in the original user request for context
 			const urlContexts =
 				await this.urlContextService.processMessageForUrlContext(
 					planContext.originalUserRequest || "",
@@ -770,7 +508,6 @@ export class PlanService {
 			const urlContextString =
 				this.urlContextService.formatUrlContexts(urlContexts);
 
-			// Generate a single, standard prompt for the AI for function calling.
 			const promptForAIForFunctionCall = createPlanningPromptForFunctionCall(
 				planContext.type === "chat"
 					? planContext.originalUserRequest
@@ -784,9 +521,6 @@ export class PlanService {
 			);
 
 			for (let attempt = 1; attempt <= this.MAX_PLAN_PARSE_RETRIES; attempt++) {
-				console.log(
-					`Generating execution plan - ${attempt}/${this.MAX_PLAN_PARSE_RETRIES}`
-				);
 				this.provider.postMessageToWebview({
 					type: "statusUpdate",
 					value: `Generating execution plan - ${attempt}/${this.MAX_PLAN_PARSE_RETRIES} `,
@@ -814,8 +548,6 @@ export class PlanService {
 						);
 					}
 
-					// Pass functionCall.args (which is an object) to parseAndValidatePlanWithFix
-					// It must be stringified because parseAndValidatePlanWithFix expects a JSON string.
 					const { plan, error } = await this.parseAndValidatePlanWithFix(
 						JSON.stringify(functionCall.args),
 						planContext.workspaceRootUri
@@ -824,10 +556,6 @@ export class PlanService {
 					if (error) {
 						lastError = new Error(
 							`Failed to parse or validate generated plan: ${error}`
-						);
-						console.error(
-							`[PlanService] Parse/Validation error on attempt ${attempt}:`,
-							lastError.message
 						);
 						if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
 							continue;
@@ -840,10 +568,6 @@ export class PlanService {
 						lastError = new Error(
 							"AI generated plan content but it was empty or invalid after parsing."
 						);
-						console.error(
-							`[PlanService] Empty/Invalid plan on attempt ${attempt}:`,
-							lastError.message
-						);
 						if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
 							continue;
 						} else {
@@ -852,24 +576,17 @@ export class PlanService {
 					}
 
 					executablePlan = plan;
-					break; // Successfully generated and parsed, exit loop
+					break;
 				} catch (error: any) {
 					if (error.message === ERROR_OPERATION_CANCELLED) {
-						throw error; // Re-throw cancellation immediately
+						throw error;
 					}
-
 					lastError = error;
-					console.error(
-						`[PlanService] AI generation or processing failed on attempt ${attempt}:`,
-						lastError?.message
-					);
-					// Removed: x;
 					if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
-						// Replaced static timeout with cancellation-aware delay
 						await this._delay(15000 + attempt * 2000, token);
 						continue;
 					} else {
-						throw lastError; // Re-throw the last error after max retries
+						throw lastError;
 					}
 				}
 			}
@@ -883,7 +600,6 @@ export class PlanService {
 				);
 			}
 
-			// If we reached here, executablePlan is valid. Proceed with execution.
 			this.provider.pendingPlanGenerationContext = null;
 			await this.planExecutorService.executePlan(
 				executablePlan,
@@ -893,7 +609,6 @@ export class PlanService {
 		} catch (error: any) {
 			const isCancellation = error.message === ERROR_OPERATION_CANCELLED;
 
-			// Notify webview that structured plan generation has ended
 			this.provider.postMessageToWebview({
 				type: "updateLoadingState",
 				value: false,
@@ -904,7 +619,7 @@ export class PlanService {
 					type: "statusUpdate",
 					value: "Structured plan generation cancelled.",
 				});
-				await this.provider.endUserOperation("cancelled"); // Signal cancellation and re-enable input
+				await this.provider.endUserOperation("cancelled");
 			} else {
 				this.provider.postMessageToWebview({
 					type: "statusUpdate",
@@ -916,7 +631,7 @@ export class PlanService {
 					),
 					isError: true,
 				});
-				await this.provider.endUserOperation("failed"); // Signal failure and re-enable input
+				await this.provider.endUserOperation("failed");
 			}
 		} finally {
 			await this.provider.setPlanExecutionActive(false);
@@ -951,7 +666,6 @@ export class PlanService {
 				value: "Textual plan generated. Review and confirm to proceed.",
 			});
 		} else {
-			// Automatically open the sidebar when a plan is completed
 			void vscode.commands.executeCommand("minovative-mind.activitybar.focus");
 			this.provider.postMessageToWebview({
 				type: "statusUpdate",
