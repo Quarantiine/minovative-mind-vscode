@@ -21,8 +21,12 @@ import {
 } from "../utils/codeAnalysisUtils";
 import { formatSuccessfulChangesForPrompt } from "../workflow/changeHistoryFormatter";
 import {
-	createEnhancedGenerationPrompt,
-	createEnhancedModificationPrompt,
+	getEnhancedGenerationSystemInstruction,
+	getEnhancedGenerationUserMessage,
+	getEnhancedModificationSystemInstruction,
+	getEnhancedModificationUserMessage,
+	getRefineModificationSystemInstruction,
+	getRefineModificationUserMessage,
 	_formatRelevantFilesForPrompt,
 } from "./prompts/enhancedCodeGenerationPrompts";
 import { CodeValidationService } from "../services/codeValidationService";
@@ -260,14 +264,18 @@ export class EnhancedCodeGenerator {
 		generationConfig?: GenerationConfig
 	): Promise<CodeValidationResult & { actualPath?: string }> {
 		// Modified return type
-		const enhancedPrompt = createEnhancedGenerationPrompt(
+		const systemInstruction = getEnhancedGenerationSystemInstruction(
 			filePath,
+			context
+		);
+		const userMessage = getEnhancedGenerationUserMessage(
 			generatePrompt,
 			context
 		);
+
 		try {
 			const rawContent = await this.aiRequestService.generateWithRetry(
-				[{ text: enhancedPrompt }],
+				[{ text: userMessage }],
 				modelName,
 				undefined,
 				"enhanced file generation",
@@ -276,7 +284,9 @@ export class EnhancedCodeGenerator {
 					onChunk: async (chunk) =>
 						this._streamChunk(streamId, filePath, chunk, onCodeChunkCallback),
 				},
-				token
+				token,
+				false, // isMergeOperation
+				systemInstruction // Pass systemInstruction
 			);
 
 			console.log(
@@ -386,14 +396,19 @@ export class EnhancedCodeGenerator {
 			),
 		};
 
-		const enhancedPrompt = createEnhancedModificationPrompt(
+		const systemInstruction = getEnhancedModificationSystemInstruction(
+			filePath,
+			contextWithAnalysis
+		);
+		const userMessage = getEnhancedModificationUserMessage(
 			filePath,
 			modificationPrompt,
 			currentContent,
 			contextWithAnalysis
 		);
+
 		const rawContent = await this.aiRequestService.generateWithRetry(
-			[{ text: enhancedPrompt }],
+			[{ text: userMessage }],
 			modelName,
 			undefined,
 			"enhanced file modification",
@@ -402,7 +417,9 @@ export class EnhancedCodeGenerator {
 				onChunk: async (chunk) =>
 					this._streamChunk(streamId, filePath, chunk, onCodeChunkCallback),
 			},
-			token
+			token,
+			false, // isMergeOperation
+			systemInstruction // Pass systemInstruction
 		);
 
 		const modifiedContent = cleanCodeOutput(rawContent);

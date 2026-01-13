@@ -4,6 +4,7 @@ import {
 	finalizeStreamingMessage,
 	buildPlanTimeline,
 	renderPlanTimeline,
+	setContextAgentLoadingState,
 } from "../ui/chatMessageRenderer";
 import {
 	updateApiKeyStatus,
@@ -274,6 +275,40 @@ export function initializeMessageBusHandler(
 						setLoadingState(false, elements);
 					}
 				}
+				break;
+			}
+
+			case "aiRetryNotification": {
+				const { currentDelay, reason } = message.value;
+				console.log(
+					`[Webview] Received aiRetryNotification. Delay: ${currentDelay}s, Reason: ${reason}`
+				);
+
+				let remainingTime = currentDelay;
+				const updateRetryStatus = () => {
+					if (remainingTime > 0) {
+						updateStatus(
+							elements,
+							`${reason} Retrying in ${remainingTime.toFixed(0)}s`,
+							true, // Show as warning/error color
+							true // Show loading dots
+						);
+						remainingTime--;
+						appState.retryTimer = setTimeout(updateRetryStatus, 1000);
+					} else {
+						updateStatus(
+							elements,
+							"Retrying now",
+							false, // Reset to normal color
+							true
+						);
+						appState.retryTimer = null;
+					}
+				};
+
+				updateRetryStatus();
+				// Ensure loading state is true so user knows it's working
+				setLoadingState(true, elements);
 				break;
 			}
 
@@ -1049,6 +1084,11 @@ export function initializeMessageBusHandler(
 			}
 			case "reenableInput": {
 				console.log("Received reenableInput message. Resetting UI state.");
+				// Clean up any pending retry timer
+				if (appState.retryTimer) {
+					clearTimeout(appState.retryTimer);
+					appState.retryTimer = null;
+				}
 				resetUIStateAfterCancellation(elements, setLoadingState);
 				appState.currentActiveOperationId = null;
 				appState.isRequestingWorkspaceFiles = false;
@@ -1239,6 +1279,11 @@ export function initializeMessageBusHandler(
 				console.log(
 					"[Webview] Received operationCancelledConfirmation. Resetting UI state."
 				);
+				// Clean up any pending retry timer
+				if (appState.retryTimer) {
+					clearTimeout(appState.retryTimer);
+					appState.retryTimer = null;
+				}
 				finalizeStreamingMessage(elements);
 				resetUIStateAfterCancellation(elements, setLoadingState);
 				appState.currentActiveOperationId = null;
@@ -1249,6 +1294,33 @@ export function initializeMessageBusHandler(
 				appState.currentPlanSteps = [];
 				appState.currentPlanStepIndex = -1;
 				appState.isPlanExecutionInProgress = false;
+				break;
+			}
+			case "contextAgentLog": {
+				if (message.value && typeof message.value.text === "string") {
+					appendMessage(
+						elements,
+						"Context Agent",
+						message.value.text,
+						"context-agent-log", // specific class for styling
+						true, // isHistoryMessage - keep it in history so it persists
+						undefined,
+						undefined,
+						undefined,
+						undefined,
+						false,
+						false
+					);
+					// Ensure we scroll to bottom
+					if (elements.chatContainer) {
+						elements.chatContainer.scrollTop =
+							elements.chatContainer.scrollHeight;
+					}
+				}
+				break;
+			}
+			case "setContextAgentLoading": {
+				setContextAgentLoadingState(elements, message.value);
 				break;
 			}
 			default:

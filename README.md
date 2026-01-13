@@ -40,6 +40,8 @@ Now...that same power is available to you. Completely for free.
 
 - 🧩 **Full Workspace Context:** The agent intelligently scans your entire project—respecting your `.gitignore`—to build a deep, accurate understanding of your codebase, ensuring its actions are smart and relevant.
 
+- 🕵️ **Agentic Context Investigation:** The AI doesn't just guess—it investigates. Using safe terminal commands (`ls`, `grep`, `find`), the **Context Agent** actively explores your codebase to discover relevant files and fix errors with precision.
+
 - 💾 **Integrated Git Automation:** Let the AI do the tedious work. It can automatically stage the changes it makes and generate insightful, descriptive commit messages based on the code diffs.
 
 - ⏪ **Safe & Reversible Changes:** Every file system operation performed by the agent is logged. If you don't like a change, you can easily review and revert the entire operation with a simple 2-click button, ensuring you are always in control.
@@ -156,11 +158,10 @@ My vision is to empower every developer with a powerful, free, and open-source A
 - [**`PRIVACY_POLICY.md`**](./PRIVACY_POLICY.md)
 - [**`GOOGLE_AI_POLICIES.md`**](./GOOGLE_AI_POLICIES.md)
 
-````txt
+```txt
 _“This project makes API calls directly from your VS Code environment using your own Gemini API key. No data is stored, processed, or transmitted by third parties beyond Google’s API.”_
 ```
+
 ---
 
 > Remember, Minovative Mind is designed to assist, not replace, the brilliance of human developers! Happy Coding!
-> Built by [Daniel Ward](https://github.com/Quarantiine), a USA based developer under Minovative (Minovative = minimal-innovative) Technologies [A DBA registered self-employed company in the US]
-````

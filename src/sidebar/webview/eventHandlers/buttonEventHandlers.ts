@@ -628,9 +628,11 @@ export function initializeButtonEventListeners(
 			);
 			if (messageElementToDelete) {
 				// Find all history messages to determine the index
+				// IMPORTANT: Filter out context-agent-log messages as they have their own
+				// history entries but should not affect the index of regular messages
 				const allHistoryMessages = Array.from(
 					chatContainer.querySelectorAll(".message[data-is-history='true']")
-				);
+				).filter((el) => !(el as HTMLElement).dataset.isContextAgentLog);
 				const messageIndex = allHistoryMessages.indexOf(messageElementToDelete);
 
 				if (messageIndex !== -1) {

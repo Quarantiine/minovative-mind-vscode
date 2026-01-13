@@ -6,6 +6,7 @@ import {
 	faTrashCan,
 	faPenToSquare,
 	faLightbulb,
+	faTerminal, // Import faTerminal
 } from "../utils/iconHelpers";
 import { postMessageToExtension } from "../utils/vscodeApi";
 import { appState } from "../state/appState";
@@ -191,7 +192,85 @@ export function appendMessage(
 	}
 
 	const senderElement = document.createElement("strong");
-	senderElement.textContent = `${sender}:\u00A0`;
+
+	// Handle Context Agent logs with collapsible details element
+	if (className.includes("context-agent-log")) {
+		// Check for existing contiguous Context Agent group
+		const lastMessage = elements.chatContainer
+			.lastChild as HTMLDivElement | null;
+		let detailsElement: HTMLDetailsElement | null = null;
+
+		if (
+			lastMessage &&
+			lastMessage.classList &&
+			lastMessage.classList.contains("message") &&
+			lastMessage.querySelector(".context-agent-details")
+		) {
+			detailsElement = lastMessage.querySelector(
+				".context-agent-details"
+			) as HTMLDetailsElement;
+		}
+
+		if (detailsElement) {
+			// Append current log content to the existing details group
+			const logEntryContainer = document.createElement("div");
+			logEntryContainer.classList.add(
+				"message-text-content",
+				"context-agent-content"
+			);
+			logEntryContainer.innerHTML = md.render(text);
+			logEntryContainer.dataset.originalMarkdown = text;
+			detailsElement.appendChild(logEntryContainer);
+
+			// Scroll to bottom
+			elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
+			return; // Exit after appending to existing group
+		}
+
+		// Create a new details element for the FIRST log in a potential sequence
+		const detailsElementNew = document.createElement("details");
+		detailsElementNew.classList.add("context-agent-details");
+		detailsElementNew.open = false; // Collapsed by default
+
+		const summaryElement = document.createElement("summary");
+		summaryElement.classList.add("context-agent-summary");
+		// Check global loading state and apply class if needed
+		if (appState.isContextAgentLoading) {
+			summaryElement.classList.add("loading");
+		}
+
+		const iconSpan = document.createElement("span");
+		iconSpan.classList.add("context-agent-icon");
+		setIconForButton(iconSpan as any, faTerminal);
+		summaryElement.appendChild(iconSpan);
+		summaryElement.appendChild(document.createTextNode(`\u00A0${sender}`));
+
+		detailsElementNew.appendChild(summaryElement);
+
+		const textElementNew = document.createElement("div");
+		textElementNew.classList.add(
+			"message-text-content",
+			"context-agent-content"
+		);
+		textElementNew.innerHTML = md.render(text);
+		textElementNew.dataset.originalMarkdown = text;
+		detailsElementNew.appendChild(textElementNew);
+
+		messageElement.appendChild(detailsElementNew);
+
+		// Mark as history for proper index tracking, but also mark as context agent log
+		// so delete handler can filter these out when calculating message indexes
+		messageElement.dataset.isHistory = "true";
+		messageElement.dataset.isContextAgentLog = "true";
+
+		// Append to chat container and scroll
+		elements.chatContainer.appendChild(messageElement);
+		elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
+		updateEmptyChatPlaceholderVisibility(elements);
+		return; // Early return for Context Agent logs
+	}
+
+	senderElement.appendChild(document.createTextNode(`${sender}:\u00A0`));
 	messageElement.appendChild(senderElement);
 
 	// Add error icon if it's an error message
@@ -580,7 +659,11 @@ export function appendMessage(
 					const currentTextElement = messageElement.querySelector(
 						".message-text-content"
 					) as HTMLSpanElement;
-					const originalText = currentTextElement?.textContent || "";
+					// Use the stored original markdown to preserve formatting
+					const originalText =
+						currentTextElement?.dataset.originalMarkdown ||
+						currentTextElement?.textContent ||
+						"";
 
 					// Copy the message text to elements.chatInput.value
 					elements.chatInput.value = originalText.trim();
@@ -1056,5 +1139,37 @@ export function renderPlanTimeline(
 			block: "nearest",
 			inline: "center",
 		});
+	}
+}
+
+export function setContextAgentLoadingState(
+	elements: RequiredDomElements,
+	isLoading: boolean
+): void {
+	// Update global state
+	appState.isContextAgentLoading = isLoading;
+
+	// Find the last message (which should be the Context Agent logs if active)
+	const lastMessage = elements.chatContainer.lastChild as HTMLDivElement | null;
+	if (
+		lastMessage &&
+		lastMessage.classList &&
+		lastMessage.classList.contains("message")
+	) {
+		const detailsElement = lastMessage.querySelector(
+			".context-agent-details"
+		) as HTMLDetailsElement | null;
+		if (detailsElement) {
+			const summaryElement = detailsElement.querySelector(
+				".context-agent-summary"
+			);
+			if (summaryElement) {
+				if (isLoading) {
+					summaryElement.classList.add("loading");
+				} else {
+					summaryElement.classList.remove("loading");
+				}
+			}
+		}
 	}
 }

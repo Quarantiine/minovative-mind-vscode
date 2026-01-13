@@ -125,12 +125,14 @@ export class PlanService {
 		const token = this.provider.activeOperationCancellationTokenSource.token;
 
 		if (!apiKey) {
+			// Fix: Ensure operation is ended if no API key is found
 			this.provider.postMessageToWebview({
 				type: "statusUpdate",
 				value:
 					"Action blocked: No active API key found. Please add or select an API key in the sidebar settings.",
 				isError: true,
 			});
+			await this.provider.endUserOperation("failed"); // END OPERATION
 			return;
 		}
 
@@ -145,6 +147,7 @@ export class PlanService {
 					"Action blocked: No VS Code workspace folder is currently open. Please open a project folder to proceed.",
 				operationId: operationId as string,
 			});
+			this.provider.clearActiveOperationState(); // CLEAR STATE
 			return;
 		}
 
@@ -333,6 +336,8 @@ export class PlanService {
 						},
 					}),
 			});
+
+			this.provider.clearActiveOperationState(); // ENSURE STATE IS CLEARED AFTER RESPONSE
 		}
 	}
 
@@ -372,10 +377,12 @@ export class PlanService {
 
 		const rootFolder = vscode.workspace.workspaceFolders?.[0];
 		if (!rootFolder) {
+			// Fix: Clear state if no root folder
 			initialProgress?.report({
 				message: "Error: No workspace folder open.",
 				increment: 100,
 			});
+			await this.provider.endUserOperation("failed"); // END OPERATION
 			return {
 				success: false,
 				error:
@@ -393,6 +400,7 @@ export class PlanService {
 				increment: 100,
 			});
 			disposable?.dispose();
+			this.provider.clearActiveOperationState(); // CLEAR STATE
 			return { success: false, error: "Plan generation cancelled." };
 		}
 

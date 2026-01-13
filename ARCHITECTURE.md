@@ -66,7 +66,17 @@ This system ensures that diagnostic information, particularly 'Information' and 
   - **Sequential Project Context (`buildSequentialProjectContext`)**: Handles very large codebases by processing and summarizing files in batches using `SequentialContextService`.
   - **Configurable Context Gating**: Implements user control over the file relevance engine by introducing a configurable setting (`heuristicSelectionEnabled`). This gates the execution of resource-intensive steps like dependency graph building, symbol processing, and semantic analysis based on user preference, ensuring optimal performance when heuristics are not desired. The `ContextService` handles disabled states via robust fallback mechanisms, and context checks are bypassed entirely for highly specialized commands like `/commit`. A dedicated toggle button in the sidebar UI allows dynamic control.
   - **Context Assembly**: Integrates all collected data into a cohesive, token-optimized prompt string (`buildContextString`).
-- **Key Files**: `src/context/smartContextSelector.ts`, `src/context/heuristicContextSelector.ts`, `src/context/semanticLinker.ts`, `src/context/fileContentProcessor.ts`, `src/services/contextService.ts`, `src/context/workspaceScanner.ts`, `src/context/dependencyGraphBuilder.ts`, `src/context/contextBuilder.ts`, `src/services/symbolService.ts`, `src/utils/diagnosticUtils.ts`, `src/services/sequentialContextService.ts`
+- **Key Files**: `src/context/smartContextSelector.ts`, `src/context/heuristicContextSelector.ts`, `src/context/semanticLinker.ts`, `src/context/fileContentProcessor.ts`, `src/services/contextService.ts`, `src/context/workspaceScanner.ts`, `src/context/dependencyGraphBuilder.ts`, `src/context/contextBuilder.ts`, `src/services/symbolService.ts`, `src/utils/diagnosticUtils.ts`, `src/services/sequentialContextService.ts`, `src/context/safeCommandExecutor.ts`
+
+#### 5. Agentic Context Investigation
+
+- **Responsibility**: Enables the AI to actively explore and investigate the codebase using safe terminal commands during the context gathering phase, rather than relying solely on static file lists and summaries.
+- **Key Features**:
+  - **Reasoning Loop**: The `selectRelevantFilesAI` function in `smartContextSelector.ts` implements a multi-turn agentic loop. The AI is given a `run_terminal_command` tool and can iteratively run commands, observe outputs, and refine its understanding before making a final file selection with `finish_selection`.
+  - **Safe Command Execution**: The `SafeCommandExecutor` class (`src/context/safeCommandExecutor.ts`) enforces strict security by allowlisting only read-only commands (`ls`, `grep`, `find`, `cat`, `git grep`) and blocking dangerous operations like chaining (`&&`, `|`) or redirection.
+  - **Error-Aware Investigation**: When the user's request contains error-related keywords ("error", "bug", "fix"), the AI is prompted to prioritize investigation commands and actively search for relevant code paths using diagnostics and stack traces.
+  - **Transparent Logging**: Every command executed by the Context Agent and its output is logged to the chat interface, providing full transparency to the user.
+- **Key Files**: `src/context/smartContextSelector.ts`, `src/context/safeCommandExecutor.ts`
 
 #### 5. URL Context Retrieval
 
@@ -316,4 +326,3 @@ The assembled payload (both the current turn and the previous history) must be t
 ---
 
 > Remember, Minovative Mind is designed to assist, not replace, the brilliance of human developers! Happy Coding!
-> Built by [Daniel Ward](https://github.com/Quarantiine), a USA based developer under Minovative (Minovative = minimal-innovative) Technologies [A DBA registered self-employed company in the US]

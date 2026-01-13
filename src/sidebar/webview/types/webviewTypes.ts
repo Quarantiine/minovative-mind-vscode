@@ -111,6 +111,7 @@ export interface WebviewAppState {
 	currentAccumulatedText: string;
 	typingBuffer: string;
 	typingTimer: ReturnType<typeof setInterval> | null;
+	retryTimer: ReturnType<typeof setTimeout> | null;
 	TYPING_SPEED_MS: number;
 	CHARS_PER_INTERVAL: number;
 	activeCommandIndex: number;
@@ -145,4 +146,5 @@ export interface WebviewAppState {
 	isEditingMessage: boolean;
 	currentActiveOperationId: string | null;
 	isHeuristicContextEnabled: boolean;
+	isContextAgentLoading: boolean;
 }

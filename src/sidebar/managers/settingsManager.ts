@@ -13,6 +13,8 @@ import { ModelInfo } from "../common/sidebarTypes"; // Added ModelInfo import
 // Exported Constant for Heuristic Selection setting key
 export const HEURISTIC_SELECTION_ENABLED_KEY =
 	"optimization.heuristicSelectionEnabled";
+export const ALWAYS_RUN_INVESTIGATION_KEY =
+	"optimization.alwaysRunInvestigation";
 
 // Optimization settings keys
 const OPTIMIZATION_SETTINGS_KEYS = {
@@ -56,6 +58,7 @@ const OPTIMIZATION_SETTINGS_KEYS = {
 	ENABLE_ENHANCED_DIAGNOSTIC_CONTEXT:
 		"optimization.enableEnhancedDiagnosticContext",
 	HEURISTIC_SELECTION_ENABLED: HEURISTIC_SELECTION_ENABLED_KEY,
+	ALWAYS_RUN_INVESTIGATION: ALWAYS_RUN_INVESTIGATION_KEY,
 };
 
 // Default optimization settings
@@ -96,6 +99,7 @@ const DEFAULT_OPTIMIZATION_SETTINGS = {
 	directoryWeight: 1,
 	enableEnhancedDiagnosticContext: true,
 	heuristicSelectionEnabled: true,
+	alwaysRunInvestigation: true,
 };
 
 export class SettingsManager {
@@ -265,6 +269,10 @@ export class SettingsManager {
 			heuristicSelectionEnabled: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.HEURISTIC_SELECTION_ENABLED,
 				DEFAULT_OPTIMIZATION_SETTINGS.heuristicSelectionEnabled
+			),
+			alwaysRunInvestigation: this.getSetting(
+				OPTIMIZATION_SETTINGS_KEYS.ALWAYS_RUN_INVESTIGATION,
+				DEFAULT_OPTIMIZATION_SETTINGS.alwaysRunInvestigation
 			),
 		};
 	}

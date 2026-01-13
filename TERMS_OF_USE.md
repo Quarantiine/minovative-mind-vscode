@@ -4,7 +4,7 @@
 
 ## 1. Introduction and Acceptance of Terms
 
-Welcome to the Minovative Mind VS Code Extension ("Minovative Mind" or "the Extension"), a powerful AI coding agent designed to enhance your development workflow within Visual Studio Code. These Terms of Use ("Terms") govern your access to and use of the Minovative Mind extension provided by Minovative Technologies DBA ("we," "us," or "our").
+Welcome to the Minovative Mind VS Code Extension ("Minovative Mind" or "the Extension"), a powerful AI coding agent designed to enhance your development workflow within Visual Studio Code. These Terms of Use ("Terms") govern your access to and use of the Minovative Mind extension provided by Ward Innovations DBA ("we," "us," or "our").
 
 By installing, accessing, or using the Minovative Mind extension, you agree to be bound by these Terms, our [Privacy Policy](./PRIVACY_POLICY.md), our [Code of Conduct](./CODE_OF_CONDUCT.md), and the [Apache 2.0 License](./LICENSE.md) under which the core software is distributed. If you do not agree to these Terms, you may not use the Extension.
 
@@ -18,7 +18,7 @@ As a user of the Minovative Mind extension, you agree to the following responsib
 
 ### 3.1 API Key Management and Costs
 
-You are solely responsible for obtaining, securing, and managing your own Google Gemini API key. Minovative Technologies DBA does not store, transmit, or have access to your API key, which is managed exclusively by VS Code’s secure SecretStorage API on your local machine. You are responsible for all costs and usage associated with your Google Gemini API key, and for complying with Google’s own terms of service and privacy policies for their AI services.
+You are solely responsible for obtaining, securing, and managing your own Google Gemini API key. Ward Innovations DBA does not store, transmit, or have access to your API key, which is managed exclusively by VS Code’s secure SecretStorage API on your local machine. You are responsible for all costs and usage associated with your Google Gemini API key, and for complying with Google’s own terms of service and privacy policies for their AI services.
 
 ### 3.2 Responsibility for Input and Output
 
@@ -41,7 +41,7 @@ The Minovative Mind extension primarily operates on your local machine and proce
 
 ### 4.1 Extension’s Intellectual Property
 
-The Minovative Mind VS Code extension, including its software, architecture, design, and documentation (excluding third-party components and libraries), is the intellectual property of Minovative Technologies DBA and is licensed under the [Apache 2.0 License](./LICENSE.md). You agree not to reproduce, distribute, modify, or create derivative works of the Extension’s core components beyond the scope permitted by the Apache 2.0 License.
+The Minovative Mind VS Code extension, including its software, architecture, design, and documentation (excluding third-party components and libraries), is the intellectual property of Ward Innovations DBA and is licensed under the [Apache 2.0 License](./LICENSE.md). You agree not to reproduce, distribute, modify, or create derivative works of the Extension’s core components beyond the scope permitted by the Apache 2.0 License.
 
 ### 4.2 User Content and AI-Generated Output
 
@@ -52,15 +52,15 @@ You retain all intellectual property rights to the code, data, and other content
 Your privacy is important to us. The Minovative Mind extension is designed with an emphasis on local processing and user control. Please refer to our comprehensive [Privacy Policy](./PRIVACY_POLICY.md) for detailed information on how your data is processed, handled, and protected when you use the Extension. Key aspects include:
 
 - Most data, including your local workspace files and API key, is processed and stored locally on your machine.
-- Your inputs (prompts, code, images, URLs) are securely transmitted to the Google Gemini API for processing as part of its core functionality, but not to Minovative Technologies DBA' servers.
-- Minovative Technologies DBA does not collect personal usage data or analytics from you.
+- Your inputs (prompts, code, images, URLs) are securely transmitted to the Google Gemini API for processing as part of its core functionality, but not to Ward Innovations DBA' servers.
+- Ward Innovations DBA does not collect personal usage data or analytics from you.
 - You have control over context filtering, reversible changes, and operational aspects of the AI.
 
 ## 6. Disclaimers of Warranty
 
 THE MINOVATIVE MIND EXTENSION IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT, AS STATED IN THE [APACHE 2.0 LICENSE](./LICENSE.md).
 
-WITHOUT LIMITING THE FOREGOING, MINOVATIVE TECHNOLOGIES DBA DOES NOT WARRANT THAT:
+WITHOUT LIMITING THE FOREGOING, Ward Innovations DBA DOES NOT WARRANT THAT:
 
 - THE EXTENSION WILL MEET YOUR SPECIFIC REQUIREMENTS OR EXPECTATIONS.
 - THE EXTENSION’S OPERATION WILL BE UNINTERRUPTED, SECURE, OR ERROR-FREE.
@@ -71,11 +71,11 @@ You assume all risks associated with your use of the extension, including the ri
 
 ## 7. Limitation of Liability
 
-IN NO EVENT SHALL MINOVATIVE TECHNOLOGIES DBA OR ITS CREATOR, DANIEL WARD, BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING BUT NOT LIMITED TO LOSS OF PROFITS, DATA, USE, GOODWILL, OR OTHER INTANGIBLE LOSSES, RESULTING FROM (I) YOUR ACCESS TO OR USE OF OR INABILITY TO ACCESS OR USE THE EXTENSION; (II) ANY CONDUCT OR CONTENT OF ANY THIRD PARTY ON THE EXTENSION; (III) ANY CONTENT OBTAINED FROM THE EXTENSION; AND (IV) UNAUTHORIZED ACCESS, USE, OR ALTERATION OF YOUR TRANSMISSIONS OR CONTENT, WHETHER BASED ON WARRANTY, CONTRACT, TORT (INCLUDING NEGLIGENCE), OR ANY OTHER LEGAL THEORY, WHETHER OR NOT WE HAVE BEEN INFORMED OF THE POSSIBILITY OF SUCH DAMAGE, AND EVEN IF A REMEDY SET FORTH HEREIN IS FOUND TO HAVE FAILED OF ITS ESSENTIAL PURPOSE. THIS LIMITATION OF LIABILITY IS IN LINE WITH SECTION 8 OF THE [APACHE 2.0 LICENSE](./LICENSE.md).
+IN NO EVENT SHALL Ward Innovations DBA OR ITS CREATOR, DANIEL WARD, BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING BUT NOT LIMITED TO LOSS OF PROFITS, DATA, USE, GOODWILL, OR OTHER INTANGIBLE LOSSES, RESULTING FROM (I) YOUR ACCESS TO OR USE OF OR INABILITY TO ACCESS OR USE THE EXTENSION; (II) ANY CONDUCT OR CONTENT OF ANY THIRD PARTY ON THE EXTENSION; (III) ANY CONTENT OBTAINED FROM THE EXTENSION; AND (IV) UNAUTHORIZED ACCESS, USE, OR ALTERATION OF YOUR TRANSMISSIONS OR CONTENT, WHETHER BASED ON WARRANTY, CONTRACT, TORT (INCLUDING NEGLIGENCE), OR ANY OTHER LEGAL THEORY, WHETHER OR NOT WE HAVE BEEN INFORMED OF THE POSSIBILITY OF SUCH DAMAGE, AND EVEN IF A REMEDY SET FORTH HEREIN IS FOUND TO HAVE FAILED OF ITS ESSENTIAL PURPOSE. THIS LIMITATION OF LIABILITY IS IN LINE WITH SECTION 8 OF THE [APACHE 2.0 LICENSE](./LICENSE.md).
 
 ## 8. Third-Party Services (Google Gemini API)
 
-The Minovative Mind extension relies on the Google Gemini API as a third-party service for its core AI functionality. Your interaction with the Google Gemini API is subject to Google’s own terms of service, privacy policy, and any other applicable agreements you have with Google. Minovative Technologies DBA is not responsible for the availability, functionality, data handling, or security practices of the Google Gemini API or any other third-party services. You acknowledge and agree that Minovative Technologies DBA has no control over, and assumes no responsibility for, the content, privacy policies, or practices of any third-party websites or services.
+The Minovative Mind extension relies on the Google Gemini API as a third-party service for its core AI functionality. Your interaction with the Google Gemini API is subject to Google’s own terms of service, privacy policy, and any other applicable agreements you have with Google. Ward Innovations DBA is not responsible for the availability, functionality, data handling, or security practices of the Google Gemini API or any other third-party services. You acknowledge and agree that Ward Innovations DBA has no control over, and assumes no responsibility for, the content, privacy policies, or practices of any third-party websites or services.
 
 ## 9. Modifications to the Terms of Use
 

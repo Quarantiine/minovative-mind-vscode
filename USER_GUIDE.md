@@ -85,6 +85,12 @@ For initial setup and installation, please refer to the [README.md](https://gith
 - **Live Generation**: Code generated for `create_file` and `modify_file` steps streams directly into the editor, providing immediate visual feedback.
 - **Applying Changes**: AI modifications are applied to your editor, often involving diff analysis and intelligent application of changes.
 
+### 4.6 Context Agent Investigation
+
+- **Active Exploration**: For complex queries, the **Context Agent** will automatically spring into action. It "investigates" your codebase by running safe terminal commands (`ls`, `grep`, `find`) to find relevant files that static analysis might miss.
+- **Transparent Logs**: You'll see "Context Agent" logs in the chat showing exactly what commands are being run (e.g., `grep -r "auth" .`) and what they returned.
+- **Error Awareness**: If you ask about an error or bug, the Context Agent automatically enters "Investigation Mode" to hunt down the root cause using the error message.
+
 ---
 
 ## 5. Tips for Effective AI Usage
@@ -101,4 +107,6 @@ For initial setup and installation, please refer to the [README.md](https://gith
 
 Minovative Mind's AI features are designed to boost your productivity and streamline your development workflow. Explore its capabilities, experiment with different prompts, and discover how AI can enhance your coding experience. We encourage your feedback to help us improve!
 
-> Built by [Daniel Ward](https://github.com/Quarantiine), a USA based developer under Minovative (Minovative = minimal-innovative) Technologies [A DBA registered self-employed company in the US]
+### 5.2 Optimization Settings
+
+- **Always Run Investigation**: By default, the Context Agent investigates when needed. You can force it to _always_ investigate by setting `"optimization.alwaysRunInvestigation": true` in your VS Code settings. This skips static file summaries and relies entirely on active exploration, which can be faster and save tokens for large projects.

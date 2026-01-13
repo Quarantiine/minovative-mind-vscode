@@ -24,6 +24,7 @@ let model: GenerativeModel | null = null;
 let currentApiKey: string | null = null;
 let currentModelName: string | null = null;
 let currentToolsHash: string | null = null; // New module-level variable for tools hash
+let currentSystemInstruction: string | null = null;
 
 /**
  * Creates a truncated log string for content parts, useful for logging API requests without exposing full content.
@@ -115,17 +116,19 @@ function _handleGeminiError(
 
 /**
  * Initializes the GoogleGenerativeAI client and the GenerativeModel if needed.
- * Re-initializes if the API key, model name, or tools configuration changes.
+ * Re-initializes if the API key, model name, tools configuration, or system instruction changes.
  *
  * @param apiKey The Google Gemini API key.
  * @param modelName The specific Gemini model name to use (e.g., "gemini-2.5-pro-latest").
  * @param tools Optional array of tools to configure the model with.
+ * @param systemInstruction Optional system instruction to override the default.
  * @returns True if initialization was successful or already initialized correctly, false otherwise.
  */
 export function initializeGenerativeAI(
 	apiKey: string,
 	modelName: string,
-	tools?: Tool[]
+	tools?: Tool[],
+	systemInstruction?: string
 ): boolean {
 	geminiLogger.log(
 		modelName,
@@ -152,13 +155,18 @@ export function initializeGenerativeAI(
 		}
 
 		const newToolsHash = tools ? JSON.stringify(tools) : null;
+		// Combine default MINO_SYSTEM_INSTRUCTION with any request-specific system instruction
+		const finalSystemInstruction = systemInstruction
+			? `${MINO_SYSTEM_INSTRUCTION}\n\n${systemInstruction}`
+			: MINO_SYSTEM_INSTRUCTION;
 
 		const needsInitialization =
 			!generativeAI ||
 			!model ||
 			apiKey !== currentApiKey ||
 			modelName !== currentModelName ||
-			newToolsHash !== currentToolsHash; // Include tools hash in initialization check
+			newToolsHash !== currentToolsHash ||
+			finalSystemInstruction !== currentSystemInstruction;
 
 		if (needsInitialization) {
 			geminiLogger.log(
@@ -167,17 +175,20 @@ export function initializeGenerativeAI(
 					apiKey !== currentApiKey
 				}, Model changed: ${modelName !== currentModelName}, Tools changed: ${
 					newToolsHash !== currentToolsHash
+				}, System Instruction changed: ${
+					finalSystemInstruction !== currentSystemInstruction
 				}. New model: ${modelName}`
 			);
 			generativeAI = new GoogleGenerativeAI(apiKey);
 			model = generativeAI.getGenerativeModel({
 				model: modelName,
 				tools: tools,
-				systemInstruction: MINO_SYSTEM_INSTRUCTION,
+				systemInstruction: finalSystemInstruction,
 			});
 			currentApiKey = apiKey;
 			currentModelName = modelName;
-			currentToolsHash = newToolsHash; // Update tools hash after successful initialization
+			currentToolsHash = newToolsHash;
+			currentSystemInstruction = finalSystemInstruction;
 			geminiLogger.log(
 				modelName,
 				`[gemini.ts] currentModelName set to: ${currentModelName}`
@@ -227,7 +238,8 @@ export async function* generateContentStream(
 	contents: Content[],
 	generationConfig?: GenerationConfig,
 	token?: vscode.CancellationToken,
-	isMergeOperation: boolean = false
+	isMergeOperation: boolean = false,
+	systemInstruction?: string
 ): AsyncIterableIterator<string> {
 	if (token?.isCancellationRequested) {
 		geminiLogger.log(
@@ -237,7 +249,9 @@ export async function* generateContentStream(
 		throw new Error(ERROR_OPERATION_CANCELLED);
 	}
 
-	if (!initializeGenerativeAI(apiKey, modelName)) {
+	if (
+		!initializeGenerativeAI(apiKey, modelName, undefined, systemInstruction)
+	) {
 		throw new Error(
 			`Gemini AI client not initialized. Please check API key and selected model (${modelName}).`
 		);
@@ -445,6 +459,7 @@ export function resetClient() {
 	currentApiKey = null;
 	currentModelName = null;
 	currentToolsHash = null; // Reset tools hash on client reset
+	currentSystemInstruction = null;
 	geminiLogger.log(undefined, "AI client state has been reset.");
 }
 

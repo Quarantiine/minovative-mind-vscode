@@ -4,11 +4,11 @@
 
 ## 1. Introduction
 
-The Minovative Mind VS Code extension ("Minovative Mind") is a powerful AI coding agent designed to assist developers directly within Visual Studio Code. This Privacy Policy explains how Minovative Technologies DBA ("we," "us," or "our") processes and protects information when you use our extension, emphasizing local processing and user control.
+The Minovative Mind VS Code extension ("Minovative Mind") is a powerful AI coding agent designed to assist developers directly within Visual Studio Code. This Privacy Policy explains how Ward Innovations DBA ("we," "us," or "our") processes and protects information when you use our extension, emphasizing local processing and user control.
 
 ## 2. Data Controller
 
-Minovative Technologies DBA, based in USA (publisher: MinovativeTechnologies) is the data controller responsible for your information in the context of this extension.
+Ward Innovations DBA, based in USA (publisher: MinovativeTechnologies) is the data controller responsible for your information in the context of this extension.
 
 ## 3. Information We Process
 
@@ -26,7 +26,7 @@ When you use the Minovative Mind extension, you explicitly provide various forms
 
 ### 3.2 Workspace & Project Data (Local Processing)
 
-The extension processes data from your local VS Code workspace to provide context-aware assistance. This data remains on your local machine and is never sent to Minovative Technologies DBA' servers. It is only transmitted to the Google Gemini API as part of your explicit AI requests. This includes:
+The extension processes data from your local VS Code workspace to provide context-aware assistance. This data remains on your local machine and is never sent to Ward Innovations DBA' servers. It is only transmitted to the Google Gemini API as part of your explicit AI requests. This includes:
 
 - **Workspace Files**: Content of files within your local workspace, respecting `.gitignore` rules and configurable inclusion/exclusion settings.
 - **Active Editor Content**: The content of the file currently open in your VS Code editor.
@@ -49,7 +49,7 @@ In response to your inputs, the extension generates various data locally:
 
 The Minovative Mind extension does not collect any analytics or personal usage data from you beyond the information explicitly sent to the Google Gemini API for its core functionality, or what VS Code itself collects.
 
-- **Token Consumption Statistics**: The extension precisely measures token consumption for all AI requests. These statistics are tracked locally and displayed within the extension's UI for your transparency and cost monitoring. This data is not transmitted to Minovative Technologies DBA' servers.
+- **Token Consumption Statistics**: The extension precisely measures token consumption for all AI requests. These statistics are tracked locally and displayed within the extension's UI for your transparency and cost monitoring. This data is not transmitted to Ward Innovations DBA' servers.
 
 ## 4. How Information is Used
 
@@ -82,21 +82,21 @@ When you interact with the Minovative Mind extension, your inputs (prompts, sele
 - **Model Training**: As per Google's policies, data submitted to the Google Gemini API is not used to train Google's models without your explicit opt-in.
 - **Data Caching**: Input and output data may be cached by Google for up to 24 hours by default to improve user experience and diagnostics, unless data caching is disabled at the project level by you through Google Cloud settings.
 
-### 5.2 No Third-Party Sharing by Minovative Technologies DBA
+### 5.2 No Third-Party Sharing by Ward Innovations DBA
 
-Minovative Technologies DBA does not share your personal data or usage information with any other third parties beyond the necessary transmission to the Google Gemini API for the extension's core service functionality.
+Ward Innovations DBA does not share your personal data or usage information with any other third parties beyond the necessary transmission to the Google Gemini API for the extension's core service functionality.
 
 ## 6. Data Storage and Security
 
 ### 6.1 Local Processing & Storage
 
-- **Client-Side Operation**: The Minovative Mind extension operates entirely client-side within your VS Code environment. It does not utilize any external backend servers operated by Minovative Technologies DBA for storing or processing your data.
-- **Local Data Storage**: Chat history, generated file diffs, persistent UI states, active AI operation states, and certain extension preferences are stored locally within your VS Code workspace state or user settings, residing solely on your machine. This data is not transferred to external servers controlled by Minovative Technologies DBA.
+- **Client-Side Operation**: The Minovative Mind extension operates entirely client-side within your VS Code environment. It does not utilize any external backend servers operated by Ward Innovations DBA for storing or processing your data.
+- **Local Data Storage**: Chat history, generated file diffs, persistent UI states, active AI operation states, and certain extension preferences are stored locally within your VS Code workspace state or user settings, residing solely on your machine. This data is not transferred to external servers controlled by Ward Innovations DBA.
 
 ### 6.2 API Key Security
 
 - Your Google Gemini API key is managed exclusively by VS Code's secure SecretStorage API. This mechanism ensures that your API key is encrypted and stored securely, isolated from other extension data.
-- Minovative Technologies DBA does not access, store, or transmit your API key on any external servers.
+- Ward Innovations DBA does not access, store, or transmit your API key on any external servers.
 
 ### 6.3 Workspace-Bound Operations
 

@@ -117,13 +117,15 @@ function _formatFileStructureAnalysis(
  * Creates the enhanced generation prompt used for initial content generation.
  * Originally extracted from `EnhancedCodeGenerator._createEnhancedGenerationPrompt`.
  */
-export function createEnhancedGenerationPrompt(
+/**
+ * Generates the system instruction for enhanced generation.
+ */
+export function getEnhancedGenerationSystemInstruction(
 	filePath: string,
-	generatePrompt: string,
-	context: EnhancedGenerationContext & { formattedDiagnostics?: string } // Temporarily extend type for usage
+	context: EnhancedGenerationContext & { formattedDiagnostics?: string }
 ): string {
 	const fileAnalysis = _analyzeFilePath(filePath);
-	const languageId = _getLanguageId(fileAnalysis.extension); // Derive languageId from fileAnalysis
+	const languageId = _getLanguageId(fileAnalysis.extension);
 	const isRewrite = context.isRewriteOperation ?? false;
 
 	const requirementsList: string[] = [];
@@ -165,7 +167,18 @@ export function createEnhancedGenerationPrompt(
 - Project Structure: ${fileAnalysis.projectStructure}
 - Expected Patterns: ${fileAnalysis.expectedPatterns}
 
-**Instructions:**
+**Requirements:**
+${requirementsList.map((req) => `- ${req}`).join("\n")}`;
+}
+
+/**
+ * Generates the user message for enhanced generation.
+ */
+export function getEnhancedGenerationUserMessage(
+	generatePrompt: string,
+	context: EnhancedGenerationContext & { formattedDiagnostics?: string }
+): string {
+	return `**Instructions:**
 ${generatePrompt}
 
 **Project Context:**
@@ -208,20 +221,19 @@ ${context.successfulChangeHistory}
  * Creates the enhanced modification prompt.
  * Originally extracted from `EnhancedCodeGenerator._createEnhancedModificationPrompt`.
  */
-export function createEnhancedModificationPrompt(
+/**
+ * Generates the system instruction for enhanced modification.
+ */
+export function getEnhancedModificationSystemInstruction(
 	filePath: string,
-	modificationPrompt: string,
-	currentContent: string,
-	context: EnhancedGenerationContext & { formattedDiagnostics?: string } // Temporarily extend type for usage
+	context: EnhancedGenerationContext & { formattedDiagnostics?: string }
 ): string {
 	const languageId = _getLanguageId(path.extname(filePath));
-	const fileAnalysis = context.fileStructureAnalysis; // From context, not _analyzeFilePath
+	const fileAnalysis = context.fileStructureAnalysis;
 	const isRewrite = context.isRewriteOperation ?? false;
 
 	const requirementsList: string[] = [];
 
-	// Universal critical requirements (always strictly enforced, regardless of rewrite intent)
-	// IMPORTANT: This specific requirement is explicitly placed first for highest logical priority.
 	requirementsList.push(
 		"**FINAL OUTPUT FORMAT: IMPORTANT**: When modifying a file, you MUST generate and return the *complete, full content of the entire file* after applying the modifications. The output MUST be a **single, properly formatted markdown code block** (e.g., \n```typescript\n...full_file_content...\n```\n). Do NOT provide only a partial code snippet, diff, specific function/class, or any conversational text outside the code block. The output must be the *whole, updated file* contained within this single code block."
 	);
@@ -257,7 +269,6 @@ export function createEnhancedModificationPrompt(
 		);
 	}
 
-	// Universal critical requirements (excluding output format, which is now the very first element)
 	requirementsList.push(
 		"**Accuracy First**: Ensure all imports, types, and dependencies are *absolutely* correct and precisely specified. Verify module paths, type definitions, and API usage."
 	);
@@ -274,10 +285,7 @@ export function createEnhancedModificationPrompt(
 		"**Command Execution Format (RunCommandStep)**: For any `RunCommandStep` action, the `command` property MUST be an object `{ executable: string, args: string[], usesShell?: boolean }`. The `executable` should be the command name (e.g., 'npm', 'git') and `args` an array of its arguments (e.g., ['install', '--save-dev', 'package']). If a command *absolutely requires* `shell: true` (e.g., it uses shell-specific features like pipes, redirects, or environment variable expansion inherently for its functionality, and cannot be expressed directly via `executable` and `args`), you MUST explicitly include `usesShell: true` in the object. This flag triggers critical fallback security checks in `PlanExecutorService`. Always prefer `executable` and `args` without `usesShell: true` for security reasons, unless explicitly necessary."
 	);
 
-	// This prompt strictly targets technical problem-solving for file modifications.
-	// It explicitly states "ONLY focus on generating code." and is now strengthened with an explicit exclusion.
-	// Emphasis on quality attributes is clearly defined in the requirements list, adapting for rewrite vs. incremental changes.
-	return `You are the expert software engineer for me,. Your task is to modify the existing file according to the provided instructions. ONLY focus on generating code. EXCLUDE all conversational or meta-commentary.
+	return `You are the expert software engineer for me. Your task is to modify the existing file according to the provided instructions. ONLY focus on generating code. EXCLUDE all conversational or meta-commentary.
 
 Path: ${filePath}
 Language: ${languageId}
@@ -293,7 +301,22 @@ ${_formatFileStructureAnalysis(fileAnalysis)}
 // ... full file content only ...
 \`\`\`
 
-**Instructions:**
+**Requirements:**
+${requirementsList.map((req) => `- ${req}`).join("\n")}`;
+}
+
+/**
+ * Generates the user message for enhanced modification.
+ */
+export function getEnhancedModificationUserMessage(
+	filePath: string,
+	modificationPrompt: string,
+	currentContent: string,
+	context: EnhancedGenerationContext & { formattedDiagnostics?: string }
+): string {
+	const languageId = _getLanguageId(path.extname(filePath));
+
+	return `**Instructions:**
 ${modificationPrompt}
 
 **Current Content:**
@@ -336,21 +359,49 @@ ${context.successfulChangeHistory}
  * Creates the refinement prompt for unreasonable modifications.
  * Originally extracted from `EnhancedCodeGenerator._refineModification`.
  */
-export function createRefineModificationPrompt(
+/**
+ * Generates the system instruction for refinement.
+ */
+export function getRefineModificationSystemInstruction(
+	filePath: string,
+	context: EnhancedGenerationContext & { formattedDiagnostics?: string }
+): string {
+	const languageId = _getLanguageId(path.extname(filePath));
+
+	return `You are an expert code reviewer and refactorer. Your task is to fix the issues in the provided code modification. ONLY provide the refined code. EXCLUDE all conversational or meta-commentary.
+
+**Language:** ${languageId}
+
+**Refinement Requirements:**
+- **PRIORITY: ZERO ERRORS/WARNINGS**: Your primary objective is to resolve ALL reported issues in this single refinement attempt. The resulting code MUST compile and run without any errors or warnings.
+- **Preserve Surrounding Code**: Leave all code lines and blocks untouched if they are not directly involved in resolving an identified diagnostic.
+- **Maintain Indentation/Formatting**: Strictly adhere to the existing indentation, spacing, and formatting conventions of the original code.
+- **Maintain Import Integrity**: Ensure all necessary imports are present and correct. Do not remove existing imports unless they are explicitly unused by the new, correct code. Add only strictly required new imports.
+- **Strict Style Adherence:** Strictly adhere to the original file's existing code style, formatting (indentation, spacing, line breaks, bracket placement), and naming conventions.
+- **Functionality and Correctness:** Ensure the modified code maintains all original functionality and is fully functional and error-free after correction.
+
+**FINAL OUTPUT FORMAT: ABSOLUTELY CRITICAL**
+When providing the refined and corrected code, you MUST return the *complete, full content of the entire file*. The output MUST be a **single, properly formatted markdown code block** (e.g., 
+\`\`\`${languageId}
+...full_file_content...
+\`\`\`
+). Do NOT provide only a partial code snippet, diff, specific function/class, or any conversational text outside the code block. The output must be the *whole, updated file* contained within this single code block.`;
+}
+
+/**
+ * Generates the user message for refinement.
+ */
+export function getRefineModificationUserMessage(
 	filePath: string,
 	originalContent: string,
 	modifiedContent: string,
-	diffIssues: string[], // Assumed to be already generated by _analyzeDiff
-	context: EnhancedGenerationContext & { formattedDiagnostics?: string } // Temporarily extend type for usage
+	diffIssues: string[],
+	context: EnhancedGenerationContext & { formattedDiagnostics?: string }
 ): string {
 	const languageId = _getLanguageId(path.extname(filePath));
 	let initialFeedback =
 		"The modification seems to have issues that need to be addressed:";
 
-	// These checks should ideally be performed *before* calling this prompt function,
-	// and the results (e.g., specific messages) passed in `diffIssues`.
-	// The original _refineModification method's internal `_analyzeDiff` call
-	// should be externalized to the calling `EnhancedCodeGenerator` logic.
 	if (
 		diffIssues.includes(
 			"Modification seems too drastic - consider a more targeted approach"
@@ -364,28 +415,20 @@ export function createRefineModificationPrompt(
 			"\n- **Import Integrity Compromised**: All imports appear to have been removed, which is highly likely to cause compilation errors.";
 	}
 
-	// This prompt strictly targets technical problem-solving by refining existing code.
-	// It now explicitly states to "ONLY provide the refined code" and to "EXCLUDE all conversational or meta-commentary."
-	// Emphasis on quality attributes like zero errors, preserving surrounding code, maintaining formatting,
-	// import integrity, strict style adherence, and functionality/correctness is clearly present in the instructions.
-	return `ONLY provide the refined code. EXCLUDE all conversational or meta-commentary. ${initialFeedback}\n\n**Issues with the modification:**\n${diffIssues
-		.map((issue) => `- ${issue}`)
-		.join(
-			"\n"
-		)}\n\n**Original Content:**\n\`\`\`${languageId}\n${originalContent}\n\`\`\`\n\n**Current Modification:**\n\`\`\`${languageId}\n${modifiedContent}\n\`\`\`\n\n**Refinement Instructions:**
-- **PRIORITY: ZERO ERRORS/WARNINGS**: Your primary objective is to resolve ALL reported issues in this single refinement attempt. The resulting code MUST compile and run without any errors or warnings.
-- **Preserve Surrounding Code**: Leave all code lines and blocks untouched if they are not directly involved in resolving an identified diagnostic.
-- **Maintain Indentation/Formatting**: Strictly adhere to the existing indentation, spacing, and formatting conventions of the original code.
-- **Maintain Import Integrity**: Ensure all necessary imports are present and correct. Do not remove existing imports unless they are explicitly unused by the new, correct code. Add only strictly required new imports.
-- **Strict Style Adherence:** Strictly adhere to the original file's existing code style, formatting (indentation, spacing, line breaks, bracket placement), and naming conventions.
-- **Functionality and Correctness:** Ensure the modified code maintains all original functionality and is fully functional and error-free after correction.
+	return `${initialFeedback}
 
-**FINAL OUTPUT FORMAT: ABSOLUTELY CRITICAL**
-When providing the refined and corrected code, you MUST return the *complete, full content of the entire file*. The output MUST be a **single, properly formatted markdown code block** (e.g., 
+**Issues to Resolve:**
+${diffIssues.map((issue) => `- ${issue}`).join("\n")}
+
+**Original Content:**
 \`\`\`${languageId}
-...full_file_content...
+${originalContent}
 \`\`\`
-). Do NOT provide only a partial code snippet, diff, specific function/class, or any conversational text outside the code block. The output must be the *whole, updated file* contained within this single code block.
+
+**Current Modification (with issues):**
+\`\`\`${languageId}
+${modifiedContent}
+\`\`\`
 
 **Context:**
 ${context.projectContext}

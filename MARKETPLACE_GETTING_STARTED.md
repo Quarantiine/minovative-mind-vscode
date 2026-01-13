@@ -49,5 +49,3 @@ For deeper insights and advanced usage:
 
 - **[README.md](README.md)** → Overview, setup guide for cloning, and key features.
 - **[USER_GUIDE.md](USER_GUIDE.md)** → Complete explanation of all commands and AI functionalities.
-
-> Built by [Daniel Ward](https://github.com/Quarantiine), a USA based developer under Minovative (Minovative = minimal-innovative) Technologies [A DBA registered self-employed company in the US]

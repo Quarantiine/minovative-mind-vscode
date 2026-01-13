@@ -463,3 +463,123 @@
 	text-overflow: clip;
 	white-space: normal;
 }
+
+/* --- Context Agent Terminal Styling --- */
+.message.context-agent-log {
+	background-color: #1e1e1e; /* Deep terminal background */
+	color: #d4d4d4; /* Standard terminal text */
+	font-family: "SF Mono", Monaco, Menlo, Courier, monospace;
+	font-size: 0.85em;
+	padding: 10px 14px;
+	margin-bottom: 20px;
+	border: 1px solid #333;
+	border-radius: 6px;
+	box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+	opacity: 0.95;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.message.context-agent-log > strong {
+	color: #4ec9b0; /* VS Code Cyan/Teal for "Sender" */
+	font-weight: 600;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	border-bottom: 1px solid #333;
+	padding-bottom: 6px;
+	margin-bottom: 4px;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	font-size: 0.9em;
+}
+
+.context-agent-icon {
+	color: #4ec9b0;
+	font-size: 1.1em;
+}
+
+.message.context-agent-log .message-text-content {
+	line-height: 1.5;
+	/* Removed white-space: pre-wrap to let markdown renderer handle formatting */
+}
+
+/* Compact margins for markdown elements inside context logs */
+.message.context-agent-log .message-text-content p {
+	margin: 0 0 4px 0;
+}
+.message.context-agent-log .message-text-content pre {
+	margin: 4px 0;
+}
+
+/* Collapsible Context Agent Details */
+.context-agent-details {
+	width: 100%;
+}
+
+.context-agent-summary {
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 0;
+	color: #4ec9b0; /* VS Code Cyan/Teal */
+	font-weight: 600;
+	font-size: 0.9em;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	list-style: none; /* Remove default arrow */
+	user-select: none;
+}
+
+.context-agent-summary::-webkit-details-marker {
+	display: none; /* Remove default arrow for webkit browsers */
+}
+
+.context-agent-summary::before {
+	content: "▶"; /* Collapsed indicator */
+	font-size: 0.7em;
+	transition: transform 0.2s ease-in-out;
+}
+
+.context-agent-details[open] .context-agent-summary::before {
+	transform: rotate(90deg); /* Expanded indicator */
+}
+
+.context-agent-summary:hover {
+	opacity: 0.8;
+}
+
+.context-agent-content {
+	padding-top: 4px;
+	margin-top: 2px;
+	border-top: 1px solid rgba(255, 255, 255, 0.05); /* Subtle separator */
+}
+
+.context-agent-content:first-of-type {
+	border-top: none;
+	margin-top: 6px;
+	padding-top: 8px;
+}
+
+/* Loading Animation for Context Agent */
+@keyframes context-agent-pulse {
+	0% {
+		opacity: 1;
+		transform: scale(1);
+	}
+	50% {
+		opacity: 0.5;
+		transform: scale(0.9);
+	}
+	100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+.context-agent-summary.loading .context-agent-icon {
+	animation: context-agent-pulse 1.5s infinite ease-in-out;
+	color: #ffcc00; /* Optional: Change color to indicate activity */
+}

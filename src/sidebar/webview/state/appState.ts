@@ -15,6 +15,11 @@ export const appState: WebviewAppState = {
 	currentAiMessageContentElement: null,
 
 	/**
+	 * Timer ID for the retry countdown.
+	 */
+	retryTimer: null as ReturnType<typeof setTimeout> | null,
+
+	/**
 	 * The full text accumulated during the current streaming AI response.
 	 */
 	currentAccumulatedText: "",
@@ -198,4 +203,5 @@ export const appState: WebviewAppState = {
 	 * The most recently received and formatted token usage statistics.
 	 */
 	lastFormattedTokenStats: null,
+	isContextAgentLoading: false,
 };

@@ -120,7 +120,8 @@ export class AIRequestService {
 			onComplete?: () => void;
 		},
 		token?: vscode.CancellationToken,
-		isMergeOperation: boolean = false
+		isMergeOperation: boolean = false,
+		systemInstruction?: string
 	): Promise<string> {
 		let currentApiKey = this.apiKeyManager.getActiveApiKey();
 
@@ -233,7 +234,8 @@ export class AIRequestService {
 					requestContentsForGemini,
 					generationConfig,
 					token,
-					isMergeOperation
+					isMergeOperation,
+					systemInstruction
 				);
 
 				let chunkCount = 0;
@@ -666,5 +668,34 @@ export class AIRequestService {
 		}
 
 		return functionCall;
+	}
+
+	/**
+	 * Generates a function call response using the internally managed API key.
+	 * Wraps generateFunctionCall with key retrieval.
+	 */
+	public async generateManagedFunctionCall(
+		modelName: string,
+		contents: Content[],
+		tools: Tool[],
+		functionCallingMode?: FunctionCallingMode,
+		token?: vscode.CancellationToken,
+		contextString: string = "function_call"
+	): Promise<FunctionCall> {
+		const apiKey = this.apiKeyManager.getActiveApiKey();
+		if (!apiKey) {
+			throw new Error("No API Key available for function call.");
+		}
+
+		// We could add retry logic here similar to generateWithRetry if needed in the future
+		return this.generateFunctionCall(
+			apiKey,
+			modelName,
+			contents,
+			tools,
+			functionCallingMode,
+			token,
+			contextString
+		);
 	}
 }

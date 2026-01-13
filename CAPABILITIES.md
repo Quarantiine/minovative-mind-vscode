@@ -93,6 +93,13 @@ Minovative Mind builds a profound understanding of your project using comprehens
 - **Cached Analysis**: Caches and batches dependency graph analysis to improve performance for symbol and reference lookups. It also includes internal file caching to prevent redundant processing.
 - **Smart Truncation & Progressive Loading**: Employs intelligent truncation and progressive loading of content to optimize token usage and response times.
 
+### 3.4 Agentic Context Investigation
+
+- **Active Codebase Exploration**: The Context Agent actively "looks around" your codebase using safe terminal commands (`ls`, `grep`, `find`, `cat`) to discover relevant files that static analysis might miss.
+- **Error-Aware Investigation**: Automatically detects when you're asking about errors or bugs and proactively investigates error messages, stack traces, and relevant code paths before generating a response.
+- **Safe Execution Environment**: All investigation commands are executed in a secure, read-only sandbox that prevents modification or external network access.
+- **Transparent Operation**: You see exactly what the agent is doing—every command run and its output is logged transparently in the chat interface.
+
 ### 3.3 Resilient Context Construction
 
 - **Large Project Handling**: Designed to efficiently handle large projects by strategically skipping oversized files (e.g., 1MB+ files).
@@ -163,5 +170,3 @@ Tailor Minovative Mind to your specific needs and preferences.
 ---
 
 Minovative Mind merges robust software engineering with advanced AI tooling to create a seamless, secure, and efficient development experience inside Visual Studio Code.
-
-> Built by [Daniel Ward](https://github.com/Quarantiine), a USA based developer under Minovative (Minovative = minimal-innovative) Technologies [A DBA registered self-employed company in the US]

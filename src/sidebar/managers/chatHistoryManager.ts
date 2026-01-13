@@ -66,7 +66,9 @@ export class ChatHistoryManager {
 							(item.isPlanExplanation === undefined ||
 								typeof item.isPlanExplanation === "boolean") &&
 							(item.isPlanStepUpdate === undefined ||
-								typeof item.isPlanStepUpdate === "boolean")
+								typeof item.isPlanStepUpdate === "boolean") &&
+							(item.isContextAgentLog === undefined ||
+								typeof item.isContextAgentLog === "boolean")
 					)
 				) {
 					// Map loaded history to apply defensive defaults where needed
@@ -117,7 +119,8 @@ export class ChatHistoryManager {
 		relevantFiles?: string[],
 		isRelevantFilesExpanded?: boolean,
 		isPlanExplanation: boolean = false,
-		isPlanStepUpdate: boolean = false
+		isPlanStepUpdate: boolean = false,
+		isContextAgentLog: boolean = false
 	): void {
 		let parts: HistoryEntryPart[];
 		let contentForDuplicateCheck: string;
@@ -199,6 +202,7 @@ export class ChatHistoryManager {
 			}),
 			isPlanExplanation: isPlanExplanation,
 			isPlanStepUpdate: isPlanStepUpdate,
+			isContextAgentLog: isContextAgentLog,
 		};
 
 		this._chatHistory.push(newEntry);
@@ -227,7 +231,49 @@ export class ChatHistoryManager {
 		}
 
 		console.log(`Removing message at index ${index} from history.`);
+
+		const entryToDelete = this._chatHistory[index];
+		const isLog = entryToDelete.isContextAgentLog === true;
+
+		// 1. Cascade Backward: remove contiguous logs PRECEDING this message
+		// Only cascade if the message being deleted is NOT itself a log
+		let backwardDeletedCount = 0;
+		if (!isLog) {
+			let prevIndex = index - 1;
+			while (
+				prevIndex >= 0 &&
+				this._chatHistory[prevIndex].isContextAgentLog === true
+			) {
+				console.log(
+					`Cascade backward deleting Context Agent log at index ${prevIndex}.`
+				);
+				this._chatHistory.splice(prevIndex, 1);
+				backwardDeletedCount++;
+				prevIndex--;
+				index--; // Adjust current index because we removed an item before it
+			}
+		}
+
+		// 2. Remove the primary entry (at adjusted index)
+		// If it's a log, we start cascading forward from here.
 		this._chatHistory.splice(index, 1);
+		let totalDeleted = backwardDeletedCount + 1;
+
+		// 3. Cascade Forward: remove contiguous logs FOLLOWING this message
+		// Cascade forward if the message being deleted is NOT a log (parent cleanup)
+		// OR if it IS a log (cleanup the rest of the group)
+		while (
+			index < this._chatHistory.length &&
+			this._chatHistory[index].isContextAgentLog === true
+		) {
+			console.log(
+				`Cascade forward deleting Context Agent log at index ${index}.`
+			);
+			this._chatHistory.splice(index, 1);
+			totalDeleted++;
+		}
+
+		console.log(`Deleted ${totalDeleted} message(s) total.`);
 		this.saveHistoryToStorage();
 		this.restoreChatHistoryToWebview();
 	}
@@ -483,11 +529,20 @@ export class ChatHistoryManager {
 				}
 			});
 
+			const isContextAgentLog = entry.isContextAgentLog || false;
 			const baseChatMessage: ChatMessage & { imageParts?: ImageInlineData[] } =
 				{
-					sender: entry.role === "user" ? "User" : "Model",
+					sender: isContextAgentLog
+						? "Context Agent"
+						: entry.role === "user"
+						? "User"
+						: "Model",
 					text: concatenatedText.trim(), // Use the accumulated text
-					className: entry.role === "user" ? "user-message" : "ai-message",
+					className: isContextAgentLog
+						? "context-agent-log"
+						: entry.role === "user"
+						? "user-message"
+						: "ai-message",
 					...(entry.diffContent && { diffContent: entry.diffContent }),
 					...(entry.relevantFiles && { relevantFiles: entry.relevantFiles }),
 					...(entry.relevantFiles &&
@@ -496,6 +551,7 @@ export class ChatHistoryManager {
 						}),
 					isPlanExplanation: entry.isPlanExplanation,
 					isPlanStepUpdate: entry.isPlanStepUpdate,
+					isContextAgentLog: isContextAgentLog,
 				};
 
 			// Conditionally add imageParts if there are any

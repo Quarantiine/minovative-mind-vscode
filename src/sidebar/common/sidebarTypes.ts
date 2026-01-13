@@ -18,6 +18,7 @@ export interface HistoryEntry extends Omit<Content, "parts"> {
 	isRelevantFilesExpanded?: boolean;
 	isPlanExplanation?: boolean;
 	isPlanStepUpdate?: boolean;
+	isContextAgentLog?: boolean;
 }
 
 export interface ToggleRelevantFilesDisplayMessage {
@@ -50,7 +51,7 @@ export interface KeyUpdateData {
 }
 
 export interface ChatMessage {
-	sender: "User" | "Model" | "System";
+	sender: "User" | "Model" | "System" | "Context Agent";
 	text: string;
 	className: string;
 	diffContent?: string;
@@ -58,6 +59,7 @@ export interface ChatMessage {
 	isRelevantFilesExpanded?: boolean;
 	isPlanExplanation?: boolean;
 	isPlanStepUpdate?: boolean;
+	isContextAgentLog?: boolean;
 	imageParts?: ImageInlineData[];
 }
 
@@ -323,6 +325,26 @@ export interface ReceiveWorkspaceFilesMessage {
 	value: string[]; // Array of relative file paths
 }
 
+export interface AiRetryNotificationMessage {
+	type: "aiRetryNotification";
+	value: {
+		currentDelay: number; // Delay in seconds
+		reason: string;
+	};
+}
+
+export interface ContextAgentLogMessage {
+	type: "contextAgentLog";
+	value: {
+		text: string;
+	};
+}
+
+export interface SetContextAgentLoadingMessage {
+	type: "setContextAgentLoading";
+	value: boolean;
+}
+
 /**
  * Message sent from the extension to the webview to indicate the webview is ready
  * and can now receive state updates or initial data.
@@ -414,7 +436,10 @@ export type ExtensionToWebviewMessages =
 	| CancelCommitMessage
 	| UpdateRelevantFilesDisplayMessage
 	| PlanTimelineInitializeMessage // Added new interface
-	| PlanTimelineProgressMessage; // Added new interface
+	| PlanTimelineProgressMessage
+	| AiRetryNotificationMessage
+	| ContextAgentLogMessage
+	| SetContextAgentLoadingMessage;
 
 export interface PlanGenerationContext {
 	type: "chat" | "editor";
