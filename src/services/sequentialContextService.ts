@@ -487,7 +487,8 @@ export class SequentialContextService {
 						type: "statusUpdate",
 						value: `AI selected ${aiSelectedFiles.length} most relevant files.`,
 					});
-					return aiSelectedFiles;
+					// Map FileSelection to Uri for compatibility with SequentialContextService
+					return aiSelectedFiles.map((selection) => selection.uri);
 				}
 			} catch (error) {
 				console.warn(

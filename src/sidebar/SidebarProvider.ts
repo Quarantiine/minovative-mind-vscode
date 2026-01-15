@@ -144,6 +144,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	public isPlanExecutionActive: boolean = false;
 	/** Unique ID for the current user operation (chat, plan generation, commit generation). Used for concurrency control and tracking streaming responses. */
 	public currentActiveChatOperationId: string | null = null;
+	/** List of steps in the currently executing plan. */
+	public currentPlanSteps: string[] = [];
+	/** Index of the currently executing step within the current plan. */
+	public currentPlanStepIndex: number = -1;
+	/** Flag indicating if the context agent is currently loading/working. */
+	public isContextAgentLoading: boolean = false;
 
 	/**
 	 * Determines if a user operation is currently active, based on the presence of an operation ID
@@ -426,6 +432,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	public postMessageToWebview(
 		message: sidebarTypes.ExtensionToWebviewMessages
 	): void {
+		// Intercept state-changing messages to keep SidebarProvider state in sync
+		if (message.type === "setContextAgentLoading") {
+			this.isContextAgentLoading = message.value;
+		}
+
 		// Messages that should bypass throttling (immediate delivery)
 		const immediateTypes = new Set<
 			sidebarTypes.ExtensionToWebviewMessages["type"]
@@ -619,6 +630,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			await this._resetQuiescentUIState();
 		}
 
+		// Restore Context Agent loading state if active
+		if (this.isContextAgentLoading) {
+			this.postMessageToWebview({
+				type: "setContextAgentLoading",
+				value: true,
+			});
+		}
+
 		// Send final message about revertible changes
 		const hasRevertibleChanges = this.completedPlanChangeSets.length > 0;
 		this.postMessageToWebview({
@@ -636,6 +655,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		);
 		this.postMessageToWebview({ type: "updateLoadingState", value: true });
 		this.postMessageToWebview({ type: "planExecutionStarted" });
+
+		// Restore the timeline
+		if (this.currentPlanSteps.length > 0) {
+			this.postMessageToWebview({
+				type: "planTimelineInitialize",
+				stepDescriptions: this.currentPlanSteps,
+			});
+
+			// Just send the latest progress update to ensure the active step is highlighted
+			if (this.currentPlanStepIndex >= 0) {
+				this.postMessageToWebview({
+					type: "planTimelineProgress",
+					stepIndex: this.currentPlanStepIndex,
+					status: "running", // Assume running if we are restoring state
+					detail: "Resuming execution...",
+				});
+			}
+		}
+
 		this.postMessageToWebview({
 			type: "statusUpdate",
 			value: "A plan execution is currently in progress. Please wait.",

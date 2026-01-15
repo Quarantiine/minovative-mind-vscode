@@ -72,6 +72,7 @@ For initial setup and installation, please refer to the [README.md](https://gith
 - **Executing a Plan**:
   - You will be prompted for confirmation before the AI executes a generated plan.
   - Monitor execution progress through VS Code notifications.
+  - **Smart Context**: The AI will automatically find and read relevant code snippets for each step of the plan, ensuring it has the full picture before writing code.
   - Plans can be cancelled if needed during execution.
 - **Reverting Changes**: The \"Revert Changes\" button, at the top right, allows you to undo AI-driven workflow actions if necessary.
 

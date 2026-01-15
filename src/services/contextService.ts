@@ -20,6 +20,7 @@ import {
 import {
 	selectRelevantFilesAI,
 	SelectRelevantFilesAIOptions,
+	FileSelection,
 	MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION, // Import for summary length
 	clearAISelectionCache, // Import clearAISelectionCache for cache invalidation
 } from "../context/smartContextSelector";
@@ -40,7 +41,7 @@ import {
 	formatProjectProfileForPrompt,
 } from "./projectTypeDetector"; // Import project type detection and formatting
 import {
-	DEFAULT_FLASH_LITE_MODEL,
+	DEFAULT_FLASH_MODEL,
 	DEFAULT_SIZE,
 } from "../sidebar/common/sidebarConstants";
 
@@ -398,6 +399,20 @@ export class ContextService {
 		}
 
 		return stringMap;
+	}
+
+	/**
+	 * Scans the workspace for files, using the default settings.
+	 * Exposes the internal scan functionality for other services.
+	 */
+	public async scanWorkspaceFiles(): Promise<vscode.Uri[]> {
+		// Use defaults similar to buildProjectContext
+		return scanWorkspace({
+			useCache: true,
+			maxConcurrentReads: 15,
+			maxFileSize: DEFAULT_SIZE,
+			cacheTimeout: 5 * 60 * 1000,
+		});
 	}
 
 	public async buildProjectContext(
@@ -1042,10 +1057,13 @@ export class ContextService {
 									token
 								);
 							},
-							modelName: DEFAULT_FLASH_LITE_MODEL, // Use the default model for selection
+							modelName: DEFAULT_FLASH_MODEL, // Use the default model for selection
 							cancellationToken,
 							fileDependencies:
 								this._convertDependencyMapToStringMap(fileDependencies),
+							reverseDependencies: this._convertDependencyMapToStringMap(
+								reverseFileDependencies
+							),
 							preSelectedHeuristicFiles: heuristicSelectedFiles, // Pass heuristicSelectedFiles
 							fileSummaries: fileSummariesForAI, // Pass the generated file summaries
 							selectionOptions: {
@@ -1073,7 +1091,10 @@ export class ContextService {
 								);
 							},
 						};
-						const selectedFiles = await selectRelevantFilesAI(selectionOptions);
+						const selectedFileSelections = await selectRelevantFilesAI(
+							selectionOptions
+						);
+						const selectedFiles = selectedFileSelections.map((s) => s.uri);
 
 						if (selectedFiles.length > 0) {
 							filesForContextBuilding = selectedFiles;
@@ -1321,7 +1342,7 @@ export class ContextService {
 					enableDetailedAnalysis: options?.enableDetailedAnalysis ?? true,
 					includeDependencies: options?.includeDependencies ?? true,
 					complexityThreshold: options?.complexityThreshold ?? "medium",
-					modelName: DEFAULT_FLASH_LITE_MODEL, // Use the default model for sequential processing
+					modelName: DEFAULT_FLASH_MODEL, // Use the default model for sequential processing
 					onProgress: options?.onProgress,
 					onFileProcessed: options?.onFileProcessed,
 				}

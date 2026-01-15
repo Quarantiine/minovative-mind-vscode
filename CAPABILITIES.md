@@ -48,7 +48,8 @@ Minovative Mind can autonomously plan and execute complex development tasks, sig
 - **High-Level Goal Execution**: Provide a high-level objective, and the AI will generate a structured, multi-step plan to achieve it.
 - **Automated Workflow**: The AI executes its plan by creating new files, writing and modifying code, and running shell commands (`create_directory`, `create_file`, `modify_file`, `run_command`).
 - **Intelligent Command Escalation**: Commands like `/fix` or general code edits can automatically escalate to a full plan execution when task complexity warrants it.
-- **Confirmation & Monitoring**: You'll be prompted for confirmation before a plan executes, and you can monitor its progress through real-time VS Code notifications, with options to cancel specific ongoing tasks.
+- **Dynamic Context Refinement**: Unlike static plans, the AI re-evaluates project context _before every single step_. It investigates the codebase and reads only the specific lines of code needed for that step (e.g., "read lines 50-100 of auth.ts"), ensuring maximum accuracy and minimal token usage.
+- **Confirmation & Monitoring**: You'll be prompted for confirmation before a plan executes, and you can monitor its progress, with options to cancel specific ongoing tasks.
 
 ### 2.2 Intelligent Code Modification
 

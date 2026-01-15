@@ -42,6 +42,18 @@ export class SafeCommandExecutor {
 				(error, stdout, stderr) => {
 					// 2MB buffer
 					if (error) {
+						// Handle maxBuffer exceeded error by returning truncated output
+						if (
+							error.message.includes("maxBuffer") ||
+							(error as any).code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+						) {
+							resolve(
+								stdout +
+									"\n... [Output truncated by Context Agent due to size limit (2MB)]"
+							);
+							return;
+						}
+
 						reject(new Error(stderr || error.message));
 						return;
 					}
@@ -57,8 +69,14 @@ export class SafeCommandExecutor {
 			return false;
 		}
 
+		// Remove quoted strings before checking for dangerous operators
+		// This allows patterns like grep -E '_(handle|execute)' where | is inside quotes
+		const withoutQuotes = trimmed
+			.replace(/'[^']*'/g, "") // Remove single-quoted strings
+			.replace(/"[^"]*"/g, ""); // Remove double-quoted strings
+
 		// Check for chaining operators or redirection which might indicate shell injection or unwanted complexity
-		if (this.BLOCKED_FLAGS.has(trimmed) || /([;&|]|\n)/.test(trimmed)) {
+		if (this.BLOCKED_FLAGS.has(trimmed) || /([;&|]|\n)/.test(withoutQuotes)) {
 			// Basic check against multiple commands. Smart splitting is hard, so we whitelist simple structures.
 			// We allow pipes if they are just piping to grep maybe? For now, STRICT NO PIPES to be safe.
 			return false;

@@ -542,7 +542,7 @@ export class AIRequestService {
 		functionCallingMode?: FunctionCallingMode,
 		token?: vscode.CancellationToken,
 		contextString: string = "function_call" // New parameter with default value
-	): Promise<FunctionCall> {
+	): Promise<FunctionCall | null> {
 		if (token?.isCancellationRequested) {
 			console.log(
 				"[AIRequestService] Function call generation cancelled at start."
@@ -611,9 +611,7 @@ export class AIRequestService {
 				modelName,
 				inputContextForTracking
 			);
-			throw new Error(
-				`AI response did not contain a valid function call for model ${modelName}`
-			);
+			return null;
 		}
 
 		// Convert functionCall to string for output token estimation
@@ -681,7 +679,7 @@ export class AIRequestService {
 		functionCallingMode?: FunctionCallingMode,
 		token?: vscode.CancellationToken,
 		contextString: string = "function_call"
-	): Promise<FunctionCall> {
+	): Promise<FunctionCall | null> {
 		const apiKey = this.apiKeyManager.getActiveApiKey();
 		if (!apiKey) {
 			throw new Error("No API Key available for function call.");

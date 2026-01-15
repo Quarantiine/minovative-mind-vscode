@@ -18,6 +18,10 @@ import {
 	SchemaType,
 	FunctionCallingMode,
 } from "@google/generative-ai";
+import {
+	gatherProjectConfigContext,
+	formatProjectConfigForPrompt,
+} from "./configContextProvider";
 
 const MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION = 10000;
 export { MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION };
@@ -26,10 +30,15 @@ export { MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION };
  * Represents a file selection with optional line range constraints.
  * Used for chunked/targeted file reading to reduce context size.
  */
+/**
+ * Represents a file selection with optional line range constraints.
+ * Used for chunked/targeted file reading to reduce context size.
+ */
 export interface FileSelection {
 	uri: vscode.Uri;
 	startLine?: number; // 1-indexed, inclusive
 	endLine?: number; // 1-indexed, inclusive
+	symbolName?: string; // Optional symbol name to resolve range for
 }
 
 /**
@@ -40,26 +49,44 @@ export interface FileSelection {
  *   "src/auth.ts:42" -> { path: "src/auth.ts", startLine: 42, endLine: 42 }
  *   "src/auth.ts" -> { path: "src/auth.ts", startLine: undefined, endLine: undefined }
  */
-function parseLineRange(pathWithRange: string): {
+/**
+ * Parses a file path that may contain a line range or symbol suffix.
+ * Format: "filepath:startLine-endLine", "filepath:line", "filepath#symbol"
+ */
+function parseFileSelector(pathWithSelector: string): {
 	path: string;
 	startLine?: number;
 	endLine?: number;
+	symbolName?: string;
 } {
-	// Match patterns like "file.ts:10-50" or "file.ts:42"
-	const rangeMatch = pathWithRange.match(/^(.+):(\d+)(?:-(\d+))?$/);
+	// 1. Check for Symbol: "file.ts#symbolName"
+	const symbolMatch = pathWithSelector.match(/^(.+)#(.+)$/);
+	if (symbolMatch) {
+		return {
+			path: symbolMatch[1],
+			symbolName: symbolMatch[2],
+			startLine: undefined,
+			endLine: undefined,
+		};
+	}
+
+	// 2. Check for Line Range: "file.ts:10-50" or "file.ts:42"
+	const rangeMatch = pathWithSelector.match(/^(.+):(\d+)(?:-(\d+))?$/);
 	if (rangeMatch) {
 		const [, filePath, startStr, endStr] = rangeMatch;
 		const startLine = parseInt(startStr, 10);
 		const endLine = endStr ? parseInt(endStr, 10) : startLine;
 		return { path: filePath, startLine, endLine };
 	}
-	return { path: pathWithRange, startLine: undefined, endLine: undefined };
+
+	// 3. Default: Just file path
+	return { path: pathWithSelector, startLine: undefined, endLine: undefined };
 }
 
 // Cache interface for AI selection results
 interface AISelectionCache {
 	timestamp: number;
-	selectedFiles: vscode.Uri[];
+	selectedFiles: FileSelection[];
 	userRequest: string;
 	activeFile?: string;
 	fileCount: number;
@@ -87,6 +114,7 @@ export interface SelectRelevantFilesAIOptions {
 	activeEditorContext?: PlanGenerationContext["editorContext"];
 	diagnostics?: string;
 	fileDependencies?: Map<string, string[]>;
+	reverseDependencies?: Map<string, string[]>; // Files that import each file
 	activeEditorSymbols?: vscode.DocumentSymbol[];
 	preSelectedHeuristicFiles?: vscode.Uri[];
 	fileSummaries?: Map<string, string>;
@@ -204,7 +232,7 @@ function optimizePrompt(
  */
 export async function selectRelevantFilesAI(
 	options: SelectRelevantFilesAIOptions
-): Promise<vscode.Uri[]> {
+): Promise<FileSelection[]> {
 	const {
 		userRequest,
 		allScannedFiles,
@@ -291,7 +319,16 @@ export async function selectRelevantFilesAI(
 		});
 	}
 
+	// Gather project configuration context
+	const projectConfig = await gatherProjectConfigContext(projectRoot);
+	const projectConfigPrompt = formatProjectConfigForPrompt(projectConfig);
+
 	let contextPrompt = `User Request: "${userRequest}"\n`;
+
+	// Add project configuration context if available
+	if (projectConfigPrompt) {
+		contextPrompt += `\n${projectConfigPrompt}\n`;
+	}
 
 	if (preSelectedHeuristicFiles && preSelectedHeuristicFiles.length > 0) {
 		const heuristicPaths = preSelectedHeuristicFiles.map((uri) =>
@@ -400,19 +437,55 @@ export async function selectRelevantFilesAI(
 				.map((d) => `- ${d}`)
 				.join("\n");
 	} else {
-		// Standard mode: list all files with optional summaries
+		// Standard mode: list all files with optional summaries and relationships
+		// Create a set of heuristic files for faster lookup
+		const heuristicPathSet = new Set(
+			preSelectedHeuristicFiles?.map((uri) =>
+				path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/")
+			) || []
+		);
+
 		fileListString =
 			"--- Available Project Files ---\n" +
 			relativeFilePaths
 				.map((p) => {
 					const summary = fileSummaries?.get(p);
-					return `- "${p}"${
-						summary
-							? ` (Summary: ${summary
-									.substring(0, 200)
-									.replace(/\s+/g, " ")}...)`
-							: ""
-					}`;
+					let fileEntry = `- "${p}"`;
+
+					// Add summary if available
+					if (summary) {
+						fileEntry += ` (${summary
+							.substring(0, 150)
+							.replace(/\s+/g, " ")}...)`;
+					}
+
+					// Add relationship info for heuristic files (most relevant)
+					if (heuristicPathSet.has(p)) {
+						const imports = options.fileDependencies?.get(p);
+						const importedBy = options.reverseDependencies?.get(p);
+
+						if (imports && imports.length > 0) {
+							const importList = imports
+								.slice(0, 5)
+								.map((i) => path.basename(i))
+								.join(", ");
+							const moreCount =
+								imports.length > 5 ? ` +${imports.length - 5} more` : "";
+							fileEntry += `\n    ↳ imports: ${importList}${moreCount}`;
+						}
+
+						if (importedBy && importedBy.length > 0) {
+							const importedByList = importedBy
+								.slice(0, 3)
+								.map((i) => path.basename(i))
+								.join(", ");
+							const moreCount =
+								importedBy.length > 3 ? ` +${importedBy.length - 3} more` : "";
+							fileEntry += `\n    ↳ imported by: ${importedByList}${moreCount}`;
+						}
+					}
+
+					return fileEntry;
 				})
 				.join("\n");
 	}
@@ -430,6 +503,40 @@ export async function selectRelevantFilesAI(
 			2000
 		)}\n--- End Diagnostics ---\n`;
 	}
+
+	// Build Chat History Context
+	let historyContext = "";
+	if (options.chatHistory && options.chatHistory.length > 0) {
+		const MAX_HISTORY_LENGTH = 3000;
+		// Filter out context agent logs and non-text parts if needed, keep last 5 turns
+		const recentHistory = [...options.chatHistory]
+			.filter((entry) => !entry.isContextAgentLog) // Exclude internal agent logs
+			.slice(-5);
+
+		const historyString = recentHistory
+			.map((entry) => {
+				const role = entry.role === "user" ? "User" : "Model";
+				const text = entry.parts
+					.filter((p): p is { text: string } => "text" in p)
+					.map((p) => p.text)
+					.join(" ");
+				return `${role}: ${text}`;
+			})
+			.join("\n");
+
+		if (historyString.length > 0) {
+			const truncatedHistory =
+				historyString.length > MAX_HISTORY_LENGTH
+					? "...(older history truncated)\n" +
+					  historyString.substring(historyString.length - MAX_HISTORY_LENGTH)
+					: historyString;
+
+			historyContext = `\n--- Recent Conversation History ---\n${truncatedHistory}\n--- End Conversation History ---\n`;
+		}
+	}
+
+	// Append history to contextPrompt
+	contextPrompt += historyContext;
 
 	// Build investigation instruction based on context
 	let investigationInstruction: string;
@@ -505,15 +612,17 @@ ${investigationInstruction}
 					{
 						name: "finish_selection",
 						description:
-							"Call this when you have found all relevant file paths. Supports optional line ranges (e.g., 'file.ts:10-50' for lines 10-50, 'file.ts:42' for line 42 only). Returns the final list.",
+							"Call this when you have found all relevant file paths. Supports optional line ranges OR symbol names. Returns the final list.",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {
 								selectedFiles: {
 									type: SchemaType.ARRAY,
 									description:
-										"JSON Array of file paths. Supports line ranges: 'path/file.ts' (full file), 'path/file.ts:10-50' (lines 10-50), 'path/file.ts:42' (line 42 only)",
-									items: { type: SchemaType.STRING },
+										"JSON Array of file paths. Supports line ranges: 'path/file.ts' (full), 'path/file.ts:10-50' (lines), OR symbols: 'path/file.ts#symbolName' (e.g. 'auth.ts#login'). You can also use objects: { \"path\": \"src/auth.ts\", \"symbol\": \"login\" }.",
+									items: {
+										type: SchemaType.STRING, // Use STRING to avoid enum errors, rely on string parsing
+									},
 								},
 							},
 							required: ["selectedFiles"],
@@ -540,6 +649,7 @@ ${investigationInstruction}
 		];
 
 		// 2. Run Loop if Service Available
+		let currentHistory: Content[] | undefined;
 		if (aiRequestService) {
 			console.log(`[SmartContextSelector] Starting Agentic Selection Loop`);
 			if (postMessageToWebview) {
@@ -549,7 +659,7 @@ ${investigationInstruction}
 				});
 			}
 
-			let currentHistory: Content[] = [
+			currentHistory = [
 				{
 					role: "user",
 					parts: [{ text: selectionPrompt }],
@@ -564,7 +674,7 @@ ${investigationInstruction}
 				}
 
 				// Generate
-				let functionCall: FunctionCall;
+				let functionCall: FunctionCall | null;
 				try {
 					functionCall = await aiRequestService.generateManagedFunctionCall(
 						modelName,
@@ -581,6 +691,21 @@ ${investigationInstruction}
 					break;
 				}
 
+				if (!functionCall) {
+					console.warn(
+						`[SmartContextSelector] Agent returned text instead of function call. Retrying.`
+					);
+					currentHistory.push({
+						role: "user",
+						parts: [
+							{
+								text: "Error: You responded with conversational text. You MUST call one of the provided tools (run_terminal_command, lookup_workspace_symbol, or finish_selection). Do not provide explanations.",
+							},
+						],
+					});
+					continue;
+				}
+
 				// Handle
 				if (functionCall.name === "finish_selection") {
 					console.log(
@@ -595,8 +720,6 @@ ${investigationInstruction}
 						relativeFilePaths,
 						activeEditorContext
 					);
-					// Extract URIs for backward compatibility (line ranges preserved in result)
-					const resultUris = _extractUrisFromSelections(result);
 
 					// Cache result
 					if (useCache) {
@@ -608,7 +731,7 @@ ${investigationInstruction}
 						);
 						aiSelectionCache.set(cacheKey, {
 							timestamp: Date.now(),
-							selectedFiles: resultUris,
+							selectedFiles: result,
 							userRequest,
 							activeFile: activeEditorContext?.filePath,
 							fileCount: allScannedFiles.length,
@@ -621,7 +744,7 @@ ${investigationInstruction}
 							value: false,
 						});
 					}
-					return resultUris;
+					return result;
 				} else if (functionCall.name === "run_terminal_command") {
 					const args = functionCall.args as any;
 					const command = args["command"] as string;
@@ -794,6 +917,36 @@ ${investigationInstruction}
 			responseMimeType: "application/json",
 		};
 
+		// Gather investigation history if available
+		let investigationContext = "";
+		if (aiRequestService && currentHistory && currentHistory.length > 1) {
+			const toolOutputs: string[] = [];
+			for (const content of currentHistory) {
+				if (content.role === "function" && content.parts) {
+					for (const part of content.parts) {
+						if (part.functionResponse) {
+							const name = part.functionResponse.name;
+							const res = part.functionResponse.response as any;
+							if (name === "run_terminal_command") {
+								toolOutputs.push(`Command output: ${res.result}`);
+							} else if (name === "lookup_workspace_symbol") {
+								toolOutputs.push(`Symbol lookup result: ${res.result}`);
+							}
+						}
+					}
+				}
+			}
+
+			if (toolOutputs.length > 0) {
+				investigationContext = `
+-- Investigation Findings (Previous Attempt) --
+The following information was gathered during an investigation phase:
+${toolOutputs.join("\n\n")}
+-- End Investigation Findings --
+`;
+			}
+		}
+
 		// Simple prompt for legacy/fallback
 		const legacyPrompt = `
 You are an expert AI developer assistant. Your task is to select the most relevant files to help with a user's request.
@@ -801,6 +954,8 @@ You are an expert AI developer assistant. Your task is to select the most releva
 -- Context --
 ${contextPrompt}
 -- End Context --
+
+${investigationContext}
 
 ${fileListString}
 
@@ -835,8 +990,6 @@ JSON Array of selected file paths:
 			relativeFilePaths,
 			activeEditorContext
 		);
-		// Extract URIs for backward compatibility
-		const resultUris = _extractUrisFromSelections(result);
 
 		// Cache result for legacy path too
 		if (useCache) {
@@ -848,7 +1001,7 @@ JSON Array of selected file paths:
 			);
 			aiSelectionCache.set(cacheKey, {
 				timestamp: Date.now(),
-				selectedFiles: resultUris,
+				selectedFiles: result,
 				userRequest,
 				activeFile: activeEditorContext?.filePath,
 				fileCount: allScannedFiles.length,
@@ -856,7 +1009,7 @@ JSON Array of selected file paths:
 			});
 		}
 
-		return resultUris;
+		return result;
 	} catch (error) {
 		console.error(
 			"[SmartContextSelector] Error during AI file selection:",
@@ -867,7 +1020,13 @@ JSON Array of selected file paths:
 		if (activeEditorContext?.documentUri) {
 			fallbackFiles.add(activeEditorContext.documentUri);
 		}
-		return Array.from(fallbackFiles);
+
+		// Map Set<vscode.Uri> to FileSelection[]
+		return Array.from(fallbackFiles).map((uri) => ({
+			uri,
+			startLine: undefined,
+			endLine: undefined,
+		}));
 	}
 }
 
@@ -889,9 +1048,14 @@ function _processSelectedPaths(
 	const projectFileSet = new Set(relativeFilePaths.map((p) => p.toLowerCase()));
 	const finalSelections = new Map<string, FileSelection>(); // Use map to dedupe by fsPath
 
-	// Add AI selected files with optional line ranges
+	// Add AI selected files with optional line ranges or symbols
 	for (const selectedPath of selectedPaths as string[]) {
-		const { path: filePath, startLine, endLine } = parseLineRange(selectedPath);
+		const {
+			path: filePath,
+			startLine,
+			endLine,
+			symbolName,
+		} = parseFileSelector(selectedPath);
 		const normalizedPath = filePath.replace(/\\/g, "/");
 
 		if (projectFileSet.has(normalizedPath.toLowerCase())) {
@@ -907,6 +1071,9 @@ function _processSelectedPaths(
 				if (existingSelection) {
 					// If file already selected, expand the range to include both
 					// (This handles cases where AI selects overlapping ranges)
+					// Verify logic: Overlapping ranges might need merge.
+					// Symbols might override ranges or exist alongside.
+					// For simplicity, if symbol is present, we keep it. If range, expand.
 					if (startLine && endLine) {
 						existingSelection.startLine = existingSelection.startLine
 							? Math.min(existingSelection.startLine, startLine)
@@ -915,11 +1082,15 @@ function _processSelectedPaths(
 							? Math.max(existingSelection.endLine, endLine)
 							: endLine;
 					}
+					if (symbolName) {
+						existingSelection.symbolName = symbolName; // Overwrite or keep last? Keep last for now.
+					}
 				} else {
 					finalSelections.set(originalUri.fsPath, {
 						uri: originalUri,
 						startLine,
 						endLine,
+						symbolName,
 					});
 				}
 			}

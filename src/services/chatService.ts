@@ -7,7 +7,7 @@ import {
 import { GenerationConfig } from "@google/generative-ai";
 import { UrlContextService } from "./urlContextService";
 import { HistoryEntry, HistoryEntryPart } from "../sidebar/common/sidebarTypes";
-import { DEFAULT_FLASH_LITE_MODEL } from "../sidebar/common/sidebarConstants";
+import { DEFAULT_FLASH_MODEL } from "../sidebar/common/sidebarConstants";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import { ContextBuildOptions } from "../types/context";
 
@@ -72,7 +72,7 @@ export class ChatService {
 	): Promise<void> {
 		const { settingsManager } = this.provider;
 		const apiKey = this.provider.apiKeyManager.getActiveApiKey();
-		const modelName = DEFAULT_FLASH_LITE_MODEL;
+		const modelName = DEFAULT_FLASH_MODEL;
 
 		await this.provider.startUserOperation("chat");
 		const operationId = this.provider.currentActiveChatOperationId;
@@ -347,7 +347,7 @@ export class ChatService {
 			contextService,
 			aiRequestService,
 		} = this.provider;
-		const modelName = DEFAULT_FLASH_LITE_MODEL;
+		const modelName = DEFAULT_FLASH_MODEL;
 
 		await this.provider.startUserOperation("chat");
 		const operationId = this.provider.currentActiveChatOperationId;

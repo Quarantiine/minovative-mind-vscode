@@ -25,6 +25,12 @@ import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
 import { executeCommand, CommandResult } from "../utils/commandExecution";
 import * as sidebarConstants from "../sidebar/common/sidebarConstants";
 import { DiagnosticService } from "../utils/diagnosticUtils";
+import {
+	selectRelevantFilesAI,
+	SelectRelevantFilesAIOptions,
+	FileSelection,
+} from "../context/smartContextSelector";
+import { getSymbolsInDocument } from "./symbolService";
 
 export class PlanExecutorService {
 	private commandExecutionTerminals: vscode.Terminal[] = [];
@@ -140,6 +146,12 @@ export class PlanExecutorService {
 							return;
 						}
 
+						// Sync Plan Steps to SidebarProvider
+						this.provider.currentPlanSteps = orderedSteps.map((s, idx) =>
+							this._getStepDescription(s, idx, orderedSteps.length, 0)
+						);
+						this.provider.currentPlanStepIndex = -1;
+
 						const originalRootInstruction =
 							planContext.type === "chat"
 								? planContext.originalUserRequest ?? ""
@@ -208,6 +220,10 @@ export class PlanExecutorService {
 			this.postMessageToWebview({
 				type: "planExecutionEnded",
 			});
+
+			// Clear plan state
+			this.provider.currentPlanSteps = [];
+			this.provider.currentPlanStepIndex = -1;
 
 			await this.provider.endUserOperation(outcome);
 
@@ -339,6 +355,9 @@ export class PlanExecutorService {
 			const isCommandStep = isRunCommandStep(step);
 
 			while (!currentStepCompletedSuccessfullyOrSkipped) {
+				// Sync current plan step index
+				this.provider.currentPlanStepIndex = index;
+
 				if (combinedToken.isCancellationRequested) {
 					throw new Error(ERROR_OPERATION_CANCELLED);
 				}
@@ -616,7 +635,7 @@ export class PlanExecutorService {
 	}
 
 	private async _formatRelevantFilesForPrompt(
-		relevantFiles: string[],
+		relevantFiles: (string | FileSelection)[],
 		workspaceRootUri: vscode.Uri,
 		token: vscode.CancellationToken
 	): Promise<string> {
@@ -627,9 +646,69 @@ export class PlanExecutorService {
 		const formattedSnippets: string[] = [];
 		const maxFileSizeForSnippet = sidebarConstants.DEFAULT_SIZE;
 
-		for (const relativePath of relevantFiles) {
+		for (const fileItem of relevantFiles) {
 			if (token.isCancellationRequested) {
 				return formattedSnippets.join("\n");
+			}
+
+			let relativePath: string;
+			let startLine: number | undefined;
+			let endLine: number | undefined;
+
+			if (typeof fileItem === "string") {
+				relativePath = fileItem;
+			} else {
+				relativePath = path
+					.relative(workspaceRootUri.fsPath, fileItem.uri.fsPath)
+					.replace(/\\/g, "/");
+				startLine = fileItem.startLine;
+				endLine = fileItem.endLine;
+
+				// Symbol Resolution
+				if (
+					fileItem.symbolName &&
+					startLine === undefined &&
+					endLine === undefined
+				) {
+					try {
+						const symbols = await getSymbolsInDocument(fileItem.uri);
+						if (symbols) {
+							const findSymbol = (
+								symbols: vscode.DocumentSymbol[],
+								name: string
+							): vscode.DocumentSymbol | undefined => {
+								for (const symbol of symbols) {
+									if (symbol.name === name) {
+										return symbol;
+									}
+									if (symbol.children) {
+										const found = findSymbol(symbol.children, name);
+										if (found) return found;
+									}
+								}
+								return undefined;
+							};
+
+							const symbol = findSymbol(symbols, fileItem.symbolName);
+							if (symbol) {
+								// Found the symbol, use its range!
+								startLine = symbol.range.start.line + 1; // 1-indexed
+								endLine = symbol.range.end.line + 1; // 1-indexed
+
+								// Optional: Include context (e.g. 5 lines before) if needed
+								// But precise range is usually what we want for "Selection"
+							} else {
+								console.warn(
+									`[MinovativeMind] Symbol '${fileItem.symbolName}' not found in '${relativePath}'. Falling back to full file/default.`
+								);
+							}
+						}
+					} catch (e: any) {
+						console.error(
+							`[MinovativeMind] Error resolving symbol '${fileItem.symbolName}': ${e.message}`
+						);
+					}
+				}
 			}
 
 			const fileUri = vscode.Uri.joinPath(workspaceRootUri, relativePath);
@@ -661,7 +740,7 @@ export class PlanExecutorService {
 					continue;
 				}
 
-				if (fileStat.size > maxFileSizeForSnippet) {
+				if (fileStat.size > maxFileSizeForSnippet && !startLine) {
 					console.warn(
 						`[MinovativeMind] Skipping relevant file '${relativePath}' (size: ${fileStat.size} bytes) due to size limit for prompt inclusion.`
 					);
@@ -688,7 +767,20 @@ export class PlanExecutorService {
 					continue;
 				}
 
-				fileContent = content;
+				if (startLine !== undefined && endLine !== undefined) {
+					const lines = content.split(/\r?\n/);
+					// 1-indexed to 0-indexed
+					const slicedLines = lines.slice(startLine - 1, endLine);
+					fileContent = slicedLines.join("\n");
+					formattedSnippets.push(
+						`--- Relevant File: ${relativePath} (Lines ${startLine}-${endLine}) ---\n\`\`\`${languageId}\n${fileContent}\n\`\`\`\n`
+					);
+					continue; // Skip full diagnostic check for snippets to save time/tokens? Or strictly apply?
+					// For snippets, we might skip full diagnostics or apply them only to the range.
+					// Let's keep it simple and skip diagnostics for partials for now or apply them if easy.
+				} else {
+					fileContent = content;
+				}
 			} catch (error: any) {
 				if (
 					error instanceof vscode.FileSystemError &&
@@ -781,14 +873,48 @@ export class PlanExecutorService {
 		changeLogger: SidebarProvider["changeLogger"],
 		combinedToken: vscode.CancellationToken
 	): Promise<void> {
+		// Early cancellation check before any async work
+		if (combinedToken.isCancellationRequested) {
+			throw new Error(ERROR_OPERATION_CANCELLED);
+		}
+
 		const fileUri = vscode.Uri.joinPath(rootUri, step.step.path);
 
 		let desiredContent: string | undefined = step.step.content;
 
 		if (step.step.generate_prompt) {
+			// Dynamic Context Selection (Context Agent)
+			const allScannedFiles =
+				await this.provider.contextService.scanWorkspaceFiles();
+			const selectionOptions: SelectRelevantFilesAIOptions = {
+				userRequest: `Context for creating file ${step.step.path}: ${step.step.generate_prompt}. This file does not exist yet. Please find OTHER relevant files in the codebase that this new file might depend on, such as utility functions, types, interfaces, or similar existing implementations to use as a reference.`,
+				chatHistory: [], // Minimal history for this specific sub-task
+				allScannedFiles: allScannedFiles,
+				projectRoot: rootUri,
+				activeEditorContext: context.editorContext,
+				aiRequestService: this.provider.aiRequestService,
+				modelName: this.provider.settingsManager.getSelectedModelName(),
+				postMessageToWebview: this.postMessageToWebview,
+				addContextAgentLogToHistory: (log) => {
+					/* Optional: propagate logs to main chat? */
+				},
+				cancellationToken: combinedToken,
+				selectionOptions: {
+					alwaysRunInvestigation: true, // Force investigation to find specific snippets if needed
+					useCache: false, // Request fresh context for this step
+				},
+			};
+
+			const selectedFiles = await selectRelevantFilesAI(selectionOptions);
+			const dynamicRelevantSnippets = await this._formatRelevantFilesForPrompt(
+				selectedFiles,
+				rootUri,
+				combinedToken
+			);
+
 			const generationContext = {
 				projectContext: context.projectContext,
-				relevantSnippets: relevantSnippets,
+				relevantSnippets: dynamicRelevantSnippets || relevantSnippets, // Use dynamic snippets if found, else fall back? Or combine? favoring dynamic for now.
 				editorContext: context.editorContext,
 				activeSymbolInfo: undefined,
 			};
@@ -973,6 +1099,11 @@ export class PlanExecutorService {
 		changeLogger: SidebarProvider["changeLogger"],
 		combinedToken: vscode.CancellationToken
 	): Promise<void> {
+		// Early cancellation check before any async work
+		if (combinedToken.isCancellationRequested) {
+			throw new Error(ERROR_OPERATION_CANCELLED);
+		}
+
 		const fileUri = vscode.Uri.joinPath(rootUri, step.step.path);
 
 		const originalContent = Buffer.from(
@@ -985,6 +1116,42 @@ export class PlanExecutorService {
 			editorContext: context.editorContext,
 			activeSymbolInfo: undefined,
 		};
+
+		// Dynamic Context Selection (Context Agent)
+		try {
+			const allScannedFiles =
+				await this.provider.contextService.scanWorkspaceFiles();
+			const selectionOptions: SelectRelevantFilesAIOptions = {
+				userRequest: `Context for modifying file ${step.step.path}: ${step.step.modification_prompt}. Use 'lookup_workspace_symbol' or 'run_terminal_command' to find definitions of any symbols (classes, functions, types) mentioned in the prompt and used in the code you are modifying, and find OTHER relevant files in the codebase that this new file might depend on, such as utility functions, types, interfaces, or similar existing implementations to use as a reference, so we have their full context.`,
+				chatHistory: [],
+				allScannedFiles: allScannedFiles,
+				projectRoot: rootUri,
+				activeEditorContext: context.editorContext,
+				aiRequestService: this.provider.aiRequestService,
+				modelName: this.provider.settingsManager.getSelectedModelName(),
+				postMessageToWebview: this.postMessageToWebview,
+				cancellationToken: combinedToken,
+				selectionOptions: {
+					alwaysRunInvestigation: true,
+					useCache: false,
+				},
+			};
+
+			const selectedFiles = await selectRelevantFilesAI(selectionOptions);
+			const dynamicRelevantSnippets = await this._formatRelevantFilesForPrompt(
+				selectedFiles,
+				rootUri,
+				combinedToken
+			);
+
+			if (dynamicRelevantSnippets) {
+				modificationContext.relevantSnippets = dynamicRelevantSnippets;
+			}
+		} catch (e: any) {
+			console.warn(
+				`[PlanExecutor] Failed to fetch dynamic context for step: ${e.message}. Using default.`
+			);
+		}
 
 		let modifiedResult: { content: string } | undefined;
 		let attempt = 0;

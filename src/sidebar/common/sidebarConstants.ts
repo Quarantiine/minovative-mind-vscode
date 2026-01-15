@@ -35,7 +35,9 @@ export const DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001";
 
 export const DEFAULT_MODEL =
 	(AVAILABLE_GEMINI_MODELS.length > 0 &&
-		AVAILABLE_GEMINI_MODELS.find((model) => model === "gemini-2.5-flash")) ||
+		AVAILABLE_GEMINI_MODELS.find(
+			(model) => model === "gemini-3-flash-preview"
+		)) ||
 	AVAILABLE_GEMINI_MODELS[AVAILABLE_GEMINI_MODELS.length - 1];
 
 export const TEMPERATURE = 2;
