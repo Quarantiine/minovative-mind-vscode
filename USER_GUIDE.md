@@ -36,7 +36,11 @@ To use Minovative Mind's AI features, you will need:
 
 ## 3. Getting Started (Brief Overview)
 
-For initial setup and installation, please refer to the [README.md](https://github.com/Minovative-Technologies/minovative-mind?tab=readme-ov-file#quick-start-get-started-in-1-3-minutes) file in the project repository. This typically involves cloning the project, packaging the extension as a `.vsix` file, and installing it in VS Code. Crucially, ensure your Gemini API key is correctly configured to enable AI features.
+For most users, the easiest way to get started is to **install Minovative Mind directly from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=MinovativeTechnologies.minovative-mind-vscode)**.
+
+If you are a developer looking to build from source or contribute, please refer to the [**`CONTRIBUTING.md`**](./CONTRIBUTING.md) guide for local development setup.
+
+**Crucially, ensure your Gemini API key is correctly configured** (see section 2) to enable AI features.
 
 ---
 

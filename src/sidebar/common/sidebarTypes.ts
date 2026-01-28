@@ -265,6 +265,7 @@ export interface FormattedTokenStatistics {
 	totalOutput: string;
 	total: string;
 	requestCount: string;
+	failedRequestCount: string;
 	averageInput: string;
 	averageOutput: string;
 	modelUsagePercentages: Array<[string, number]>;

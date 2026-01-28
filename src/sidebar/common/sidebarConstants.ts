@@ -20,23 +20,19 @@ export const MODEL_DETAILS = [
 		name: "gemini-flash-latest",
 		description: "Freemium | Simple Daily Use 🧠⚡",
 	},
-	{
-		name: "gemini-flash-lite-latest",
-		description: "Freemium | Simple ⚡⚡",
-	},
 ];
 
 export const AVAILABLE_GEMINI_MODELS = MODEL_DETAILS.map((model) => model.name);
 
 export const DEFAULT_PRO_MODEL = "gemini-3-pro-preview";
+export const DEFAULT_3_FLASH_MODEL = "gemini-3-flash-preview";
 export const DEFAULT_FLASH_MODEL = "gemini-flash-latest";
 export const DEFAULT_FLASH_LITE_MODEL = "gemini-flash-lite-latest";
-export const DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001";
 
 export const DEFAULT_MODEL =
 	(AVAILABLE_GEMINI_MODELS.length > 0 &&
 		AVAILABLE_GEMINI_MODELS.find(
-			(model) => model === "gemini-3-flash-preview"
+			(model) => model === "gemini-3-flash-preview",
 		)) ||
 	AVAILABLE_GEMINI_MODELS[AVAILABLE_GEMINI_MODELS.length - 1];
 

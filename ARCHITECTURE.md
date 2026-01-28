@@ -13,7 +13,7 @@ A deeper analysis of the file structure, class responsibilities, and how differe
 ### Context Management (Project Understanding)
 
 - **Responsibility**: Gathers, processes, and synthesizes all relevant contextual data from the user's project and external sources to provide AI models with a deep and accurate understanding of the codebase and task at hand.
-- **Uses AI**: Yes (for smart context selection and sequential context processing/summarization)
+- **Uses AI**: Yes (for smart context selection and sequential context processing/summarization, utilizing **Gemini Flash Lite** for the active investigation loops)
 
 #### 1. Workspace File Scanning
 
@@ -72,7 +72,7 @@ This system ensures that diagnostic information, particularly 'Information' and 
 
 - **Responsibility**: Enables the AI to actively explore and investigate the codebase using safe terminal commands during the context gathering phase, rather than relying solely on static file lists and summaries.
 - **Key Features**:
-  - **Reasoning Loop**: The `selectRelevantFilesAI` function in `smartContextSelector.ts` implements a multi-turn agentic loop. The AI is given a `run_terminal_command` tool and can iteratively run commands, observe outputs, and refine its understanding before making a final file selection with `finish_selection`.
+  - **Reasoning Loop**: The `selectRelevantFilesAI` function in `smartContextSelector.ts` implements a multi-turn agentic loop. The AI (utilizing **Gemini Flash Lite**) is given a `run_terminal_command` tool and can iteratively run commands, observe outputs, and refine its understanding before making a final file selection with `finish_selection`.
   - **Safe Command Execution**: The `SafeCommandExecutor` class (`src/context/safeCommandExecutor.ts`) enforces strict security by allowlisting only read-only commands (`ls`, `grep`, `find`, `cat`, `git grep`) and blocking dangerous operations like chaining (`&&`, `|`) or redirection.
   - **Error-Aware Investigation**: When the user's request contains error-related keywords ("error", "bug", "fix"), the AI is prompted to prioritize investigation commands and actively search for relevant code paths using diagnostics and stack traces.
   - **Transparent Logging**: Every command executed by the Context Agent and its output is logged to the chat interface, providing full transparency to the user.
@@ -111,7 +111,7 @@ This system ensures that diagnostic information, particularly 'Information' and 
 
 - **Responsibility**: Monitors and tracks the consumption of AI tokens across various requests, providing real-time and aggregate usage statistics for transparency and cost insight.
 - **Enhanced Statistics**: `TokenTrackingService` (`src/services/tokenTrackingService.ts`) now computes comprehensive statistics, including the aggregation of token usage by individual AI model (`byModel` map) and the calculation of each model's percentage contribution to total token consumption (`modelUsagePercentages`).
-- **Webview Display**: These detailed statistics, including the model usage breakdown, are now prominently displayed in the 'Token Usage Statistics' panel within the webview.
+- **Webview Display**: These detailed statistics, including the model usage breakdown and count of failed requests, are now strategically displayed in the 'Token Usage Statistics' panel within the webview, with critical counts like failed requests placed at the bottom for better scannability.
 - **Copy All Stats Button**: A 'Copy All Stats' button is available, allowing users to copy all displayed statistics to the clipboard in a human-readable format for easy sharing or analysis.
 - **Robust Data Handling**: Serialization and deserialization mechanisms are in place to correctly transmit `Map` objects (like `modelUsagePercentages`) between the extension host and the webview, ensuring data integrity and consistency.
 - **Key Methods**: `trackTokenUsage`, `getTokenStatistics`, `estimateTokens`, `getRealTimeTokenEstimates`, `getCurrentStreamingEstimates`, `onTokenUpdate`, `triggerRealTimeUpdate`, `clearTokenHistory`, `getFormattedStatistics`.

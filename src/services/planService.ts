@@ -33,13 +33,13 @@ export class PlanService {
 		private provider: SidebarProvider,
 		private workspaceRootUri: vscode.Uri | undefined,
 		enhancedCodeGenerator: EnhancedCodeGenerator,
-		private postMessageToWebview: (message: ExtensionToWebviewMessages) => void
+		private postMessageToWebview: (message: ExtensionToWebviewMessages) => void,
 	) {
 		this.urlContextService = new UrlContextService();
 		this.enhancedCodeGenerator = enhancedCodeGenerator;
 
 		const config = vscode.workspace.getConfiguration(
-			"minovativeMind.planExecution"
+			"minovativeMind.planExecution",
 		);
 		this.MAX_PLAN_PARSE_RETRIES = config.get("maxPlanParseRetries", 3);
 		this.MAX_TRANSIENT_STEP_RETRIES = config.get("maxTransientStepRetries", 3);
@@ -50,7 +50,7 @@ export class PlanService {
 			postMessageToWebview,
 			this.urlContextService,
 			enhancedCodeGenerator,
-			this.MAX_TRANSIENT_STEP_RETRIES
+			this.MAX_TRANSIENT_STEP_RETRIES,
 		);
 	}
 
@@ -78,7 +78,7 @@ export class PlanService {
 	}
 
 	public async triggerPostTextualPlanUI(
-		planContext: sidebarTypes.PlanGenerationContext
+		planContext: sidebarTypes.PlanGenerationContext,
 	): Promise<void> {
 		return this._handlePostTextualPlanGenerationUI(planContext);
 	}
@@ -100,7 +100,7 @@ export class PlanService {
 		initialProgress?: vscode.Progress<{ message?: string; increment?: number }>,
 		initialToken?: vscode.CancellationToken,
 		diagnosticsString?: string,
-		isMergeOperation: boolean = false
+		isMergeOperation: boolean = false,
 	): Promise<sidebarTypes.PlanGenerationResult> {
 		const rootFolder = vscode.workspace.workspaceFolders?.[0];
 		if (!rootFolder) {
@@ -208,7 +208,7 @@ export class PlanService {
 					config.diagnosticsString,
 					undefined,
 					false,
-					false
+					false,
 				);
 
 			const { contextString, relevantFiles } = buildContextResult;
@@ -216,7 +216,7 @@ export class PlanService {
 			this._initializeStreamingState(
 				modelName,
 				relevantFiles,
-				operationId as string
+				operationId as string,
 			);
 
 			if (contextString.startsWith("[Error")) {
@@ -228,7 +228,7 @@ export class PlanService {
 				const urlContexts =
 					await this.urlContextService.processMessageForUrlContext(
 						config.userRequest,
-						operationId as string
+						operationId as string,
 					);
 				urlContextString =
 					this.urlContextService.formatUrlContexts(urlContexts);
@@ -240,7 +240,7 @@ export class PlanService {
 				config.editorContext,
 				config.diagnosticsString,
 				[...this.provider.chatHistoryManager.getChatHistory()],
-				urlContextString
+				urlContextString,
 			);
 
 			config.initialProgress?.report({
@@ -262,7 +262,11 @@ export class PlanService {
 						onChunk: (chunk: string) => {
 							accumulatedTextualResponse += chunk;
 							if (this.provider.currentAiStreamingState) {
-								this.provider.currentAiStreamingState.content += chunk;
+								this.provider.updatePersistedAiStreamingState({
+									...this.provider.currentAiStreamingState,
+									content:
+										this.provider.currentAiStreamingState.content + chunk,
+								});
 							}
 							this.provider.postMessageToWebview({
 								type: "aiResponseChunk",
@@ -271,7 +275,7 @@ export class PlanService {
 							});
 						},
 					},
-					token
+					token,
 				);
 
 			if (token.isCancellationRequested) {
@@ -288,7 +292,7 @@ export class PlanService {
 				undefined,
 				relevantFiles,
 				relevantFiles && relevantFiles.length <= 3,
-				true
+				true,
 			);
 
 			config.initialProgress?.report({
@@ -332,7 +336,10 @@ export class PlanService {
 			};
 		} catch (error: any) {
 			if (this.provider.currentAiStreamingState) {
-				this.provider.currentAiStreamingState.isError = true;
+				await this.provider.updatePersistedAiStreamingState({
+					...this.provider.currentAiStreamingState,
+					isError: true,
+				});
 			}
 			finalError = error.message;
 			return {
@@ -346,12 +353,15 @@ export class PlanService {
 									config.type === "chat" ? "initial" : "editor action"
 								} plan generation.`,
 								"Error: ",
-								rootFolder?.uri
-						  ),
+								rootFolder?.uri,
+							),
 			};
 		} finally {
 			if (this.provider.currentAiStreamingState) {
-				this.provider.currentAiStreamingState.isComplete = true;
+				await this.provider.updatePersistedAiStreamingState({
+					...this.provider.currentAiStreamingState,
+					isComplete: true,
+				});
 			}
 
 			const isCancellation = finalError === ERROR_OPERATION_CANCELLED;
@@ -366,15 +376,17 @@ export class PlanService {
 				error: success
 					? null
 					: isCancellation
-					? "Plan generation cancelled."
-					: formatUserFacingErrorMessage(
-							finalError ? new Error(finalError) : new Error("Unknown error."),
-							`An unexpected error occurred during ${
-								config.type === "chat" ? "initial" : "editor action"
-							} plan generation.`,
-							"Error: ",
-							rootFolder?.uri
-					  ),
+						? "Plan generation cancelled."
+						: formatUserFacingErrorMessage(
+								finalError
+									? new Error(finalError)
+									: new Error("Unknown error."),
+								`An unexpected error occurred during ${
+									config.type === "chat" ? "initial" : "editor action"
+								} plan generation.`,
+								"Error: ",
+								rootFolder?.uri,
+							),
 				...(isConfirmablePlanResponse &&
 					this.provider.pendingPlanGenerationContext && {
 						isPlanResponse: true,
@@ -403,12 +415,12 @@ export class PlanService {
 
 	private async parseAndValidatePlanWithFix(
 		jsonString: string,
-		workspaceRootUri: vscode.Uri
+		workspaceRootUri: vscode.Uri,
 	): Promise<ParsedPlanResult> {
 		try {
 			let parsedResult = await parseAndValidatePlan(
 				jsonString,
-				workspaceRootUri
+				workspaceRootUri,
 			);
 
 			if (!parsedResult.plan && parsedResult.error) {
@@ -417,7 +429,7 @@ export class PlanService {
 				if (repairedJsonString !== jsonString) {
 					const reParsedResult = await parseAndValidatePlan(
 						repairedJsonString,
-						workspaceRootUri
+						workspaceRootUri,
 					);
 
 					if (reParsedResult.plan) {
@@ -445,15 +457,15 @@ export class PlanService {
 	private _initializeStreamingState(
 		modelName: string,
 		relevantFiles: string[] | undefined,
-		operationId: string
+		operationId: string,
 	): void {
-		this.provider.currentAiStreamingState = {
+		this.provider.updatePersistedAiStreamingState({
 			content: "",
 			relevantFiles: relevantFiles ?? [],
 			isComplete: false,
 			isError: false,
 			operationId: operationId,
-		};
+		});
 		this.provider.postMessageToWebview({
 			type: "aiResponseStart",
 			value: {
@@ -469,7 +481,7 @@ export class PlanService {
 	}
 
 	public async generateStructuredPlanAndExecute(
-		planContext: sidebarTypes.PlanGenerationContext
+		planContext: sidebarTypes.PlanGenerationContext,
 	): Promise<void> {
 		const token = this.provider.activeOperationCancellationTokenSource?.token;
 		if (!token) {
@@ -503,7 +515,7 @@ export class PlanService {
 			const urlContexts =
 				await this.urlContextService.processMessageForUrlContext(
 					planContext.originalUserRequest || "",
-					operationId as string
+					operationId as string,
 				);
 			const urlContextString =
 				this.urlContextService.formatUrlContexts(urlContexts);
@@ -517,7 +529,7 @@ export class PlanService {
 				planContext.chatHistory,
 				planContext.textualPlanExplanation,
 				formattedRecentChanges,
-				urlContextString
+				urlContextString,
 			);
 
 			for (let attempt = 1; attempt <= this.MAX_PLAN_PARSE_RETRIES; attempt++) {
@@ -536,7 +548,7 @@ export class PlanService {
 							[{ functionDeclarations: [generateExecutionPlanTool] }],
 							FunctionCallingMode.ANY,
 							token,
-							"plan generation via function call"
+							"plan generation via function call",
 						);
 
 					if (token.isCancellationRequested) {
@@ -544,18 +556,18 @@ export class PlanService {
 					}
 					if (!functionCall) {
 						throw new Error(
-							"AI failed to generate a valid function call for the plan."
+							"AI failed to generate a valid function call for the plan.",
 						);
 					}
 
 					const { plan, error } = await this.parseAndValidatePlanWithFix(
 						JSON.stringify(functionCall.args),
-						planContext.workspaceRootUri
+						planContext.workspaceRootUri,
 					);
 
 					if (error) {
 						lastError = new Error(
-							`Failed to parse or validate generated plan: ${error}`
+							`Failed to parse or validate generated plan: ${error}`,
 						);
 						if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
 							continue;
@@ -566,7 +578,7 @@ export class PlanService {
 
 					if (!plan || plan.steps.length === 0) {
 						lastError = new Error(
-							"AI generated plan content but it was empty or invalid after parsing."
+							"AI generated plan content but it was empty or invalid after parsing.",
 						);
 						if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
 							continue;
@@ -595,7 +607,7 @@ export class PlanService {
 				throw (
 					lastError ||
 					new Error(
-						"Failed to generate and parse a valid structured plan after multiple retries."
+						"Failed to generate and parse a valid structured plan after multiple retries.",
 					)
 				);
 			}
@@ -604,7 +616,7 @@ export class PlanService {
 			await this.planExecutorService.executePlan(
 				executablePlan,
 				planContext,
-				token
+				token,
 			);
 		} catch (error: any) {
 			const isCancellation = error.message === ERROR_OPERATION_CANCELLED;
@@ -627,7 +639,7 @@ export class PlanService {
 						error,
 						"An unexpected error occurred during plan generation.",
 						"Error generating plan: ",
-						planContext.workspaceRootUri
+						planContext.workspaceRootUri,
 					),
 					isError: true,
 				});
@@ -639,7 +651,7 @@ export class PlanService {
 	}
 
 	private _handlePostTextualPlanGenerationUI(
-		planContext: sidebarTypes.PlanGenerationContext
+		planContext: sidebarTypes.PlanGenerationContext,
 	): Promise<void> {
 		if (this.provider.isSidebarVisible) {
 			const planDataForRestore =
@@ -649,13 +661,13 @@ export class PlanService {
 							originalRequest: planContext.originalUserRequest,
 							relevantFiles: planContext.relevantFiles,
 							textualPlanExplanation: planContext.textualPlanExplanation,
-					  }
+						}
 					: {
 							type: planContext.type,
 							originalInstruction: planContext.editorContext!.instruction,
 							relevantFiles: planContext.relevantFiles,
 							textualPlanExplanation: planContext.textualPlanExplanation,
-					  };
+						};
 
 			this.provider.postMessageToWebview({
 				type: "restorePendingPlanConfirmation",
@@ -688,7 +700,7 @@ export class PlanService {
 						c.filePath
 					} ---\nSummary: ${c.summary}\nDiff:\n\`\`\`diff\n${
 						c.diffContent
-					}\n\`\`\`\n`
+					}\n\`\`\`\n`,
 			)
 			.join("\n");
 		return formattedString + "--- End Recent Project Changes ---\n";

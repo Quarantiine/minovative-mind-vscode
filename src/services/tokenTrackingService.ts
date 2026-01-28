@@ -8,6 +8,7 @@ export interface TokenUsage {
 	timestamp: number;
 	requestType: string;
 	modelName: string;
+	status: "success" | "failed" | "cancelled";
 	context?: string;
 }
 
@@ -16,6 +17,7 @@ export interface TokenStatistics {
 	totalOutputTokens: number;
 	totalTokens: number;
 	requestCount: number;
+	failedRequestCount: number;
 	averageInputTokens: number;
 	averageOutputTokens: number;
 	byRequestType: Map<
@@ -52,7 +54,8 @@ export class TokenTrackingService {
 		outputTokens: number,
 		requestType: string,
 		modelName: string,
-		context?: string
+		context?: string,
+		status: "success" | "failed" | "cancelled" = "success",
 	): void {
 		const usage: TokenUsage = {
 			inputTokens,
@@ -61,6 +64,7 @@ export class TokenTrackingService {
 			timestamp: Date.now(),
 			requestType,
 			modelName,
+			status,
 			context,
 		};
 
@@ -69,12 +73,12 @@ export class TokenTrackingService {
 		// Keep only the last maxHistorySize entries
 		if (this.tokenUsageHistory.length > this.maxHistorySize) {
 			this.tokenUsageHistory = this.tokenUsageHistory.slice(
-				-this.maxHistorySize
+				-this.maxHistorySize,
 			);
 		}
 
 		console.log(
-			`[TokenTrackingService] Tracked usage: ${inputTokens} input, ${outputTokens} output tokens for ${requestType} (${modelName})`
+			`[TokenTrackingService] Tracked usage: ${inputTokens} input, ${outputTokens} output tokens for ${requestType} (${modelName})`,
 		);
 
 		// Trigger real-time updates
@@ -109,7 +113,7 @@ export class TokenTrackingService {
 			} catch (error) {
 				console.error(
 					"[TokenTrackingService] Error in update callback:",
-					error
+					error,
 				);
 			}
 		});
@@ -127,7 +131,7 @@ export class TokenTrackingService {
 	 */
 	public getRealTimeTokenEstimates(
 		inputText: string,
-		outputText: string
+		outputText: string,
 	): {
 		inputTokens: number;
 		outputTokens: number;
@@ -147,7 +151,7 @@ export class TokenTrackingService {
 	 */
 	public getCurrentStreamingEstimates(
 		inputText: string,
-		outputText: string
+		outputText: string,
 	): {
 		inputTokens: string;
 		outputTokens: string;
@@ -177,7 +181,7 @@ export class TokenTrackingService {
 	 */
 	public getTokenStatistics(): TokenStatistics {
 		console.log(
-			`[TokenTrackingService] getTokenStatistics: tokenUsageHistory.length = ${this.tokenUsageHistory.length}`
+			`[TokenTrackingService] getTokenStatistics: tokenUsageHistory.length = ${this.tokenUsageHistory.length}`,
 		);
 		if (this.tokenUsageHistory.length === 0) {
 			return {
@@ -185,6 +189,7 @@ export class TokenTrackingService {
 				totalOutputTokens: 0,
 				totalTokens: 0,
 				requestCount: 0,
+				failedRequestCount: 0,
 				averageInputTokens: 0,
 				averageOutputTokens: 0,
 				byRequestType: new Map(),
@@ -195,14 +200,17 @@ export class TokenTrackingService {
 
 		const totalInputTokens = this.tokenUsageHistory.reduce(
 			(sum, usage) => sum + usage.inputTokens,
-			0
+			0,
 		);
 		const totalOutputTokens = this.tokenUsageHistory.reduce(
 			(sum, usage) => sum + usage.outputTokens,
-			0
+			0,
 		);
 		const totalTokens = totalInputTokens + totalOutputTokens;
 		const requestCount = this.tokenUsageHistory.length;
+		const failedRequestCount = this.tokenUsageHistory.filter(
+			(u) => u.status === "failed",
+		).length;
 
 		// Calculate averages
 		const averageInputTokens = totalInputTokens / requestCount;
@@ -258,7 +266,7 @@ export class TokenTrackingService {
 		console.log(
 			`[TokenTrackingService] getTokenStatistics: byModel.size = ${
 				byModel.size
-			}, byModel contents = ${JSON.stringify(Array.from(byModel.entries()))}`
+			}, byModel contents = ${JSON.stringify(Array.from(byModel.entries()))}`,
 		);
 
 		// Calculate model usage percentages
@@ -281,8 +289,8 @@ export class TokenTrackingService {
 		}
 		console.log(
 			`[TokenTrackingService] getTokenStatistics: grandTotalModelTokens = ${grandTotalModelTokens}, modelUsagePercentages contents = ${JSON.stringify(
-				Array.from(modelUsagePercentages.entries())
-			)}`
+				Array.from(modelUsagePercentages.entries()),
+			)}`,
 		);
 
 		return {
@@ -290,6 +298,7 @@ export class TokenTrackingService {
 			totalOutputTokens,
 			totalTokens,
 			requestCount,
+			failedRequestCount,
 			averageInputTokens,
 			averageOutputTokens,
 			byRequestType,
@@ -303,10 +312,10 @@ export class TokenTrackingService {
 	 */
 	public getTokenUsageForPeriod(
 		startTime: number,
-		endTime: number
+		endTime: number,
 	): TokenUsage[] {
 		return this.tokenUsageHistory.filter(
-			(usage) => usage.timestamp >= startTime && usage.timestamp <= endTime
+			(usage) => usage.timestamp >= startTime && usage.timestamp <= endTime,
 		);
 	}
 
@@ -595,6 +604,7 @@ export class TokenTrackingService {
 			totalOutput: formatNumber(stats.totalOutputTokens),
 			total: formatNumber(stats.totalTokens),
 			requestCount: stats.requestCount.toString(),
+			failedRequestCount: stats.failedRequestCount.toString(),
 			averageInput: formatNumber(stats.averageInputTokens),
 			averageOutput: formatNumber(stats.averageOutputTokens),
 			modelUsagePercentages: Array.from(stats.modelUsagePercentages.entries()),

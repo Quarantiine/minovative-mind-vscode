@@ -28,7 +28,7 @@ export class CommitService {
 	 * @param token A CancellationToken to observe cancellation requests.
 	 */
 	public async handleCommitCommand(
-		token: vscode.CancellationToken
+		token: vscode.CancellationToken,
 	): Promise<void> {
 		const { settingsManager } = this.provider;
 		const modelName = DEFAULT_FLASH_LITE_MODEL;
@@ -58,7 +58,7 @@ export class CommitService {
 			if (!rootPath) {
 				this.logger.error(
 					undefined,
-					"No workspace folder open for git command."
+					"No workspace folder open for git command.",
 				);
 				throw new Error("No workspace folder open for git.");
 			}
@@ -66,14 +66,14 @@ export class CommitService {
 			const onProcessCallback = (process: ChildProcess) => {
 				this.logger.log(
 					undefined,
-					`Git process started: PID ${process.pid}, Command: 'git add .'`
+					`Git process started: PID ${process.pid}, Command: 'git add .'`,
 				);
 			};
 
 			const onOutputCallback = (
 				type: "stdout" | "stderr" | "status",
 				data: string,
-				isError?: boolean
+				isError?: boolean,
 			) => {
 				this.provider.postMessageToWebview({
 					type: "gitProcessUpdate",
@@ -83,7 +83,7 @@ export class CommitService {
 				if (type === "stderr" || isError) {
 					this.provider.chatHistoryManager.addHistoryEntry(
 						"model",
-						`Git Staging Error: ${data}`
+						`Git Staging Error: ${data}`,
 					);
 					this.logger.error(undefined, `Git Staging Error: ${data}`);
 				} else if (type === "stdout") {
@@ -95,7 +95,7 @@ export class CommitService {
 				rootPath,
 				token,
 				onProcessCallback,
-				onOutputCallback
+				onOutputCallback,
 			);
 			if (token.isCancellationRequested) {
 				throw new Error(ERROR_OPERATION_CANCELLED);
@@ -120,7 +120,7 @@ export class CommitService {
 				const { summary } = await generateFileChangeSummary(
 					oldContent,
 					newContent,
-					filePath
+					filePath,
 				);
 				fileSummaries.push(summary);
 			}
@@ -128,8 +128,8 @@ export class CommitService {
 			const detailedSummaries =
 				fileSummaries.length > 0
 					? "Summary of File Changes:\n" +
-					  fileSummaries.map((s) => `- ${s}`).join("\n") +
-					  "\n\n"
+						fileSummaries.map((s) => `- ${s}`).join("\n") +
+						"\n\n"
 					: "";
 
 			const commitMessagePrompt = `
@@ -159,7 +159,7 @@ ${diff}
 					"commit message generation",
 					undefined,
 					undefined,
-					token
+					token,
 				);
 
 			if (token.isCancellationRequested) {
@@ -176,11 +176,11 @@ ${diff}
 			) {
 				this.logger.error(
 					undefined,
-					`AI generated an invalid or error-prefixed commit message: "${commitMessage}"`
+					`AI generated an invalid or error-prefixed commit message: "${commitMessage}"`,
 				);
 				const userFacingError = `AI failed to generate a valid commit message. Received: "${trimmedCommitMessage.substring(
 					0,
-					150
+					150,
 				)}${
 					trimmedCommitMessage.length > 150 ? "..." : ""
 				}". Please try again or provide more context.`;
@@ -189,7 +189,7 @@ ${diff}
 
 			this.provider.chatHistoryManager.addHistoryEntry(
 				"model",
-				validatedMessage
+				validatedMessage,
 			);
 
 			this.provider.pendingCommitReviewData = {
@@ -212,8 +212,8 @@ ${diff}
 				error: isCancellation
 					? "Commit operation cancelled."
 					: isCommitReviewPending
-					? null
-					: errorMessage,
+						? null
+						: errorMessage,
 				isCommitReviewPending: isCommitReviewPending,
 				commitReviewData: isCommitReviewPending
 					? this.provider.pendingCommitReviewData
@@ -295,7 +295,7 @@ ${diff}
 		const injectionPatterns = /\$\(|`|&&|\|\||;/;
 		if (injectionPatterns.test(message)) {
 			throw new Error(
-				"Commit message contains characters or patterns that resemble shell commands (e.g. $(), &&, ||, `, ;). For security, please edit the message without these constructs."
+				"Commit message contains characters or patterns that resemble shell commands (e.g. $(), &&, ||, `, ;). For security, please edit the message without these constructs.",
 			);
 		}
 	}
@@ -309,7 +309,7 @@ ${diff}
 		const gitExploitPatterns = /\[(?:core|hooks|alias)\].*=/i;
 		if (gitExploitPatterns.test(message)) {
 			throw new Error(
-				"Commit message appears to include Git configuration-style content, which is not allowed."
+				"Commit message appears to include Git configuration-style content, which is not allowed.",
 			);
 		}
 	}
@@ -324,14 +324,14 @@ ${diff}
 		const firstLine = message.split("\n", 1)[0].trim();
 		if (!firstLine || firstLine.length === 0) {
 			throw new Error(
-				"Commit message subject is empty. Provide a concise subject line."
+				"Commit message subject is empty. Provide a concise subject line.",
 			);
 		}
 
 		const firstNonWhitespaceChar = firstLine.charAt(0);
 		if (firstNonWhitespaceChar === "-" || firstNonWhitespaceChar === "*") {
 			throw new Error(
-				"Commit subject cannot start with '-' or '*' (these can be misinterpreted as CLI flags). Please edit the message to begin with an imperative subject (e.g., 'Add tests for X')."
+				"Commit subject cannot start with '-' or '*' (these can be misinterpreted as CLI flags). Please edit the message to begin with an imperative subject (e.g., 'Add tests for X').",
 			);
 		}
 	}
@@ -349,7 +349,7 @@ ${diff}
 
 		if (firstLine.length > SUBJECT_HARD_LIMIT) {
 			throw new Error(
-				`Commit subject is too long (${firstLine.length} chars). Please shorten the first line to ${SUBJECT_HARD_LIMIT} characters or fewer (recommended ${SUBJECT_SOFT_LIMIT}).`
+				`Commit subject is too long (${firstLine.length} chars). Please shorten the first line to ${SUBJECT_HARD_LIMIT} characters or fewer (recommended ${SUBJECT_SOFT_LIMIT}).`,
 			);
 		}
 	}
@@ -362,7 +362,7 @@ ${diff}
 		if (/[^\u0000-\u007F\u00A0-\uFFFF\n]/.test(message)) {
 			this.logger.warn(
 				undefined,
-				"Commit message contains unusual unicode characters; proceeding after sanitization."
+				"Commit message contains unusual unicode characters; proceeding after sanitization.",
 			);
 		}
 	}
@@ -414,7 +414,7 @@ ${diff}
 		}
 
 		this.minovativeMindTerminal = vscode.window.terminals.find(
-			(t) => t.name === "Minovative Mind Git"
+			(t) => t.name === "Minovative Mind Git",
 		);
 
 		if (!this.minovativeMindTerminal) {
@@ -443,7 +443,7 @@ ${diff}
 			vscode.window.showErrorMessage("No workspace folder for git commit.");
 			this.logger.error(
 				undefined,
-				"No workspace folder found to perform git commit."
+				"No workspace folder found to perform git commit.",
 			);
 			return;
 		}
@@ -463,7 +463,7 @@ ${diff}
 				this._validateAndSanitizeCommitMessage(editedMessage);
 			this.logger.log(
 				undefined,
-				`Commit message re-validated: \n---\n${finalCommitMessage}\n---`
+				`Commit message re-validated: \n---\n${finalCommitMessage}\n---`,
 			);
 
 			const result = await executeCommand(
@@ -472,22 +472,22 @@ ${diff}
 				rootPath,
 				token,
 				this.provider.activeChildProcesses,
-				terminal
+				terminal,
 			);
 
 			if (result.exitCode === 0) {
 				this.provider.pendingCommitReviewData = null;
 				this.provider.chatHistoryManager.addHistoryEntry(
 					"model",
-					"Git Staging: Changes staged successfully."
+					"Git Staging: Changes staged successfully.",
 				);
 				this.provider.chatHistoryManager.addHistoryEntry(
 					"model",
-					`Commit confirmed and executed successfully:\n---\n${finalCommitMessage}\n---`
+					`Commit confirmed and executed successfully:\n---\n${finalCommitMessage}\n---`,
 				);
 				this.logger.log(
 					undefined,
-					`Commit successful:\n---\n${finalCommitMessage}\n---`
+					`Commit successful:\n---\n${finalCommitMessage}\n---`,
 				);
 
 				// Execute `git status` after successful commit
@@ -497,19 +497,19 @@ ${diff}
 					rootPath,
 					token,
 					this.provider.activeChildProcesses,
-					terminal
+					terminal,
 				);
 
 				if (gitStatusResult.stdout) {
 					this.logger.log(
 						undefined,
-						`Git status stdout after commit:\n${gitStatusResult.stdout}`
+						`Git status stdout after commit:\n${gitStatusResult.stdout}`,
 					);
 				}
 				if (gitStatusResult.stderr) {
 					this.logger.warn(
 						undefined,
-						`Git status stderr after commit:\n${gitStatusResult.stderr}`
+						`Git status stderr after commit:\n${gitStatusResult.stderr}`,
 					);
 				}
 
@@ -526,18 +526,18 @@ ${diff}
 
 				this.provider.chatHistoryManager.addHistoryEntry(
 					"model",
-					statusOutputForChat
+					statusOutputForChat,
 				);
 
 				await this.provider.endUserOperation("success");
 			} else {
 				const errorMessage = `Git commit failed with exit code ${result.exitCode}.\n\nSTDERR:\n${result.stderr}`;
 				vscode.window.showErrorMessage(
-					"Git commit failed. See terminal for details."
+					"Git commit failed. See terminal for details.",
 				);
 				this.provider.chatHistoryManager.addHistoryEntry(
 					"model",
-					`ERROR: ${errorMessage}`
+					`ERROR: ${errorMessage}`,
 				);
 				this.logger.error(undefined, errorMessage);
 				await this.provider.endUserOperation("failed");
@@ -547,7 +547,7 @@ ${diff}
 			vscode.window.showErrorMessage(errorMessage);
 			this.provider.chatHistoryManager.addHistoryEntry(
 				"model",
-				`ERROR: ${errorMessage}`
+				`ERROR: ${errorMessage}`,
 			);
 			this.logger.error(undefined, errorMessage, error);
 			await this.provider.endUserOperation("failed");

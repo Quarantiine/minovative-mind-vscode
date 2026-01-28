@@ -80,7 +80,7 @@ Ready to dive in? Setting up your local environment is simple.
 1. **Fork & Clone the Repository:**
 
    ```bash
-   git clone https://github.com/Minovative-Technologies/minovative-mind.git
+   git clone https://github.com/Minovative-Technologies/minovative-mind.git minovative-mind-vscode
    cd minovative-mind-vscode
    ```
 

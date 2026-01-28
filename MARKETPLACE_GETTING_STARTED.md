@@ -47,5 +47,5 @@ Now that your API key is set, you’re ready to start working with Minovative Mi
 
 For deeper insights and advanced usage:
 
-- **[README.md](README.md)** → Overview, setup guide for cloning, and key features.
+- **[README.md](README.md)** → Overview and key features.
 - **[USER_GUIDE.md](USER_GUIDE.md)** → Complete explanation of all commands and AI functionalities.

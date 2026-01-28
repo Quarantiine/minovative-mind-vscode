@@ -7,7 +7,7 @@ import {
 import { GenerationConfig } from "@google/generative-ai";
 import { UrlContextService } from "./urlContextService";
 import { HistoryEntry, HistoryEntryPart } from "../sidebar/common/sidebarTypes";
-import { DEFAULT_FLASH_MODEL } from "../sidebar/common/sidebarConstants";
+import { DEFAULT_FLASH_LITE_MODEL } from "../sidebar/common/sidebarConstants";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import { ContextBuildOptions } from "../types/context";
 
@@ -35,7 +35,7 @@ export class ChatService {
 			.getChatHistory()
 			.slice(-10);
 		const modelResponses = recentHistory.filter(
-			(entry) => entry.role === "model"
+			(entry) => entry.role === "model",
 		);
 
 		// Collect unique file paths from the last 5 model responses
@@ -47,7 +47,7 @@ export class ChatService {
 		});
 
 		const historicallyRelevantFiles: vscode.Uri[] = Array.from(
-			historicallyRelevantFilePaths
+			historicallyRelevantFilePaths,
 		).map((filePath) => vscode.Uri.joinPath(workspaceRootUri, filePath));
 
 		let focusReminder = "";
@@ -68,11 +68,11 @@ export class ChatService {
 
 	public async handleRegularChat(
 		userContentParts: HistoryEntryPart[],
-		groundingEnabled: boolean = false
+		groundingEnabled: boolean = false,
 	): Promise<void> {
 		const { settingsManager } = this.provider;
 		const apiKey = this.provider.apiKeyManager.getActiveApiKey();
-		const modelName = DEFAULT_FLASH_MODEL;
+		const modelName = DEFAULT_FLASH_LITE_MODEL;
 
 		await this.provider.startUserOperation("chat");
 		const operationId = this.provider.currentActiveChatOperationId;
@@ -80,7 +80,7 @@ export class ChatService {
 
 		if (!operationId || !token) {
 			console.error(
-				"[ChatService] Operation ID or token not available after startUserOperation."
+				"[ChatService] Operation ID or token not available after startUserOperation.",
 			);
 			this.provider.postMessageToWebview({
 				type: "aiResponseEnd",
@@ -99,7 +99,7 @@ export class ChatService {
 
 		if (!apiKey) {
 			vscode.window.showErrorMessage(
-				"Gemini API key is not set. Please set it in VS Code settings to use chat features."
+				"Gemini API key is not set. Please set it in VS Code settings to use chat features.",
 			);
 			this.provider.postMessageToWebview({
 				type: "aiResponseEnd",
@@ -112,7 +112,7 @@ export class ChatService {
 
 		if (!modelName) {
 			vscode.window.showErrorMessage(
-				"Gemini model is not selected. Please select one in VS Code settings to use chat features."
+				"Gemini model is not selected. Please select one in VS Code settings to use chat features.",
 			);
 			this.provider.postMessageToWebview({
 				type: "aiResponseEnd",
@@ -127,7 +127,7 @@ export class ChatService {
 
 		if (!initializationSuccess) {
 			vscode.window.showErrorMessage(
-				`Failed to initialize Gemini AI with model '${modelName}'. Please check your API key and selected model.`
+				`Failed to initialize Gemini AI with model '${modelName}'. Please check your API key and selected model.`,
 			);
 			this.provider.postMessageToWebview({
 				type: "aiResponseEnd",
@@ -138,12 +138,12 @@ export class ChatService {
 			throw new Error(
 				formatUserFacingErrorMessage(
 					new Error(
-						`Failed to initialize Gemini AI with model '${modelName}'.`
+						`Failed to initialize Gemini AI with model '${modelName}'.`,
 					),
 					"Failed to initialize AI service.",
 					"AI Initialization Error: ",
-					this.provider.workspaceRootUri
-				)
+					this.provider.workspaceRootUri,
+				),
 			);
 		}
 
@@ -159,14 +159,14 @@ export class ChatService {
 			const urlContexts =
 				await this.urlContextService.processMessageForUrlContext(
 					userMessageTextForContext,
-					operationId
+					operationId,
 				);
 			const urlContextString =
 				this.urlContextService.formatUrlContexts(urlContexts);
 
 			if (urlContexts.length > 0) {
 				console.log(
-					`[ChatService] Processed ${urlContexts.length} URLs for context`
+					`[ChatService] Processed ${urlContexts.length} URLs for context`,
 				);
 			}
 
@@ -176,19 +176,19 @@ export class ChatService {
 					userMessageTextForContext,
 					undefined,
 					undefined,
-					{ historicallyRelevantFiles } as ContextBuildOptions
+					{ historicallyRelevantFiles } as ContextBuildOptions,
 				);
 			if (projectContext.contextString.startsWith("[Error")) {
 				throw new Error(projectContext.contextString);
 			}
 
-			this.provider.currentAiStreamingState = {
+			await this.provider.updatePersistedAiStreamingState({
 				content: "",
 				relevantFiles: projectContext.relevantFiles,
 				isComplete: false,
 				isError: false,
 				operationId: operationId,
-			};
+			});
 
 			this.provider.postMessageToWebview({
 				type: "aiResponseStart",
@@ -199,13 +199,9 @@ export class ChatService {
 				},
 			});
 
-			const initialSystemPrompt: HistoryEntryPart[] = [
-				{
-					text: `${AI_CHAT_PROMPT} \n\nProject Context:\n${
-						projectContext.contextString
-					}${urlContextString ? `\n\n${urlContextString}` : ""}`,
-				},
-			];
+			const systemInstruction = `${AI_CHAT_PROMPT} \n\nProject Context:\n${
+				projectContext.contextString
+			}${urlContextString ? `\n\n${urlContextString}` : ""}`;
 
 			const focusReminderPart: HistoryEntryPart[] = [];
 			if (focusReminder) {
@@ -214,7 +210,6 @@ export class ChatService {
 
 			const fullUserTurnContents: HistoryEntryPart[] = [
 				...focusReminderPart,
-				...initialSystemPrompt,
 				...userContentParts,
 			];
 
@@ -237,7 +232,11 @@ export class ChatService {
 						onChunk: (chunk: string) => {
 							accumulatedResponse += chunk;
 							if (this.provider.currentAiStreamingState) {
-								this.provider.currentAiStreamingState.content += chunk;
+								this.provider.updatePersistedAiStreamingState({
+									...this.provider.currentAiStreamingState,
+									content:
+										this.provider.currentAiStreamingState.content + chunk,
+								});
 							}
 							this.provider.postMessageToWebview({
 								type: "aiResponseChunk",
@@ -247,7 +246,8 @@ export class ChatService {
 						},
 					},
 					token,
-					false
+					false,
+					systemInstruction,
 				);
 
 			if (token.isCancellationRequested) {
@@ -259,11 +259,11 @@ export class ChatService {
 				const aiResponseUrlContexts =
 					await this.urlContextService.processMessageForUrlContext(
 						accumulatedResponse,
-						operationId
+						operationId,
 					);
 				if (aiResponseUrlContexts.length > 0) {
 					console.log(
-						`Found ${aiResponseUrlContexts.length} URLs in AI response`
+						`Found ${aiResponseUrlContexts.length} URLs in AI response`,
 					);
 				}
 
@@ -273,7 +273,7 @@ export class ChatService {
 					undefined,
 					projectContext.relevantFiles,
 					projectContext.relevantFiles &&
-						projectContext.relevantFiles.length <= 3
+						projectContext.relevantFiles.length <= 3,
 				);
 			}
 		} catch (error: any) {
@@ -283,19 +283,25 @@ export class ChatService {
 				finalAiResponseText = ERROR_OPERATION_CANCELLED;
 				success = true;
 				if (this.provider.currentAiStreamingState) {
-					this.provider.currentAiStreamingState.isError = false;
-					this.provider.currentAiStreamingState.isComplete = true;
+					await this.provider.updatePersistedAiStreamingState({
+						...this.provider.currentAiStreamingState,
+						isError: false,
+						isComplete: true,
+					});
 				}
 			} else {
 				finalAiResponseText = formatUserFacingErrorMessage(
 					error,
 					"Failed to generate AI response.",
 					"AI Response Generation Error: ",
-					this.provider.workspaceRootUri
+					this.provider.workspaceRootUri,
 				);
 				success = false;
 				if (this.provider.currentAiStreamingState) {
-					this.provider.currentAiStreamingState.isError = true;
+					await this.provider.updatePersistedAiStreamingState({
+						...this.provider.currentAiStreamingState,
+						isError: true,
+					});
 				}
 			}
 		} finally {
@@ -320,8 +326,8 @@ export class ChatService {
 					error: isCancellation
 						? "Chat generation cancelled."
 						: success
-						? null
-						: finalAiResponseText,
+							? null
+							: finalAiResponseText,
 					operationId: operationId as string,
 				});
 
@@ -332,14 +338,14 @@ export class ChatService {
 				this.provider.chatHistoryManager.restoreChatHistoryToWebview();
 			} else {
 				console.log(
-					`[ChatService] Old chat operation (${operationId})'s finally block detected new operation, skipping global state modification.`
+					`[ChatService] Old chat operation (${operationId})'s finally block detected new operation, skipping global state modification.`,
 				);
 			}
 		}
 	}
 
 	public async regenerateAiResponseFromHistory(
-		userMessageIndex: number
+		userMessageIndex: number,
 	): Promise<void> {
 		const {
 			settingsManager,
@@ -347,7 +353,7 @@ export class ChatService {
 			contextService,
 			aiRequestService,
 		} = this.provider;
-		const modelName = DEFAULT_FLASH_MODEL;
+		const modelName = DEFAULT_FLASH_LITE_MODEL;
 
 		await this.provider.startUserOperation("chat");
 		const operationId = this.provider.currentActiveChatOperationId;
@@ -355,7 +361,7 @@ export class ChatService {
 
 		if (!operationId || !token) {
 			console.error(
-				"[ChatService] Operation ID or token not available after startUserOperation."
+				"[ChatService] Operation ID or token not available after startUserOperation.",
 			);
 			this.provider.postMessageToWebview({
 				type: "aiResponseEnd",
@@ -387,7 +393,7 @@ export class ChatService {
 
 			if (lastUserMessageIndex === -1) {
 				throw new Error(
-					"Validation Error: No user message found in chat history after editing."
+					"Validation Error: No user message found in chat history after editing.",
 				);
 			}
 
@@ -400,7 +406,7 @@ export class ChatService {
 				editedUserMessageEntry.parts.length === 0
 			) {
 				throw new Error(
-					"Validation Error: Edited user message not found or is not a user message with valid content."
+					"Validation Error: Edited user message not found or is not a user message with valid content.",
 				);
 			}
 
@@ -418,7 +424,7 @@ export class ChatService {
 				{
 					useAISelectionCache: false,
 					forceAISelectionRecalculation: true,
-				} as ContextBuildOptions
+				} as ContextBuildOptions,
 			);
 
 			if (projectContext.contextString.startsWith("[Error")) {
@@ -426,13 +432,13 @@ export class ChatService {
 			}
 			relevantFiles = projectContext.relevantFiles;
 
-			this.provider.currentAiStreamingState = {
+			await this.provider.updatePersistedAiStreamingState({
 				content: "",
 				relevantFiles: relevantFiles,
 				isComplete: false,
 				isError: false,
 				operationId: operationId,
-			};
+			});
 
 			this.provider.postMessageToWebview({
 				type: "aiResponseStart",
@@ -443,13 +449,9 @@ export class ChatService {
 				},
 			});
 
-			const initialSystemPrompt: HistoryEntryPart[] = [
-				{
-					text: `${AI_CHAT_PROMPT} \n\nProject Context:\n${projectContext.contextString}`,
-				},
-			];
+			const systemInstruction = `${AI_CHAT_PROMPT} \n\nProject Context:\n${projectContext.contextString}`;
+
 			const fullUserTurnContents: HistoryEntryPart[] = [
-				...initialSystemPrompt,
 				...userContentPartsForRegen,
 			];
 
@@ -464,7 +466,10 @@ export class ChatService {
 					onChunk: (chunk: string) => {
 						accumulatedResponse += chunk;
 						if (this.provider.currentAiStreamingState) {
-							this.provider.currentAiStreamingState.content += chunk;
+							this.provider.updatePersistedAiStreamingState({
+								...this.provider.currentAiStreamingState,
+								content: this.provider.currentAiStreamingState.content + chunk,
+							});
 						}
 						this.provider.postMessageToWebview({
 							type: "aiResponseChunk",
@@ -474,7 +479,8 @@ export class ChatService {
 					},
 				},
 				token,
-				false
+				false,
+				systemInstruction, // Pass systemInstruction
 			);
 
 			if (token.isCancellationRequested) {
@@ -488,7 +494,7 @@ export class ChatService {
 					[{ text: accumulatedResponse }],
 					undefined,
 					relevantFiles,
-					relevantFiles && relevantFiles.length <= 3
+					relevantFiles && relevantFiles.length <= 3,
 				);
 			}
 		} catch (error: any) {
@@ -498,8 +504,11 @@ export class ChatService {
 				finalAiResponseText = ERROR_OPERATION_CANCELLED;
 				success = true;
 				if (this.provider.currentAiStreamingState) {
-					this.provider.currentAiStreamingState.isError = false;
-					this.provider.currentAiStreamingState.isComplete = true;
+					await this.provider.updatePersistedAiStreamingState({
+						...this.provider.currentAiStreamingState,
+						isError: false,
+						isComplete: true,
+					});
 				}
 				console.log("[ChatService] AI response regeneration cancelled.");
 			} else {
@@ -507,17 +516,20 @@ export class ChatService {
 					error,
 					"Failed to regenerate AI response.",
 					"AI Response Regeneration Error: ",
-					this.provider.workspaceRootUri
+					this.provider.workspaceRootUri,
 				);
 				success = false;
 				if (this.provider.currentAiStreamingState) {
-					this.provider.currentAiStreamingState.isError = true;
+					await this.provider.updatePersistedAiStreamingState({
+						...this.provider.currentAiStreamingState,
+						isError: true,
+					});
 				}
 				console.error("[ChatService] Error regenerating AI response:", error);
 				chatHistoryManager.addHistoryEntry(
 					"model",
 					[{ text: finalAiResponseText }],
-					"error-message"
+					"error-message",
 				);
 			}
 		} finally {
@@ -542,8 +554,8 @@ export class ChatService {
 					error: isCancellation
 						? "Chat generation cancelled."
 						: success
-						? null
-						: finalAiResponseText,
+							? null
+							: finalAiResponseText,
 					operationId: operationId as string,
 				});
 
@@ -554,7 +566,7 @@ export class ChatService {
 				this.provider.chatHistoryManager.restoreChatHistoryToWebview();
 			} else {
 				console.log(
-					`[ChatService] Old regeneration operation (${operationId})'s finally block detected new operation, skipping global state modification.`
+					`[ChatService] Old regeneration operation (${operationId})'s finally block detected new operation, skipping global state modification.`,
 				);
 			}
 

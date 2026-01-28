@@ -96,7 +96,7 @@ Minovative Mind builds a profound understanding of your project using comprehens
 
 ### 3.4 Agentic Context Investigation
 
-- **Active Codebase Exploration**: The Context Agent actively "looks around" your codebase using safe terminal commands (`ls`, `grep`, `find`, `cat`) to discover relevant files that static analysis might miss.
+- **Active Codebase Exploration**: The Context Agent proactively "looks around" your codebase using high-performance, cost-effective models (**Gemini Flash Lite**) and safe terminal commands (`ls`, `grep`, `find`, `cat`) to discover relevant files that static analysis might miss.
 - **Error-Aware Investigation**: Automatically detects when you're asking about errors or bugs and proactively investigates error messages, stack traces, and relevant code paths before generating a response.
 - **Safe Execution Environment**: All investigation commands are executed in a secure, read-only sandbox that prevents modification or external network access.
 - **Transparent Operation**: You see exactly what the agent is doing—every command run and its output is logged transparently in the chat interface.
@@ -139,7 +139,7 @@ Minovative Mind prioritizes user control, project security, transparent operatio
 - **Transparent UI Updates**: Ensures all UI changes and cancellations are clearly communicated and reflected in the extension's interface.
 - **Seamless State Restoration**: Preserves and restores critical extension states (e.g., pending plans, active AI operations, user preferences) across VS Code restarts for continuity.
 - **Accurate API Token Counting**: Precisely measures token consumption for all AI requests.
-- **Real-time Token Usage Display**: Provides immediate feedback on token usage directly within the sidebar.
+- **Real-time Token Usage Display**: Provides immediate feedback on token usage and request counts (including failures) directly within the sidebar, optimized for high scannability.
 - **Error Handling & Fallbacks**: Implements a layered fallback mechanism for context building (smart → heuristic → minimal) to ensure AI always receives some relevant information.
 - **Error and Diff Highlighting**: Highlights errors and code differences in the UI for quick identification and review.
 

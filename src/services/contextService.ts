@@ -41,6 +41,7 @@ import {
 	formatProjectProfileForPrompt,
 } from "./projectTypeDetector"; // Import project type detection and formatting
 import {
+	DEFAULT_FLASH_LITE_MODEL,
 	DEFAULT_FLASH_MODEL,
 	DEFAULT_SIZE,
 } from "../sidebar/common/sidebarConstants";
@@ -118,7 +119,7 @@ export class ContextService {
 		chatHistoryManager: ChatHistoryManager,
 		changeLogger: ProjectChangeLogger,
 		aiRequestService: AIRequestService,
-		postMessageToWebview: (message: any) => void
+		postMessageToWebview: (message: any) => void,
 	) {
 		this.settingsManager = settingsManager;
 		this.chatHistoryManager = chatHistoryManager;
@@ -146,7 +147,7 @@ export class ContextService {
 				this.settingsManager,
 				// 3. Update default Map initialization type
 				this.fileDependencies ?? new Map<string, DependencyRelation[]>(),
-				this.reverseFileDependencies ?? new Map<string, DependencyRelation[]>()
+				this.reverseFileDependencies ?? new Map<string, DependencyRelation[]>(),
 			);
 		}
 		return this.sequentialContextService;
@@ -162,20 +163,20 @@ export class ContextService {
 			if (workspaceFolder) {
 				const workspacePath = workspaceFolder.uri.fsPath;
 				console.log(
-					`[ContextService] Clearing scan cache for workspace: ${workspacePath} due to file change.`
+					`[ContextService] Clearing scan cache for workspace: ${workspacePath} due to file change.`,
 				);
 				clearScanCache(workspacePath); // Ensure clearScanCache is imported
 				this.areDependenciesComputed = false; // Invalidate computed dependencies
 				// --- New addition: Clear AI selection cache ---
 				console.log(
-					`[ContextService] Clearing AI selection cache for workspace: ${workspacePath} due to file change.`
+					`[ContextService] Clearing AI selection cache for workspace: ${workspacePath} due to file change.`,
 				);
 				// Ensure clearAISelectionCache is available in this scope via import
 				clearAISelectionCache(workspacePath);
 				// --- End of new addition ---
 			} else {
 				console.warn(
-					`[ContextService] File change detected outside of any known workspace folder for URI: ${uri.toString()}`
+					`[ContextService] File change detected outside of any known workspace folder for URI: ${uri.toString()}`,
 				);
 			}
 		};
@@ -185,9 +186,9 @@ export class ContextService {
 			vscode.workspace.onDidCreateFiles((event) => {
 				console.debug(`[ContextService] onDidCreateFiles event detected.`);
 				event.files.forEach((fileUri: vscode.Uri) =>
-					clearCacheForFileUri(fileUri)
+					clearCacheForFileUri(fileUri),
 				);
-			})
+			}),
 		);
 
 		// Subscribe to file deletion events
@@ -195,9 +196,9 @@ export class ContextService {
 			vscode.workspace.onDidDeleteFiles((event) => {
 				console.debug(`[ContextService] onDidDeleteFiles event detected.`);
 				event.files.forEach((fileUri: vscode.Uri) =>
-					clearCacheForFileUri(fileUri)
+					clearCacheForFileUri(fileUri),
 				);
-			})
+			}),
 		);
 
 		// Subscribe to file rename events
@@ -207,7 +208,7 @@ export class ContextService {
 				event.files.forEach((fileRename) => {
 					clearCacheForFileUri(fileRename.newUri);
 				});
-			})
+			}),
 		);
 
 		console.log("[ContextService] Workspace file system watchers registered.");
@@ -221,7 +222,7 @@ export class ContextService {
 		const workspaceFolders = vscode.workspace.workspaceFolders;
 		if (!workspaceFolders || workspaceFolders.length === 0) {
 			console.warn(
-				"[ContextService] Cannot compute workspace dependencies: No workspace folder open."
+				"[ContextService] Cannot compute workspace dependencies: No workspace folder open.",
 			);
 			return;
 		}
@@ -236,7 +237,7 @@ export class ContextService {
 
 			if (allScannedFiles.length === 0) {
 				console.warn(
-					"[ContextService] No files found to compute dependencies."
+					"[ContextService] No files found to compute dependencies.",
 				);
 				this.areDependenciesComputed = true;
 				return;
@@ -247,22 +248,22 @@ export class ContextService {
 				workspaceRoot,
 				{
 					/* default options */
-				}
+				},
 			);
 			this.fileDependencies = fileDependencies;
 
 			this.reverseFileDependencies = buildReverseDependencyGraph(
 				fileDependencies,
-				workspaceRoot
+				workspaceRoot,
 			);
 
 			console.log(
-				`[ContextService] Workspace dependencies computed (${fileDependencies.size} files processed).`
+				`[ContextService] Workspace dependencies computed (${fileDependencies.size} files processed).`,
 			);
 			this.areDependenciesComputed = true;
 		} catch (error: any) {
 			console.error(
-				`[ContextService] Error computing workspace dependencies: ${error.message}`
+				`[ContextService] Error computing workspace dependencies: ${error.message}`,
 			);
 		}
 	}
@@ -283,7 +284,7 @@ export class ContextService {
 		userRequest: string,
 		workspaceRootUri: vscode.Uri,
 		allScannedFiles: vscode.Uri[],
-		cancellationToken: vscode.CancellationToken | undefined
+		cancellationToken: vscode.CancellationToken | undefined,
 	): Promise<vscode.Uri[]> {
 		const foundUris: vscode.Uri[] = [];
 		// This regex aims to capture strings that look like file paths.
@@ -305,7 +306,7 @@ export class ContextService {
 		const workspaceRootPath = workspaceRootUri.fsPath;
 		// Convert scanned files to a Set for efficient O(1) lookups
 		const allScannedFilePaths = new Set(
-			allScannedFiles.map((uri) => uri.fsPath)
+			allScannedFiles.map((uri) => uri.fsPath),
 		);
 
 		await BPromise.map(
@@ -367,11 +368,11 @@ export class ContextService {
 					}
 				} catch (e: any) {
 					console.debug(
-						`[ContextService] Failed to process user-provided path "${cleanedMatch}": ${e.message}`
+						`[ContextService] Failed to process user-provided path "${cleanedMatch}": ${e.message}`,
 					);
 				}
 			},
-			{ concurrency: 10 } // Limit concurrent file system checks to avoid overwhelming FS
+			{ concurrency: 10 }, // Limit concurrent file system checks to avoid overwhelming FS
 		);
 
 		return foundUris; // Deduplication will happen in the main method
@@ -385,7 +386,7 @@ export class ContextService {
 	 * @returns The output map of path -> string[]
 	 */
 	private _convertDependencyMapToStringMap(
-		dependencyMap?: Map<string, DependencyRelation[]>
+		dependencyMap?: Map<string, DependencyRelation[]>,
 	): Map<string, string[]> {
 		if (!dependencyMap) {
 			return new Map<string, string[]>();
@@ -422,7 +423,7 @@ export class ContextService {
 		initialDiagnosticsString?: string,
 		options?: ContextBuildOptions,
 		includePersona: boolean = true,
-		includeVerboseHeaders: boolean = true
+		includeVerboseHeaders: boolean = true,
 	): Promise<BuildProjectContextResult> {
 		const startTime = Date.now();
 		const enablePerformanceMonitoring =
@@ -454,7 +455,7 @@ export class ContextService {
 			const isAISelctionRequired =
 				this.settingsManager.getSetting<boolean>(
 					"smartContext.enabled",
-					true
+					true,
 				) && !!queryForContextCheck;
 
 			const heuristicSelectionEnabled =
@@ -485,7 +486,7 @@ export class ContextService {
 			const detectedProjectProfile = await detectProjectType(
 				rootFolder.uri,
 				allScannedFiles,
-				{ useCache: options?.useScanCache ?? true }
+				{ useCache: options?.useScanCache ?? true },
 			);
 
 			const scanTime = Date.now() - scanStartTime;
@@ -494,7 +495,7 @@ export class ContextService {
 				scanTime > PERFORMANCE_THRESHOLDS.SCAN_TIME_WARNING
 			) {
 				console.warn(
-					`[ContextService] Workspace scan took ${scanTime}ms (threshold: ${PERFORMANCE_THRESHOLDS.SCAN_TIME_WARNING}ms)`
+					`[ContextService] Workspace scan took ${scanTime}ms (threshold: ${PERFORMANCE_THRESHOLDS.SCAN_TIME_WARNING}ms)`,
 				);
 			}
 
@@ -565,7 +566,7 @@ export class ContextService {
 						maxFileSizeForParsing: options?.maxFileSize ?? DEFAULT_SIZE,
 						retryFailedFiles: true,
 						maxRetries: 3,
-					}
+					},
 				);
 
 				dependencyBuildTime = Date.now() - dependencyStartTime;
@@ -575,13 +576,13 @@ export class ContextService {
 						PERFORMANCE_THRESHOLDS.DEPENDENCY_BUILD_TIME_WARNING
 				) {
 					console.warn(
-						`[ContextService] Dependency graph build took ${dependencyBuildTime}ms (threshold: ${PERFORMANCE_THRESHOLDS.DEPENDENCY_BUILD_TIME_WARNING}ms)`
+						`[ContextService] Dependency graph build took ${dependencyBuildTime}ms (threshold: ${PERFORMANCE_THRESHOLDS.DEPENDENCY_BUILD_TIME_WARNING}ms)`,
 					);
 				}
 
 				reverseFileDependencies = buildReverseDependencyGraph(
 					fileDependencies,
-					rootFolder.uri
+					rootFolder.uri,
 				);
 
 				this.postMessageToWebview({
@@ -597,13 +598,13 @@ export class ContextService {
 			if (shouldRunHeuristics) {
 				const maxFilesForSymbolProcessing = Math.min(
 					allScannedFiles.length,
-					PERFORMANCE_THRESHOLDS.MAX_FILES_FOR_SYMBOL_PROCESSING
+					PERFORMANCE_THRESHOLDS.MAX_FILES_FOR_SYMBOL_PROCESSING,
 				);
 
 				// Process symbols only for files that are likely to be relevant
 				const filesForSymbolProcessing = allScannedFiles.slice(
 					0,
-					maxFilesForSymbolProcessing
+					maxFilesForSymbolProcessing,
 				);
 
 				await BPromise.map(
@@ -615,7 +616,7 @@ export class ContextService {
 						try {
 							const symbols = await SymbolService.getSymbolsInDocument(
 								fileUri,
-								cancellationToken
+								cancellationToken,
 							);
 							const relativePath = path
 								.relative(rootFolder.uri.fsPath, fileUri.fsPath)
@@ -623,11 +624,11 @@ export class ContextService {
 							documentSymbolsMap.set(relativePath, symbols || []);
 						} catch (symbolError: any) {
 							console.warn(
-								`[ContextService] Failed to get symbols for ${fileUri.fsPath}: ${symbolError.message}`
+								`[ContextService] Failed to get symbols for ${fileUri.fsPath}: ${symbolError.message}`,
 							);
 						}
 					},
-					{ concurrency: options?.maxConcurrency ?? 5 }
+					{ concurrency: options?.maxConcurrency ?? 5 },
 				);
 			}
 
@@ -638,7 +639,7 @@ export class ContextService {
 			if (editorContext?.documentUri) {
 				// If there's an active editor, always fetch and filter live diagnostics
 				const fileContentBytes = await vscode.workspace.fs.readFile(
-					editorContext.documentUri
+					editorContext.documentUri,
 				);
 				const fileContent = Buffer.from(fileContentBytes).toString("utf8");
 
@@ -668,7 +669,7 @@ export class ContextService {
 					await DiagnosticService.formatContextualDiagnostics(
 						editorContext.documentUri,
 						rootFolder.uri,
-						formatOptions
+						formatOptions,
 					);
 				if (diagnosticsForActiveFile) {
 					effectiveDiagnosticsString = diagnosticsForActiveFile;
@@ -699,13 +700,13 @@ export class ContextService {
 					const activeDocumentSymbols =
 						await SymbolService.getSymbolsInDocument(
 							activeFileUri,
-							cancellationToken
+							cancellationToken,
 						);
 
 					if (activeDocumentSymbols && activeDocumentSymbols.length > 0) {
 						// 2b.iv. Iterate through DocumentSymbols to find symbolAtCursor
 						const symbolAtCursor = activeDocumentSymbols.find((s) =>
-							s.range.contains(editorContext.selection!.start)
+							s.range.contains(editorContext.selection!.start),
 						);
 
 						if (symbolAtCursor) {
@@ -727,11 +728,11 @@ export class ContextService {
 											await SymbolService.getDefinition(
 												activeFileUri,
 												symbolAtCursor.selectionRange.start,
-												cancellationToken
+												cancellationToken,
 											);
 									} catch (e: any) {
 										console.warn(
-											`[ContextService] Failed to get definition for ${symbolAtCursor.name}: ${e.message}`
+											`[ContextService] Failed to get definition for ${symbolAtCursor.name}: ${e.message}`,
 										);
 									}
 								})(),
@@ -741,11 +742,11 @@ export class ContextService {
 											await SymbolService.getImplementations(
 												activeFileUri,
 												symbolAtCursor.selectionRange.start,
-												cancellationToken
+												cancellationToken,
 											);
 									} catch (e: any) {
 										console.warn(
-											`[ContextService] Failed to get implementations for ${symbolAtCursor.name}: ${e.message}`
+											`[ContextService] Failed to get implementations for ${symbolAtCursor.name}: ${e.message}`,
 										);
 									}
 								})(),
@@ -755,11 +756,11 @@ export class ContextService {
 											await SymbolService.getTypeDefinition(
 												activeFileUri,
 												symbolAtCursor.selectionRange.start,
-												cancellationToken
+												cancellationToken,
 											);
 									} catch (e: any) {
 										console.warn(
-											`[ContextService] Failed to get type definition for ${symbolAtCursor.name}: ${e.message}`
+											`[ContextService] Failed to get type definition for ${symbolAtCursor.name}: ${e.message}`,
 										);
 									}
 								})(),
@@ -771,7 +772,7 @@ export class ContextService {
 											await SymbolService.getTypeDefinition(
 												activeFileUri,
 												symbolAtCursor.selectionRange.start,
-												cancellationToken
+												cancellationToken,
 											);
 
 										if (referencedTypeDefinitions) {
@@ -786,36 +787,36 @@ export class ContextService {
 														const content =
 															await SymbolService.getDocumentContentAtLocation(
 																typeDef,
-																cancellationToken
+																cancellationToken,
 															);
 														if (content) {
 															const relativePath = path
 																.relative(
 																	rootFolder.uri.fsPath,
-																	typeDef.uri.fsPath
+																	typeDef.uri.fsPath,
 																)
 																.replace(/\\/g, "/");
 															referencedTypeContents.set(relativePath, [
 																content.substring(
 																	0,
-																	MAX_REFERENCED_TYPE_CONTENT_CHARS_CONSTANT
+																	MAX_REFERENCED_TYPE_CONTENT_CHARS_CONSTANT,
 																),
 															]);
 														}
 													} catch (e: any) {
 														console.warn(
-															`[ContextService] Failed to get content for referenced type definition: ${e.message}`
+															`[ContextService] Failed to get content for referenced type definition: ${e.message}`,
 														);
 													}
 												},
-												{ concurrency: 5 } // Limit concurrent file reads
+												{ concurrency: 5 }, // Limit concurrent file reads
 											);
 											activeSymbolDetailedInfo!.referencedTypeDefinitions =
 												referencedTypeContents;
 										}
 									} catch (e: any) {
 										console.warn(
-											`[ContextService] Failed to get referenced type definitions for ${symbolAtCursor.name}: ${e.message}`
+											`[ContextService] Failed to get referenced type definitions for ${symbolAtCursor.name}: ${e.message}`,
 										);
 									}
 								})(),
@@ -825,31 +826,31 @@ export class ContextService {
 											await SymbolService.prepareCallHierarchy(
 												activeFileUri,
 												symbolAtCursor.selectionRange.start,
-												cancellationToken
+												cancellationToken,
 											);
 										if (callHierarchyItems && callHierarchyItems.length > 0) {
 											// Select a primary item (e.g., matching name or the first)
 											const primaryCallHierarchyItem =
 												callHierarchyItems.find(
-													(item) => item.name === symbolAtCursor.name
+													(item) => item.name === symbolAtCursor.name,
 												) || callHierarchyItems[0];
 
 											if (primaryCallHierarchyItem) {
 												activeSymbolDetailedInfo!.incomingCalls =
 													await SymbolService.resolveIncomingCalls(
 														primaryCallHierarchyItem,
-														cancellationToken
+														cancellationToken,
 													);
 												activeSymbolDetailedInfo!.outgoingCalls =
 													await SymbolService.resolveOutgoingCalls(
 														primaryCallHierarchyItem,
-														cancellationToken
+														cancellationToken,
 													);
 											}
 										}
 									} catch (e: any) {
 										console.warn(
-											`[ContextService] Failed to get call hierarchy for ${symbolAtCursor.name}: ${e.message}`
+											`[ContextService] Failed to get call hierarchy for ${symbolAtCursor.name}: ${e.message}`,
 										);
 									}
 								})(),
@@ -858,7 +859,7 @@ export class ContextService {
 					}
 				} catch (e: any) {
 					console.error(
-						`[ContextService] Error getting detailed symbol info: ${e.message}`
+						`[ContextService] Error getting detailed symbol info: ${e.message}`,
 					);
 				}
 			}
@@ -877,7 +878,7 @@ export class ContextService {
 					activeSymbolDetailedInfo,
 					undefined, // semanticGraph
 					cancellationToken,
-					this.settingsManager.getOptimizationSettings()
+					this.settingsManager.getOptimizationSettings(),
 				);
 
 				if (heuristicSelectedFiles.length > 0) {
@@ -888,7 +889,7 @@ export class ContextService {
 				}
 			} catch (heuristicError: any) {
 				console.error(
-					`[ContextService] Error during heuristic file selection: ${heuristicError.message}`
+					`[ContextService] Error during heuristic file selection: ${heuristicError.message}`,
 				);
 				this.postMessageToWebview({
 					type: "statusUpdate",
@@ -925,7 +926,7 @@ export class ContextService {
 						value: `Summarizing ${heuristicSelectedFiles.length} heuristically relevant files for AI selection prompt...`,
 					});
 					filesToSummarizeForSelectionPrompt = Array.from(
-						heuristicSelectedFiles
+						heuristicSelectedFiles,
 					);
 				}
 
@@ -939,9 +940,8 @@ export class ContextService {
 								.relative(rootFolder.uri.fsPath, fileUri.fsPath)
 								.replace(/\\/g, "/");
 							try {
-								const contentBytes = await vscode.workspace.fs.readFile(
-									fileUri
-								);
+								const contentBytes =
+									await vscode.workspace.fs.readFile(fileUri);
 								const fileContentRaw =
 									Buffer.from(contentBytes).toString("utf-8");
 								const symbolsForFile = documentSymbolsMap.get(relativePath);
@@ -950,20 +950,20 @@ export class ContextService {
 									fileContentRaw,
 									symbolsForFile,
 									undefined,
-									MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION
+									MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION,
 								);
 								fileSummariesForAI.set(relativePath, summary);
 							} catch (error: any) {
 								console.warn(
-									`[ContextService] Could not generate summary for ${relativePath}: ${error.message}`
+									`[ContextService] Could not generate summary for ${relativePath}: ${error.message}`,
 								);
 							}
-						}
+						},
 					);
 				await BPromise.allSettled(summaryGenerationPromises);
 			} else {
 				console.log(
-					`[ContextService] Skipping file summary generation (alwaysRunInvestigation enabled)`
+					`[ContextService] Skipping file summary generation (alwaysRunInvestigation enabled)`,
 				);
 			}
 
@@ -984,14 +984,14 @@ export class ContextService {
 				currentOperationId !== this.lastProcessedOperationId
 			) {
 				console.log(
-					`[ContextService] Detected new operation ID (${currentOperationId} vs ${this.lastProcessedOperationId}). Forcing AI selection recalculation.`
+					`[ContextService] Detected new operation ID (${currentOperationId} vs ${this.lastProcessedOperationId}). Forcing AI selection recalculation.`,
 				);
 				shouldUseAISelectionCache = false;
 				// Explicitly clear the workspace-wide AI selection cache.
 				clearAISelectionCache(rootFolder.uri.fsPath);
 			} else if (options?.forceAISelectionRecalculation === true) {
 				console.log(
-					`[ContextService] Forcing AI selection recalculation: clearing cache for workspace: ${rootFolder.uri.fsPath}`
+					`[ContextService] Forcing AI selection recalculation: clearing cache for workspace: ${rootFolder.uri.fsPath}`,
 				);
 				shouldUseAISelectionCache = false;
 				clearAISelectionCache(rootFolder.uri.fsPath);
@@ -1026,10 +1026,10 @@ export class ContextService {
 										path
 											.relative(
 												rootFolder.uri.fsPath,
-												editorContext.documentUri.fsPath
+												editorContext.documentUri.fsPath,
 											)
-											.replace(/\\/g, "/")
-								  )
+											.replace(/\\/g, "/"),
+									)
 								: undefined,
 							// Modified to adapt prompt from string to HistoryEntryPart[]
 							aiModelCall: async (
@@ -1044,7 +1044,7 @@ export class ContextService {
 											onComplete?: () => void;
 									  }
 									| undefined,
-								token: vscode.CancellationToken | undefined
+								token: vscode.CancellationToken | undefined,
 							) => {
 								const messages: HistoryEntryPart[] = [{ text: prompt }];
 								return this.aiRequestService.generateWithRetry(
@@ -1054,15 +1054,15 @@ export class ContextService {
 									requestType,
 									generationConfig,
 									streamCallbacks,
-									token
+									token,
 								);
 							},
-							modelName: DEFAULT_FLASH_MODEL, // Use the default model for selection
+							modelName: DEFAULT_FLASH_LITE_MODEL, // Use the default model for selection
 							cancellationToken,
 							fileDependencies:
 								this._convertDependencyMapToStringMap(fileDependencies),
 							reverseDependencies: this._convertDependencyMapToStringMap(
-								reverseFileDependencies
+								reverseFileDependencies,
 							),
 							preSelectedHeuristicFiles: heuristicSelectedFiles, // Pass heuristicSelectedFiles
 							fileSummaries: fileSummariesForAI, // Pass the generated file summaries
@@ -1087,13 +1087,12 @@ export class ContextService {
 									undefined, // isRelevantFilesExpanded
 									false, // isPlanExplanation
 									false, // isPlanStepUpdate
-									true // isContextAgentLog
+									true, // isContextAgentLog
 								);
 							},
 						};
-						const selectedFileSelections = await selectRelevantFilesAI(
-							selectionOptions
-						);
+						const selectedFileSelections =
+							await selectRelevantFilesAI(selectionOptions);
 						const selectedFiles = selectedFileSelections.map((s) => s.uri);
 
 						if (selectedFiles.length > 0) {
@@ -1115,7 +1114,7 @@ export class ContextService {
 							} else if (allScannedFiles.length > 0) {
 								fallbackFiles = allScannedFiles.slice(
 									0,
-									Math.min(allScannedFiles.length, 1) // Fallback to the first scanned file
+									Math.min(allScannedFiles.length, 1), // Fallback to the first scanned file
 								);
 								this.postMessageToWebview({
 									type: "statusUpdate",
@@ -1133,7 +1132,7 @@ export class ContextService {
 						}
 					} catch (error: any) {
 						console.error(
-							`[ContextService] Error during smart file selection: ${error.message}`
+							`[ContextService] Error during smart file selection: ${error.message}`,
 						);
 						this.postMessageToWebview({
 							type: "statusUpdate",
@@ -1153,7 +1152,7 @@ export class ContextService {
 							// Priority 2: Small subset of scanned files (e.g., first 10)
 							fallbackFiles = allScannedFiles.slice(
 								0,
-								Math.min(allScannedFiles.length, 10)
+								Math.min(allScannedFiles.length, 10),
 							);
 							this.postMessageToWebview({
 								type: "statusUpdate",
@@ -1187,7 +1186,7 @@ export class ContextService {
 			}
 
 			let finalFilesForContextBuilding: vscode.Uri[] = Array.from(
-				filesForContextBuilding
+				filesForContextBuilding,
 			);
 
 			if (userRequest && rootFolder) {
@@ -1196,7 +1195,7 @@ export class ContextService {
 						userRequest,
 						rootFolder.uri,
 						allScannedFiles,
-						cancellationToken
+						cancellationToken,
 					);
 
 				if (userProvidedUris.length > 0) {
@@ -1212,7 +1211,7 @@ export class ContextService {
 			// Convert filesForContextBuilding (vscode.Uri[]) to relative string paths
 			const relativeFilesForContextBuilding: string[] =
 				filesForContextBuilding.map((uri: vscode.Uri) =>
-					path.relative(rootFolder.uri.fsPath, uri.fsPath).replace(/\\/g, "/")
+					path.relative(rootFolder.uri.fsPath, uri.fsPath).replace(/\\/g, "/"),
 				);
 
 			// Context building with performance monitoring
@@ -1233,7 +1232,7 @@ export class ContextService {
 				fileDependencies,
 				documentSymbolsMap,
 				activeSymbolDetailedInfo, // Pass the new argument
-				activeSymbolDetailedInfo?.referencedTypeDefinitions ?? undefined // Corrected argument
+				activeSymbolDetailedInfo?.referencedTypeDefinitions ?? undefined, // Corrected argument
 			);
 
 			// --- New logic to prepend project type preamble ---
@@ -1246,7 +1245,7 @@ export class ContextService {
 				}
 			} catch (preambleError: any) {
 				console.warn(
-					`[ContextService] Error generating project type preamble: ${preambleError.message}`
+					`[ContextService] Error generating project type preamble: ${preambleError.message}`,
 				);
 				this.postMessageToWebview({
 					type: "statusUpdate",
@@ -1276,7 +1275,7 @@ export class ContextService {
 				contextBuildTime > PERFORMANCE_THRESHOLDS.CONTEXT_BUILD_TIME_WARNING
 			) {
 				console.warn(
-					`[ContextService] Context building took ${contextBuildTime}ms (threshold: ${PERFORMANCE_THRESHOLDS.CONTEXT_BUILD_TIME_WARNING}ms)`
+					`[ContextService] Context building took ${contextBuildTime}ms (threshold: ${PERFORMANCE_THRESHOLDS.CONTEXT_BUILD_TIME_WARNING}ms)`,
 				);
 			}
 
@@ -1324,10 +1323,10 @@ export class ContextService {
 			onProgress?: (
 				currentFile: string,
 				totalFiles: number,
-				progress: number
+				progress: number,
 			) => void;
 			onFileProcessed?: (summary: any) => void;
-		}
+		},
 	): Promise<BuildProjectContextResult> {
 		try {
 			const sequentialService = await this.initializeSequentialContextService();
@@ -1345,13 +1344,13 @@ export class ContextService {
 					modelName: DEFAULT_FLASH_MODEL, // Use the default model for sequential processing
 					onProgress: options?.onProgress,
 					onFileProcessed: options?.onFileProcessed,
-				}
+				},
 			);
 
 			return {
 				contextString: result.contextString,
 				relevantFiles: result.relevantFiles.map((uri) =>
-					vscode.workspace.asRelativePath(uri)
+					vscode.workspace.asRelativePath(uri),
 				),
 				performanceMetrics: {
 					scanTime: result.processingMetrics.totalTime,
@@ -1372,7 +1371,7 @@ export class ContextService {
 				undefined,
 				{
 					enablePerformanceMonitoring: false,
-				}
+				},
 			);
 		}
 	}

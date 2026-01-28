@@ -27,6 +27,7 @@ import { CodeValidationService } from "../services/codeValidationService";
 import { DiagnosticService } from "../utils/diagnosticUtils";
 import { ContextRefresherService } from "../services/contextRefresherService";
 import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
+import { LightweightClassificationService } from "../services/lightweightClassificationService";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import * as crypto from "crypto"; // Import crypto for UUID generation
 import { z } from "zod";
@@ -194,6 +195,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	private codeValidationService: CodeValidationService;
 	/** Service for watching workspace changes and refreshing context caches. */
 	private contextRefresherService: ContextRefresherService;
+	/** Service for lightweight AI-based classification of intent and errors. */
+	private lightweightClassificationService: LightweightClassificationService;
 
 	// --- State for Throttling Messages ---
 	/** Queue holding messages waiting to be sent to the webview, subject to throttling. */
@@ -222,7 +225,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	constructor(
 		extensionUri: vscode.Uri,
 		context: vscode.ExtensionContext,
-		workspaceRootUri: vscode.Uri | undefined
+		workspaceRootUri: vscode.Uri | undefined,
 	) {
 		this.extensionUri = extensionUri;
 		this.secretStorage = context.secrets;
@@ -232,7 +235,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		this._persistedPendingPlanData =
 			context.workspaceState.get<sidebarTypes.PersistedPlanData | null>(
 				"minovativeMind.persistedPendingPlanData",
-				null
+				null,
 			);
 
 		this.completedPlanChangeSets = context.workspaceState.get<
@@ -241,24 +244,38 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
 		this.isPlanExecutionActive = context.workspaceState.get<boolean>(
 			"minovativeMind.isPlanExecutionActive",
-			false
+			false,
 		);
 		console.log(
-			`[SidebarProvider] isPlanExecutionActive initialized to: ${this.isPlanExecutionActive}`
+			`[SidebarProvider] isPlanExecutionActive initialized to: ${this.isPlanExecutionActive}`,
 		);
+
+		const persistedStreamingState =
+			context.workspaceState.get<sidebarTypes.AiStreamingState | null>(
+				"minovativeMind.currentAiStreamingState",
+				null,
+			);
+		if (persistedStreamingState) {
+			this.currentAiStreamingState = persistedStreamingState;
+			console.log(
+				`[SidebarProvider] Restored persisted AI streaming state for operation: ${persistedStreamingState.operationId}`,
+			);
+			// Also restore the operation ID if we have a streaming state, so _isOperationActive checks pass
+			this.currentActiveChatOperationId = persistedStreamingState.operationId;
+		}
 
 		// Instantiate managers
 		this.apiKeyManager = new ApiKeyManager(
 			this.secretStorage,
-			this.postMessageToWebview.bind(this)
+			this.postMessageToWebview.bind(this),
 		);
 		this.settingsManager = new SettingsManager(
 			this.workspaceState,
-			this.postMessageToWebview.bind(this)
+			this.postMessageToWebview.bind(this),
 		);
 		this.chatHistoryManager = new ChatHistoryManager(
 			this.workspaceState,
-			this.postMessageToWebview.bind(this)
+			this.postMessageToWebview.bind(this),
 		);
 		this.changeLogger = new ProjectChangeLogger();
 
@@ -277,7 +294,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		this.aiRequestService = new AIRequestService(
 			this.apiKeyManager,
 			this.postMessageToWebview.bind(this),
-			this.tokenTrackingService
+			this.tokenTrackingService,
 		);
 
 		this.contextService = new ContextService(
@@ -285,36 +302,39 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			this.chatHistoryManager,
 			this.changeLogger,
 			this.aiRequestService,
-			this.postMessageToWebview.bind(this)
+			this.postMessageToWebview.bind(this),
 		);
 
 		this.codeValidationService = new CodeValidationService(
-			new DiagnosticService()
+			new DiagnosticService(),
 		);
 		this.contextRefresherService = new ContextRefresherService(
 			this.contextService,
 			this.changeLogger,
-			this.workspaceRootUri || vscode.Uri.file("/")
+			this.workspaceRootUri || vscode.Uri.file("/"),
 		);
 
+		this.lightweightClassificationService =
+			new LightweightClassificationService(this.aiRequestService);
 		this.enhancedCodeGenerator = new EnhancedCodeGenerator(
 			this.aiRequestService,
 			this.postMessageToWebview.bind(this),
 			this.changeLogger,
 			this.codeValidationService,
-			this.contextRefresherService
+			this.contextRefresherService,
+			this.lightweightClassificationService,
 		);
 
 		this.revertService = new RevertService(
 			this.workspaceRootUri || vscode.Uri.file("/"),
-			this.changeLogger
+			this.changeLogger,
 		);
 
 		this.planService = new PlanService(
 			this,
 			this.workspaceRootUri,
 			this.enhancedCodeGenerator,
-			this.postMessageToWebview.bind(this)
+			this.postMessageToWebview.bind(this),
 		);
 		this.chatService = new ChatService(this);
 		this.commitService = new CommitService(this);
@@ -337,7 +357,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 					) {
 						console.log(
 							"[SidebarProvider] VS Code window lost focus, but user review (plan/commit) is pending. " +
-								"Not resetting UI to avoid premature input re-enabling."
+								"Not resetting UI to avoid premature input re-enabling.",
 						);
 						// DO NOT send updateLoadingState({ value: false }) or reenableInput()
 						// in this specific scenario as per instructions.
@@ -347,13 +367,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 						// It does not instruct to send them if no review is pending.
 						// The current application logic should handle UI resets when operations genuinely complete.
 						console.log(
-							"[SidebarProvider] VS Code window lost focus, no user review pending. UI state remains as is."
+							"[SidebarProvider] VS Code window lost focus, no user review pending. UI state remains as is.",
 						);
 					}
 				}
 			},
 			this,
-			context.subscriptions
+			context.subscriptions,
 		); // `this` ensures correct context for callback, `context.subscriptions` manages cleanup
 	}
 
@@ -376,7 +396,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 * @returns A Promise that resolves when the webview is fully set up and ready to receive messages.
 	 */
 	public async resolveWebviewView(
-		webviewView: vscode.WebviewView
+		webviewView: vscode.WebviewView,
 	): Promise<void> {
 		this._view = webviewView;
 		webviewView.webview.options = {
@@ -392,8 +412,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			vscode.Uri.joinPath(
 				this.extensionUri,
 				"media",
-				"minovative-logo-192x192.png"
-			)
+				"minovative-logo-192x192.png",
+			),
 		);
 		webviewView.webview.html = await getHtmlForWebview(
 			webviewView.webview,
@@ -401,7 +421,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			sidebarConstants.MODEL_DETAILS,
 			this.settingsManager.getSelectedModelName(),
 			logoUri,
-			this.workspaceRootUri
+			this.workspaceRootUri,
 		);
 
 		const fileUri = vscode.Uri.parse("file://"); // This seems like a placeholder URI for the webview's internal loading
@@ -430,7 +450,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 * @param message The message object conforming to `ExtensionToWebviewMessages`.
 	 */
 	public postMessageToWebview(
-		message: sidebarTypes.ExtensionToWebviewMessages
+		message: sidebarTypes.ExtensionToWebviewMessages,
 	): void {
 		// Intercept state-changing messages to keep SidebarProvider state in sync
 		if (message.type === "setContextAgentLoading") {
@@ -459,7 +479,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		} else {
 			// For any other message type not explicitly categorized, default to immediate sending
 			console.warn(
-				`[SidebarProvider] Message type '${message.type}' not categorized for throttling; sending immediately.`
+				`[SidebarProvider] Message type '${message.type}' not categorized for throttling; sending immediately.`,
 			);
 			this._postMessageImmediateInternal(message);
 		}
@@ -471,7 +491,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 * @param message The message to send.
 	 */
 	private async _postMessageImmediateInternal(
-		message: sidebarTypes.ExtensionToWebviewMessages
+		message: sidebarTypes.ExtensionToWebviewMessages,
 	): Promise<void> {
 		if (this._view && this._view.visible) {
 			try {
@@ -479,12 +499,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			} catch (err) {
 				console.warn(
 					`[SidebarProvider] Failed to post message to webview: ${message.type}`,
-					err
+					err,
 				);
 			}
 		} else {
 			console.log(
-				`[SidebarProvider] Webview not visible or not ready, skipping message: ${message.type}`
+				`[SidebarProvider] Webview not visible or not ready, skipping message: ${message.type}`,
 			);
 		}
 	}
@@ -495,7 +515,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 * @param message The message to queue.
 	 */
 	private _queueThrottledMessage(
-		message: sidebarTypes.ExtensionToWebviewMessages
+		message: sidebarTypes.ExtensionToWebviewMessages,
 	): void {
 		this._postMessageThrottledQueue.push({ message });
 		this._processThrottledQueue(); // Attempt to process the queue
@@ -518,7 +538,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			if (timeSinceLastMessage < this.THROTTLE_INTERVAL_MS) {
 				// Wait for the remaining throttle time before sending the next message
 				await new Promise((r) =>
-					setTimeout(r, this.THROTTLE_INTERVAL_MS - timeSinceLastMessage)
+					setTimeout(r, this.THROTTLE_INTERVAL_MS - timeSinceLastMessage),
 				);
 			}
 
@@ -540,17 +560,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 * @param data The plan data to persist, or `null` to clear.
 	 */
 	public async updatePersistedPendingPlanData(
-		data: sidebarTypes.PersistedPlanData | null
+		data: sidebarTypes.PersistedPlanData | null,
 	): Promise<void> {
 		this._persistedPendingPlanData = data;
 		await this.workspaceState.update(
 			"minovativeMind.persistedPendingPlanData",
-			data
+			data,
 		);
 		console.log(
 			`[SidebarProvider] Persisted pending plan data updated to: ${
 				data ? "present" : "null"
-			}`
+			}`,
 		);
 	}
 
@@ -559,17 +579,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 * @param data An array of `RevertibleChangeSet` or `null` to clear.
 	 */
 	public async updatePersistedCompletedPlanChangeSets(
-		data: RevertibleChangeSet[] | null
+		data: RevertibleChangeSet[] | null,
 	): Promise<void> {
 		this.completedPlanChangeSets = data || [];
 		await this.workspaceState.update(
 			"minovativeMind.completedPlanChangeSets",
-			this.completedPlanChangeSets
+			this.completedPlanChangeSets,
 		);
 		console.log(
 			`[SidebarProvider] Persisted completed plan change sets updated to: ${
 				this.completedPlanChangeSets.length > 0 ? "present" : "null"
-			}`
+			}`,
 		);
 	}
 
@@ -582,9 +602,28 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		this.isPlanExecutionActive = isActive;
 		await this.workspaceState.update(
 			"minovativeMind.isPlanExecutionActive",
-			isActive
+			isActive,
 		);
 		console.log(`[SidebarProvider] isPlanExecutionActive set to: ${isActive}`);
+	}
+
+	/**
+	 * Updates the persisted AI streaming state in VS Code workspace state.
+	 * @param state The streaming state to persist, or `null` to clear.
+	 */
+	public async updatePersistedAiStreamingState(
+		state: sidebarTypes.AiStreamingState | null,
+	): Promise<void> {
+		this.currentAiStreamingState = state;
+		await this.workspaceState.update(
+			"minovativeMind.currentAiStreamingState",
+			state,
+		);
+		// console.log(
+		// 	`[SidebarProvider] Persisted AI streaming state updated: ${
+		// 		state ? "active" : "cleared"
+		// 	}`
+		// );
 	}
 
 	/**
@@ -606,7 +645,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			// 2) _persistedPendingPlanData (Plan Review)
 		} else if (this._persistedPendingPlanData) {
 			await this._restorePendingPlanConfirmationState(
-				this._persistedPendingPlanData
+				this._persistedPendingPlanData,
 			);
 			// 3) pendingCommitReviewData (Commit Review)
 		} else if (this.pendingCommitReviewData) {
@@ -620,12 +659,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			await this._restoreAiStreamingState(this.currentAiStreamingState);
 			// 5) this._isOperationActive (Stale/Generic check for operations not explicitly captured)
 		} else if (this._isOperationActive) {
-			console.warn(
-				"[SidebarProvider] Detected active operation (currentActiveChatOperationId set) without specific plan, review, or streaming context. Assuming stale and resetting."
+			// Check if we are in a "Waiting" state (Active operation, but no streaming content yet)
+			// This happens if sidebar is closed after sending prompt but before first chunk.
+			// We should NOT reset because the backend might still be processing.
+			console.log(
+				"[SidebarProvider] Detected active operation without streaming content. Restoring 'Loading' state.",
 			);
-			await this._resetStaleLoadingState();
-			// 6) _resetQuiescentUIState (Default)
+			this.postMessageToWebview({ type: "updateLoadingState", value: true });
+			// Ensure inputs are disabled
+			// No need to send reenableInput
 		} else {
+			// 6) _resetQuiescentUIState (Default)
 			// No active or pending operations detected. Ensure UI is fully re-enabled.
 			await this._resetQuiescentUIState();
 		}
@@ -651,7 +695,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 */
 	private async _restorePlanExecutionState(): Promise<void> {
 		console.log(
-			"[SidebarProvider] Detected active plan execution. Restoring UI state."
+			"[SidebarProvider] Detected active plan execution. Restoring UI state.",
 		);
 		this.postMessageToWebview({ type: "updateLoadingState", value: true });
 		this.postMessageToWebview({ type: "planExecutionStarted" });
@@ -685,10 +729,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 * @param persistedData The persisted plan data.
 	 */
 	private async _restorePendingPlanConfirmationState(
-		persistedData: sidebarTypes.PersistedPlanData
+		persistedData: sidebarTypes.PersistedPlanData,
 	): Promise<void> {
 		console.log(
-			"[SidebarProvider] Restoring pending plan confirmation to webview from persisted data."
+			"[SidebarProvider] Restoring pending plan confirmation to webview from persisted data.",
 		);
 		const planCtx = persistedData;
 		const planDataForRestore = {
@@ -711,10 +755,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 * @param streamingState The current AI streaming state.
 	 */
 	private async _restoreAiStreamingState(
-		streamingState: sidebarTypes.AiStreamingState
+		streamingState: sidebarTypes.AiStreamingState,
 	): Promise<void> {
 		console.log(
-			"[SidebarProvider] Restoring active AI streaming progress to webview."
+			"[SidebarProvider] Restoring active AI streaming progress to webview.",
 		);
 		// The operationId will be passed within streamingState once AiStreamingState is updated.
 		this.postMessageToWebview({
@@ -729,10 +773,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 * @param commitReviewData The pending commit review data.
 	 */
 	private async _restorePendingCommitReviewState(
-		commitReviewData: PendingCommitReviewDataType
+		commitReviewData: PendingCommitReviewDataType,
 	): Promise<void> {
 		console.log(
-			"[SidebarProvider] Restoring pending commit review to webview."
+			"[SidebarProvider] Restoring pending commit review to webview.",
 		);
 		this.postMessageToWebview({
 			type: "restorePendingCommitReview",
@@ -747,7 +791,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 */
 	private async _resetStaleLoadingState(): Promise<void> {
 		console.log(
-			"[SidebarProvider] Detected stale generic loading state. Resetting."
+			"[SidebarProvider] Detected stale generic loading state. Resetting.",
 		);
 		await this.endUserOperation("success", "Inputs re-enabled.");
 	}
@@ -779,7 +823,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		if (this._isOperationActive) {
 			console.warn(
 				`[SidebarProvider] Attempted to start operation '${operationType}' (new ID: ${newOperationId}) while an operation ` +
-					`(current ID: ${this.currentActiveChatOperationId}) is already active. Ignoring duplicate request.`
+					`(current ID: ${this.currentActiveChatOperationId}) is already active. Ignoring duplicate request.`,
 			);
 			return;
 		}
@@ -787,13 +831,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		// If operation is inactive, but a stale operation ID exists (e.g., failed to clear ID on crash), clear it now
 		if (this.currentActiveChatOperationId !== null) {
 			console.warn(
-				`[SidebarProvider] Detected stale active operation ID (${this.currentActiveChatOperationId}) while no token was active. Resetting state for new operation.`
+				`[SidebarProvider] Detected stale active operation ID (${this.currentActiveChatOperationId}) while no token was active. Resetting state for new operation.`,
 			);
 			this.clearActiveOperationState();
 		}
 
 		console.log(
-			`[SidebarProvider] Starting user operation of type '${operationType}' with ID: ${newOperationId}`
+			`[SidebarProvider] Starting user operation of type '${operationType}' with ID: ${newOperationId}`,
 		);
 
 		// Post an initial loading state message early
@@ -804,7 +848,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		// but the cancellation token source somehow remained.
 		if (this.activeOperationCancellationTokenSource) {
 			console.log(
-				"[SidebarProvider] Disposing existing activeOperationCancellationTokenSource."
+				"[SidebarProvider] Disposing existing activeOperationCancellationTokenSource.",
 			);
 			this.activeOperationCancellationTokenSource.cancel(); // Cancel any lingering tasks associated with the old token
 			this.activeOperationCancellationTokenSource.dispose();
@@ -818,7 +862,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		this.currentActiveChatOperationId = newOperationId;
 
 		console.log(
-			"[SidebarProvider] Created new CancellationTokenSource and updated generation state for the operation."
+			"[SidebarProvider] Created new CancellationTokenSource and updated generation state for the operation.",
 		);
 	}
 
@@ -834,15 +878,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 * Clears all state variables associated with the currently active operation:
 	 * Disposes the cancellation token source, clears streaming state, and resets the operation ID.
 	 */
-	public clearActiveOperationState(): void {
+	public async clearActiveOperationState(): Promise<void> {
 		if (this.activeOperationCancellationTokenSource) {
 			console.log(
-				"[SidebarProvider] Disposing activeOperationCancellationTokenSource."
+				"[SidebarProvider] Disposing activeOperationCancellationTokenSource.",
 			);
 			this.activeOperationCancellationTokenSource.dispose();
 			this.activeOperationCancellationTokenSource = undefined;
 		}
-		this.currentAiStreamingState = null;
+		// Clear persisted streaming state
+		await this.updatePersistedAiStreamingState(null);
 		this.currentActiveChatOperationId = null; // Clear the operation ID
 	}
 
@@ -867,10 +912,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	public async endUserOperation(
 		outcome: sidebarTypes.ExecutionOutcome | "review",
 		customStatusMessage?: string,
-		shouldReenableInputs: boolean = true
+		shouldReenableInputs: boolean = true,
 	): Promise<void> {
 		console.log(
-			`[SidebarProvider] Ending user operation with outcome: ${outcome}`
+			`[SidebarProvider] Ending user operation with outcome: ${outcome}`,
 		);
 
 		if (outcome === "cancelled") {
@@ -889,7 +934,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			this.chatHistoryManager.restoreChatHistoryToWebview();
 		} else {
 			console.log(
-				"[SidebarProvider] Skipping restoreChatHistoryToWebview during active message edit."
+				"[SidebarProvider] Skipping restoreChatHistoryToWebview during active message edit.",
 			);
 		}
 
@@ -962,7 +1007,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
 		this.activeChildProcesses.forEach((cp) => {
 			console.log(
-				`[SidebarProvider] Killing child process with PID: ${cp.pid}`
+				`[SidebarProvider] Killing child process with PID: ${cp.pid}`,
 			);
 			cp.kill();
 		});
@@ -1005,7 +1050,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	public async revertLastPlanChanges(): Promise<void> {
 		if (this.completedPlanChangeSets.length === 0) {
 			vscode.window.showWarningMessage(
-				"No completed workflow changes to revert."
+				"No completed workflow changes to revert.",
 			);
 			return;
 		}
@@ -1013,7 +1058,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		const mostRecentChangeSet = this.completedPlanChangeSets.pop();
 		if (!mostRecentChangeSet) {
 			vscode.window.showWarningMessage(
-				"No completed workflow changes to revert."
+				"No completed workflow changes to revert.",
 			);
 			return;
 		}
@@ -1026,7 +1071,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			"Are you sure you want to revert the changes from the most recent workflow?",
 			{ modal: true },
 			"Yes, Revert Changes",
-			"No, Cancel"
+			"No, Cancel",
 		);
 
 		if (confirmation === "Yes, Revert Changes") {
@@ -1037,20 +1082,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 					value: "Reverting most recent workflow changes...",
 				});
 				console.log(
-					"[SidebarProvider] Starting revert of most recent workflow changes..."
+					"[SidebarProvider] Starting revert of most recent workflow changes...",
 				);
 
 				await this.revertService.revertChanges(mostRecentChangeSet.changes);
 
 				console.log(
-					"[SidebarProvider] Most recent workflow changes reverted successfully."
+					"[SidebarProvider] Most recent workflow changes reverted successfully.",
 				);
 			} catch (error: any) {
 				revertErrorMessage = formatUserFacingErrorMessage(
 					error,
 					"Failed to revert most recent workflow changes.",
 					"Revert Error: ",
-					this.workspaceRootUri
+					this.workspaceRootUri,
 				);
 				finalStatusMessage = revertErrorMessage;
 				isErrorStatus = true;
@@ -1058,11 +1103,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 					error,
 					"Failed to revert most recent workflow changes.",
 					"Revert Error: ",
-					this.workspaceRootUri
+					this.workspaceRootUri,
 				);
 				console.error(
 					"[SidebarProvider] Error reverting most recent workflow changes:",
-					error
+					error,
 				);
 				// If revert fails, push the change set back so the user can try again
 				this.completedPlanChangeSets.push(mostRecentChangeSet);
@@ -1079,7 +1124,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		}
 
 		await this.updatePersistedCompletedPlanChangeSets(
-			this.completedPlanChangeSets
+			this.completedPlanChangeSets,
 		);
 
 		const stillHasRevertibleChanges = this.completedPlanChangeSets.length > 0;
@@ -1105,7 +1150,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 * @param outcome The final outcome of the plan execution.
 	 */
 	public async showPlanCompletionNotification(
-		outcome: sidebarTypes.ExecutionOutcome
+		outcome: sidebarTypes.ExecutionOutcome,
 	): Promise<void> {
 		let message: string;
 		let isError: boolean;
@@ -1163,14 +1208,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			const result = await notificationFunction(
 				message,
 				"Open Sidebar",
-				"Cancel Plan"
+				"Cancel Plan",
 			);
 
 			if (result === "Open Sidebar") {
 				vscode.commands.executeCommand("minovative-mind.activitybar.focus");
 			} else if (result === "Cancel Plan") {
 				console.log(
-					"[SidebarProvider] Native notification 'Cancel Plan' clicked. Triggering universal cancellation."
+					"[SidebarProvider] Native notification 'Cancel Plan' clicked. Triggering universal cancellation.",
 				);
 				await this.triggerUniversalCancellation();
 				return;

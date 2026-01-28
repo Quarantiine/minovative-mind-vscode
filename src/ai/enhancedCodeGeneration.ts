@@ -16,17 +16,14 @@ import { ContextRefresherService } from "../services/contextRefresherService";
 import {
 	analyzeFileStructure,
 	getLanguageId,
-	isRewriteIntentDetected,
-	isAIOutputLikelyErrorMessage,
 } from "../utils/codeAnalysisUtils";
+import { LightweightClassificationService } from "../services/lightweightClassificationService";
 import { formatSuccessfulChangesForPrompt } from "../workflow/changeHistoryFormatter";
 import {
 	getEnhancedGenerationSystemInstruction,
 	getEnhancedGenerationUserMessage,
 	getEnhancedModificationSystemInstruction,
 	getEnhancedModificationUserMessage,
-	getRefineModificationSystemInstruction,
-	getRefineModificationUserMessage,
 	_formatRelevantFilesForPrompt,
 } from "./prompts/enhancedCodeGenerationPrompts";
 import { CodeValidationService } from "../services/codeValidationService";
@@ -51,7 +48,8 @@ export class EnhancedCodeGenerator {
 		private postMessageToWebview: (message: ExtensionToWebviewMessages) => void,
 		private changeLogger: ProjectChangeLogger,
 		private codeValidationService: CodeValidationService,
-		private contextRefresherService: ContextRefresherService
+		private contextRefresherService: ContextRefresherService,
+		private lightweightClassificationService: LightweightClassificationService,
 	) {}
 
 	/**
@@ -63,7 +61,7 @@ export class EnhancedCodeGenerator {
 		context: EnhancedGenerationContext,
 		modelName: string,
 		token?: vscode.CancellationToken,
-		generationConfig?: GenerationConfig // New parameter
+		generationConfig?: GenerationConfig, // New parameter
 	): Promise<{
 		content: string;
 		validation: CodeValidationResult;
@@ -79,7 +77,10 @@ export class EnhancedCodeGenerator {
 		});
 
 		try {
-			const isRewriteOp = isRewriteIntentDetected(generatePrompt, filePath);
+			const isRewriteOp =
+				await this.lightweightClassificationService.checkRewriteIntent(
+					generatePrompt,
+				);
 			const generationContext: EnhancedGenerationContext = {
 				...context,
 				isRewriteOperation: isRewriteOp,
@@ -94,7 +95,7 @@ export class EnhancedCodeGenerator {
 				streamId,
 				token,
 				undefined, // Explicitly pass undefined for onCodeChunkCallback
-				generationConfig
+				generationConfig,
 			);
 			if (!initialResult.isValid) {
 				return {
@@ -105,7 +106,7 @@ export class EnhancedCodeGenerator {
 			}
 			const validation = await this.codeValidationService.validateCode(
 				initialResult.actualPath || filePath, // Validate with the actual path
-				initialResult.finalContent
+				initialResult.finalContent,
 			);
 			const result = {
 				content: validation.finalContent,
@@ -156,7 +157,7 @@ export class EnhancedCodeGenerator {
 		currentContent: string,
 		context: EnhancedGenerationContext,
 		modelName: string,
-		token?: vscode.CancellationToken
+		token?: vscode.CancellationToken,
 	): Promise<{ content: string; validation: CodeValidationResult }> {
 		const languageId = getLanguageId(path.extname(filePath));
 		const streamId = crypto.randomUUID();
@@ -167,7 +168,10 @@ export class EnhancedCodeGenerator {
 		});
 
 		try {
-			const isRewriteOp = isRewriteIntentDetected(modificationPrompt, filePath);
+			const isRewriteOp =
+				await this.lightweightClassificationService.checkRewriteIntent(
+					modificationPrompt,
+				);
 			const modificationContext: EnhancedGenerationContext = {
 				...context,
 				isRewriteOperation: isRewriteOp,
@@ -180,7 +184,7 @@ export class EnhancedCodeGenerator {
 				modificationContext,
 				modelName,
 				streamId,
-				token
+				token,
 			);
 			this.postMessageToWebview({
 				type: "codeFileStreamEnd",
@@ -215,19 +219,19 @@ export class EnhancedCodeGenerator {
 
 	public async validateFileContent(
 		fsPath: string,
-		content: string
+		content: string,
 	): Promise<CodeValidationResult> {
 		console.log(`[EnhancedCodeGenerator] Validating file: ${fsPath}`);
 		try {
 			const validationResult = await this.codeValidationService.validateCode(
 				fsPath,
-				content
+				content,
 			);
 			return validationResult;
 		} catch (error) {
 			console.error(
 				`[EnhancedCodeGenerator] Error during validation for ${fsPath}:`,
-				error
+				error,
 			);
 			// Return a default error structure if validation itself fails unexpectedly
 			return {
@@ -261,16 +265,16 @@ export class EnhancedCodeGenerator {
 		streamId: string,
 		token?: vscode.CancellationToken,
 		onCodeChunkCallback?: (chunk: string) => Promise<void> | void,
-		generationConfig?: GenerationConfig
+		generationConfig?: GenerationConfig,
 	): Promise<CodeValidationResult & { actualPath?: string }> {
 		// Modified return type
 		const systemInstruction = getEnhancedGenerationSystemInstruction(
 			filePath,
-			context
+			context,
 		);
 		const userMessage = getEnhancedGenerationUserMessage(
 			generatePrompt,
-			context
+			context,
 		);
 
 		try {
@@ -286,25 +290,25 @@ export class EnhancedCodeGenerator {
 				},
 				token,
 				false, // isMergeOperation
-				systemInstruction // Pass systemInstruction
+				systemInstruction, // Pass systemInstruction
 			);
 
 			console.log(
 				`[EnhancedCodeGenerator] Raw AI response received for ${filePath}:\n${rawContent.substring(
 					0,
-					500
-				)}...`
+					500,
+				)}...`,
 			); // Log first 500 chars
 
 			let finalPath = filePath;
 			const extractedContent = this._extractTargetFileContent(
 				rawContent,
-				filePath
+				filePath,
 			);
 
 			if (extractedContent === null) {
 				console.warn(
-					`[EnhancedCodeGenerator] No content extracted for target file ${finalPath} from AI response.` // Use finalPath
+					`[EnhancedCodeGenerator] No content extracted for target file ${finalPath} from AI response.`, // Use finalPath
 				);
 				return {
 					isValid: false,
@@ -330,15 +334,17 @@ export class EnhancedCodeGenerator {
 			console.log(
 				`[EnhancedCodeGenerator] Successfully extracted content for ${finalPath}:\n${extractedContent.substring(
 					0,
-					500
-				)}...` // Use finalPath
+					500,
+				)}...`, // Use finalPath
 			);
 
 			const cleanedExtractedContent = cleanCodeOutput(extractedContent);
 
 			if (
 				cleanedExtractedContent.trim().length < 5 ||
-				isAIOutputLikelyErrorMessage(cleanedExtractedContent) ||
+				(await this.lightweightClassificationService.checkIsError(
+					cleanedExtractedContent,
+				)) ||
 				cleanedExtractedContent.trim() === "/"
 			) {
 				return {
@@ -364,7 +370,7 @@ export class EnhancedCodeGenerator {
 
 			const validationResult = this.codeValidationService.checkPureCodeFormat(
 				cleanedExtractedContent,
-				false
+				false,
 			);
 			return { ...validationResult, actualPath: finalPath }; // NEW: Include finalPath
 		} catch (error: any) {
@@ -385,26 +391,26 @@ export class EnhancedCodeGenerator {
 		modelName: string,
 		streamId: string,
 		token?: vscode.CancellationToken,
-		onCodeChunkCallback?: (chunk: string) => Promise<void> | void
+		onCodeChunkCallback?: (chunk: string) => Promise<void> | void,
 	): Promise<{ content: string; validation: CodeValidationResult }> {
 		const fileAnalysis = await analyzeFileStructure(filePath, currentContent);
 		const contextWithAnalysis: EnhancedGenerationContext = {
 			...context,
 			fileStructureAnalysis: fileAnalysis,
 			successfulChangeHistory: formatSuccessfulChangesForPrompt(
-				this.changeLogger.getCompletedPlanChangeSets()
+				this.changeLogger.getCompletedPlanChangeSets(),
 			),
 		};
 
 		const systemInstruction = getEnhancedModificationSystemInstruction(
 			filePath,
-			contextWithAnalysis
+			contextWithAnalysis,
 		);
 		const userMessage = getEnhancedModificationUserMessage(
 			filePath,
 			modificationPrompt,
 			currentContent,
-			contextWithAnalysis
+			contextWithAnalysis,
 		);
 
 		const rawContent = await this.aiRequestService.generateWithRetry(
@@ -419,14 +425,16 @@ export class EnhancedCodeGenerator {
 			},
 			token,
 			false, // isMergeOperation
-			systemInstruction // Pass systemInstruction
+			systemInstruction, // Pass systemInstruction
 		);
 
 		const modifiedContent = cleanCodeOutput(rawContent);
 
 		if (
 			modifiedContent.trim().length < 5 ||
-			isAIOutputLikelyErrorMessage(modifiedContent) ||
+			(await this.lightweightClassificationService.checkIsError(
+				modifiedContent,
+			)) ||
 			modifiedContent.trim() === "/"
 		) {
 			return {
@@ -460,7 +468,7 @@ export class EnhancedCodeGenerator {
 			modelName,
 			streamId,
 			token,
-			onCodeChunkCallback
+			onCodeChunkCallback,
 		);
 
 		return { content: validation.finalContent, validation };
@@ -477,7 +485,7 @@ export class EnhancedCodeGenerator {
 		modelName: string,
 		streamId: string,
 		token?: vscode.CancellationToken,
-		onCodeChunkCallback?: (chunk: string) => Promise<void> | void
+		onCodeChunkCallback?: (chunk: string) => Promise<void> | void,
 	): Promise<CodeValidationResult> {
 		// Removed conditional logic for AI refinement based on diff analysis.
 		return this.codeValidationService.validateCode(filePath, modifiedContent);
@@ -490,7 +498,7 @@ export class EnhancedCodeGenerator {
 		streamId: string,
 		filePath: string,
 		chunk: string,
-		onCodeChunkCallback?: (chunk: string) => Promise<void> | void
+		onCodeChunkCallback?: (chunk: string) => Promise<void> | void,
 	) {
 		this.postMessageToWebview({
 			type: "codeFileStreamChunk",
@@ -508,16 +516,16 @@ export class EnhancedCodeGenerator {
 	 */
 	private _extractTargetFileContent(
 		rawResponse: string,
-		targetFilePath: string
+		targetFilePath: string,
 	): string | null {
 		console.log(
-			`[EnhancedCodeGenerator] Attempting to extract content for target file: ${targetFilePath}`
+			`[EnhancedCodeGenerator] Attempting to extract content for target file: ${targetFilePath}`,
 		);
 		console.log(
 			`[EnhancedCodeGenerator] Raw AI response (first 200 chars): ${rawResponse.substring(
 				0,
-				200
-			)}...`
+				200,
+			)}...`,
 		);
 
 		// Normalize target file path for robust matching (e.g., remove leading slash if present, ensure consistency)
@@ -528,9 +536,9 @@ export class EnhancedCodeGenerator {
 		const regex = new RegExp(
 			`^---\\s*path:\\s*(${normalizedTargetFilePath.replace(
 				/[.*+?^${}()|[\\\]\\\\]/g,
-				"\\\\$&"
+				"\\\\$&",
 			)})\\s*---\\n([\\s\\S]*?)(?=\\n^---\\s*path:|$)`,
-			"gm"
+			"gm",
 		);
 
 		let match;
@@ -572,7 +580,7 @@ export class EnhancedCodeGenerator {
 					extractedContent = contentBlock;
 					bestMatchLength = contentBlock.length;
 					console.log(
-						`[EnhancedCodeGenerator] Found potential content block for ${matchedFilePath}, length: ${contentBlock.length}`
+						`[EnhancedCodeGenerator] Found potential content block for ${matchedFilePath}, length: ${contentBlock.length}`,
 					);
 				}
 			}
@@ -580,7 +588,7 @@ export class EnhancedCodeGenerator {
 
 		if (extractedContent) {
 			console.log(
-				`[EnhancedCodeGenerator] Successfully extracted content for ${targetFilePath}.`
+				`[EnhancedCodeGenerator] Successfully extracted content for ${targetFilePath}.`,
 			);
 		}
 
