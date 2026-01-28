@@ -4,6 +4,8 @@ Turn your ideas into software—just describe it in natural language, and this w
 
 Minovative Mind is a powerful, open-source AI agent for Visual Studio Code that integrates Google's Gemini models directly into your workflow. It plans, writes code, fixes bugs, and automates mundane tasks, all while running locally on your machine with your own API key.
 
+[Official Website: minovativemind.dev](https://minovativemind.dev/)
+
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/MinovativeTechnologies.minovative-mind-vscode)](https://marketplace.visualstudio.com/items?itemName=MinovativeTechnologies.minovative-mind-vscode)
 [![Version](https://img.shields.io/visual-studio-marketplace/v/MinovativeTechnologies.minovative-mind-vscode)](https://marketplace.visualstudio.com/items?itemName=MinovativeTechnologies.minovative-mind-vscode)
 [![License](https://img.shields.io/github/license/Minovative-Technologies/minovative-mind-vscode)](https://github.com/Quarantiine/minovative-mind-vscode/blob/main/LICENSE.md)
@@ -51,6 +53,7 @@ Minovative Mind uses Google's Gemini models. You need your own API key (it's fre
 
 ## 📚 Documentation
 
+- **[Official Website](https://minovativemind.dev/)**: Central hub for Minovative Mind, featuring the latest updates and platform overview.
 - **[User Guide](./USER_GUIDE.md)**: Detailed instructions on how to use all features.
 - **[Capabilities](./CAPABILITIES.md)**: In-depth breakdown of what the agent can do.
 - **[Architecture](./ARCHITECTURE.md)**: How it works under the hood.

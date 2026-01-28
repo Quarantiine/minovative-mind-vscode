@@ -20,7 +20,7 @@ This guide will help users understand and effectively utilize the AI-powered fea
 
 ## 1. Introduction
 
-Minovative Mind is an AI-powered VS Code extension designed to assist developers. Its primary goal is to streamline workflows, automate tasks, and provide intelligent insights by leveraging Google Gemini models. This guide focuses on how to effectively utilize its powerful AI capabilities.
+Minovative Mind is an AI-powered VS Code extension designed to assist developers. Its primary goal is to streamline workflows, automate tasks, and provide intelligent insights by leveraging Google Gemini models. This guide focuses on how to effectively utilize its powerful AI capabilities. For the most up-to-date information, features, and community links, visit the official website at [https://minovativemind.dev/](https://minovativemind.dev/).
 
 ---
 

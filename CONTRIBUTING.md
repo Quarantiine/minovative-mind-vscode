@@ -1,6 +1,6 @@
 # Contributing to Minovative Mind
 
-First off, thank you for your interest in Minovative Mind! This project is built on the belief that the future of development is collaborative—both between humans and AI, and within the open-source community.
+First off, thank you for your interest in Minovative Mind! This project serves as a key component of the [Integrated AI-Driven Development & Automation Platform](https://minovativemind.dev/), built on the belief that the future of development is collaborative—both between humans and AI, and within the open-source community.
 
 Your creativity and ingenuity are the most valuable assets to this ecosystem.
 
@@ -82,6 +82,8 @@ Ready to dive in? Setting up your local environment is simple.
    ```bash
    git clone https://github.com/Minovative-Technologies/minovative-mind.git minovative-mind-vscode
    cd minovative-mind-vscode
+
+
    ```
 
 2. **Install Dependencies:**
@@ -89,6 +91,8 @@ Ready to dive in? Setting up your local environment is simple.
 
    ```bash
    npm install
+
+
    ```
 
 3. **Compile & Watch for Changes:**
@@ -96,6 +100,8 @@ Ready to dive in? Setting up your local environment is simple.
 
    ```bash
    npm run compile
+
+
    ```
 
 4. **Run in Debug Mode:**
