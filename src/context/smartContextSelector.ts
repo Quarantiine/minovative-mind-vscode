@@ -227,6 +227,156 @@ function optimizePrompt(
 }
 
 /**
+ * Builds an optimized project structure string.
+ * If the file list is small, it shows everything.
+ * If large, it shows top-level directories and important/root files, forcing the agent to explore.
+ */
+function buildOptimizedProjectStructure(
+	relativeFilePaths: string[],
+	fileSummaries: Map<string, string> | undefined,
+	heuristicPathSet: Set<string>,
+	fileDependencies: Map<string, string[]> | undefined,
+	reverseDependencies: Map<string, string[]> | undefined,
+	forceOptimization: boolean,
+): { fileListString: string; isTruncated: boolean } {
+	const fileCount = relativeFilePaths.length;
+	const FILE_LIST_THRESHOLD = 10; // Threshold to switch to optimized view
+
+	if (forceOptimization || fileCount > FILE_LIST_THRESHOLD) {
+		// Optimized Mode: Show top-level structure + heuristic/root files
+		const topLevelDirs = new Set<string>();
+		const importantFiles = new Set<string>();
+
+		relativeFilePaths.forEach((p) => {
+			// Always include pre-selected heuristic files
+			if (heuristicPathSet.has(p)) {
+				importantFiles.add(p);
+				return;
+			}
+
+			// Always include root-level configuration/readme files
+			if (!p.includes("/")) {
+				importantFiles.add(p);
+				return;
+			}
+
+			// Group others into directories
+			const firstSegment = p.split("/")[0];
+			topLevelDirs.add(firstSegment + "/");
+		});
+
+		let output = "--- Project Structure (Optimized View) ---\n";
+		output += `Total Files: ${fileCount}\n`;
+		output +=
+			"Note: To save context, this view is TRUNCATED. It shows only top-level directories and important root files.\n";
+		output +=
+			"YOU MUST USE `run_terminal_command` (ls -R, find) TO DISCOVER SPECIFIC FILES IN SUBDIRECTORIES.\n\n";
+
+		output += "--- Top-Level Directories ---\n";
+		if (topLevelDirs.size > 0) {
+			output +=
+				Array.from(topLevelDirs)
+					.sort()
+					.map((d) => `- ${d} (contains files)`)
+					.join("\n") + "\n";
+		} else {
+			output += "(None)\n";
+		}
+
+		output += "\n--- Root & Important Files ---\n";
+		output +=
+			Array.from(importantFiles)
+				.sort()
+				.map((p) => {
+					// Add summary if available
+					const summary = fileSummaries?.get(p);
+					let fileEntry = `- "${p}"`;
+					if (summary) {
+						fileEntry += ` (${summary
+							.substring(0, 100)
+							.replace(/\s+/g, " ")}...)`;
+					}
+
+					// Add relationships only for relevant files to reduce noise
+					if (heuristicPathSet.has(p)) {
+						const imports = fileDependencies?.get(p);
+						const importedBy = reverseDependencies?.get(p);
+
+						if (imports && imports.length > 0) {
+							const importList = imports
+								.slice(0, 3)
+								.map((i) => path.basename(i))
+								.join(", ");
+							fileEntry += `\n    ↳ imports: ${importList}${
+								imports.length > 3 ? "..." : ""
+							}`;
+						}
+						if (importedBy && importedBy.length > 0) {
+							const importedByList = importedBy
+								.slice(0, 3)
+								.map((i) => path.basename(i))
+								.join(", ");
+							fileEntry += `\n    ↳ imported by: ${importedByList}${
+								importedBy.length > 3 ? "..." : ""
+							}`;
+						}
+					}
+					return fileEntry;
+				})
+				.join("\n") + "\n";
+
+		return { fileListString: output, isTruncated: true };
+	} else {
+		// Standard Mode: Full file list
+		const output =
+			"--- Available Project Files ---\n" +
+			relativeFilePaths
+				.map((p) => {
+					const summary = fileSummaries?.get(p);
+					let fileEntry = `- "${p}"`;
+
+					// Add summary if available
+					if (summary) {
+						fileEntry += ` (${summary
+							.substring(0, 150)
+							.replace(/\s+/g, " ")}...)`;
+					}
+
+					// Add relationship info for heuristic files (most relevant)
+					if (heuristicPathSet.has(p)) {
+						const imports = fileDependencies?.get(p);
+						const importedBy = reverseDependencies?.get(p);
+
+						if (imports && imports.length > 0) {
+							const importList = imports
+								.slice(0, 5)
+								.map((i) => path.basename(i))
+								.join(", ");
+							const moreCount =
+								imports.length > 5 ? ` +${imports.length - 5} more` : "";
+							fileEntry += `\n    ↳ imports: ${importList}${moreCount}`;
+						}
+
+						if (importedBy && importedBy.length > 0) {
+							const importedByList = importedBy
+								.slice(0, 3)
+								.map((i) => path.basename(i))
+								.join(", ");
+							const moreCount =
+								importedBy.length > 3 ? ` +${importedBy.length - 3} more` : "";
+							fileEntry += `\n    ↳ imported by: ${importedByList}${moreCount}`;
+						}
+					}
+
+					return fileEntry;
+				})
+				.join("\n");
+
+		return { fileListString: output, isTruncated: false };
+	}
+}
+
+/**
  * Uses an AI model to select the most relevant files for a given user request and context.
  * Now includes caching, better prompt optimization, and performance improvements.
  */
@@ -409,86 +559,24 @@ export async function selectRelevantFilesAI(
 		contextPrompt += `--- End Active Symbol Information ---\n`;
 	}
 
+	// Create a set of heuristic files for faster lookup
+	const heuristicPathSet = new Set(
+		preSelectedHeuristicFiles?.map((uri) =>
+			path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/"),
+		) || [],
+	);
+
 	const alwaysRunInvestigation =
 		selectionOptions?.alwaysRunInvestigation ?? false;
 
-	// When investigation mode is enabled, only show top-level directories
-	// since the AI can explore the structure using terminal commands
-	let fileListString: string;
-	if (alwaysRunInvestigation) {
-		// Extract unique top-level directories from relative file paths
-		const topLevelDirs = new Set<string>();
-		relativeFilePaths.forEach((p) => {
-			const firstSegment = p.split("/")[0];
-			// Only add if it looks like a directory (contains files deeper)
-			if (p.includes("/")) {
-				topLevelDirs.add(firstSegment + "/");
-			} else {
-				// Root-level files
-				topLevelDirs.add(firstSegment);
-			}
-		});
-
-		fileListString =
-			"--- Project Structure (Top-Level) ---\n" +
-			"Use `ls` or `find` to explore subdirectories.\n" +
-			Array.from(topLevelDirs)
-				.sort()
-				.map((d) => `- ${d}`)
-				.join("\n");
-	} else {
-		// Standard mode: list all files with optional summaries and relationships
-		// Create a set of heuristic files for faster lookup
-		const heuristicPathSet = new Set(
-			preSelectedHeuristicFiles?.map((uri) =>
-				path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/"),
-			) || [],
-		);
-
-		fileListString =
-			"--- Available Project Files ---\n" +
-			relativeFilePaths
-				.map((p) => {
-					const summary = fileSummaries?.get(p);
-					let fileEntry = `- "${p}"`;
-
-					// Add summary if available
-					if (summary) {
-						fileEntry += ` (${summary
-							.substring(0, 150)
-							.replace(/\s+/g, " ")}...)`;
-					}
-
-					// Add relationship info for heuristic files (most relevant)
-					if (heuristicPathSet.has(p)) {
-						const imports = options.fileDependencies?.get(p);
-						const importedBy = options.reverseDependencies?.get(p);
-
-						if (imports && imports.length > 0) {
-							const importList = imports
-								.slice(0, 5)
-								.map((i) => path.basename(i))
-								.join(", ");
-							const moreCount =
-								imports.length > 5 ? ` +${imports.length - 5} more` : "";
-							fileEntry += `\n    ↳ imports: ${importList}${moreCount}`;
-						}
-
-						if (importedBy && importedBy.length > 0) {
-							const importedByList = importedBy
-								.slice(0, 3)
-								.map((i) => path.basename(i))
-								.join(", ");
-							const moreCount =
-								importedBy.length > 3 ? ` +${importedBy.length - 3} more` : "";
-							fileEntry += `\n    ↳ imported by: ${importedByList}${moreCount}`;
-						}
-					}
-
-					return fileEntry;
-				})
-				.join("\n");
-	}
+	const { fileListString, isTruncated } = buildOptimizedProjectStructure(
+		relativeFilePaths,
+		fileSummaries,
+		heuristicPathSet,
+		options.fileDependencies,
+		options.reverseDependencies,
+		alwaysRunInvestigation,
+	);
 
 	// Detect if the user request appears to be about fixing an error
 	// Use AI classification if available, otherwise fallback to regex
@@ -578,8 +666,8 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 
 	// Build investigation instruction based on context
 	let investigationInstruction: string;
-	if (alwaysRunInvestigation || isLikelyErrorRequest) {
-		investigationInstruction = `2.  **Investigate (REQUIRED)**: You MUST run at least one \`run_terminal_command\` to explore the codebase before selecting files. This is especially important for error-fixing requests.
+	if (isTruncated || alwaysRunInvestigation || isLikelyErrorRequest) {
+		investigationInstruction = `2.  **Investigate (REQUIRED)**: The file list is TRUNCATED (it shows only the top level). You MUST run at least one \`run_terminal_command\` (like \`ls -R subfolder\` or \`find .\`) to explore the codebase and find the specific files you need.
     *   **ERROR DETECTION TIP**: If the user mentions an error, extract file paths, function names, or error messages and use \`grep -i\` (case insensitive) to find them.
     *   **IMPORTANT**: No pipes (|), OR chaining (||), or AND chaining (&&) allowed. Run ONE command at a time.
     *   **CHECK BEFORE READING**: Use \`wc -l file\` to check size. Use \`file file\` to check type (avoid binary).
