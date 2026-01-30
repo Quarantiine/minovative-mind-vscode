@@ -58,7 +58,8 @@ Minovative Mind can autonomously plan and execute complex development tasks, sig
 - **Symbol-Aware Context**: Leverages detailed symbol information (functions, classes, types) from your codebase to ensure accurate and contextually relevant modifications.
 - **Quality & Production-Ready Code**: Generates modular, maintainable, and production-ready code, often using diff analysis to validate output quality.
 - **Output Validation**: Employs sophisticated heuristics to sanitize and validate AI-generated code snippets, ensuring functional and high-quality output.
-- **Full File Regeneration**: For code modifications, the AI regenerates the full file content, ensuring comprehensive and consistent changes.
+- **Surgical Code Editing**: Uses an intelligent "Search and Replace" block system to update only the specific parts of a file that need changing. This drastically reduces token usage and latency compared to full file rewrites, while using fuzzy matching to ensure reliability.
+- **Full File Regeneration**: For massive rewrites or new files, the AI can still generate full content when necessary.
 
 ### 2.3 Code Streaming
 

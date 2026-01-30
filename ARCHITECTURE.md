@@ -182,7 +182,8 @@ The assembled payload (both the current turn and the previous history) must be t
 - **Code Utility Integration**: Employs `src/utils/codeUtils.ts` for tasks like stripping markdown fences (`cleanCodeOutput`) and applying precise text edits (`applyAITextEdits`).
 - **AI Interaction**: Manages core interaction with the AI model for initial generation and multi-step refinement.
 - **Advanced Configuration Support**: Accepts an optional `GenerationConfig` object to fine-tune AI model behavior (e.g., temperature, stop sequences) for specific generation tasks.
-- **Key Files**: `src/ai/enhancedCodeGeneration.ts` (`EnhancedCodeGenerator` class), `src/services/codeValidationService.ts`, `src/utils/codeAnalysisUtils.ts`, `src/utils/codeUtils.ts`
+- **Efficient Partial Updates**: Utilizes `SearchReplaceService` to parse and apply surgical "Search and Replace" code blocks (`<<<<<<< SEARCH ... >>>>>>> REPLACE`) from the AI, enabling high-speed, token-efficient modifications without rewriting full files.
+- **Key Files**: `src/ai/enhancedCodeGeneration.ts` (`EnhancedCodeGenerator` class), `src/services/searchReplaceService.ts`, `src/services/codeValidationService.ts`, `src/utils/codeAnalysisUtils.ts`, `src/utils/codeUtils.ts`
 
 ### Plan & Workflow Management
 
@@ -209,7 +210,8 @@ The assembled payload (both the current turn and the previous history) must be t
 - **Model Usage Distinction**: Dynamically retrieves model names, using `DEFAULT_FLASH_LITE_MODEL` for initial textual plans and optimized models for function calling.
 - **Enhanced Execution Modularity (PlanExecutorService)**: This service optimizes execution ordering and resource management. Terminal cleanup (`_disposeExecutionTerminals`) is now guaranteed by being called in a `finally` block.
 - **Dynamic Context Refinement**: For each execution step (`create_file`, `modify_file`), the service now invokes the **Context Agent** (`selectRelevantFilesAI`) to dynamically discover and select relevant files based on the specific step instruction.
-- **Partial File Intelligence**: The system supports reading only relevant **line ranges** (e.g., `interface definition`) instead of full files, significantly optimizing token usage and focusing the AI on the exact code needed for the task.
+- **Partial File Intelligence**: The system supports reading only relevant **line ranges** (e.g., `interface definition`) instead of full files.
+- **Search & Replace Application**: `PlanExecutorService` integrates with `SearchReplaceService` to intercept AI modification outputs. If Search/Replace blocks are detected, it applies them using fuzzy matching; otherwise, it falls back to full file rewrites for backward compatibility.
 - **Key Files**: `src/services/planService.ts` (`PlanService` class), `src/ai/workflowPlanner.ts`, `src/services/aiRequestService.ts`, `src/ai/enhancedCodeGeneration.ts`, `src/utils/commandExecution.ts`, `src/workflow/ProjectChangeLogger.ts`, `src/services/RevertService.ts`, `src/services/planExecutorService.ts`
 
 #### 3. Project Change Logging
@@ -305,7 +307,13 @@ The assembled payload (both the current turn and the previous history) must be t
 - **Key Methods**: `generateFileChangeSummary`, `analyzeDiff`, `generatePreciseTextEdits`, `parseDiffHunkToTextEdits`, `applyDiffHunkToDocument`.
 - **Key Files**: `src/utils/diffingUtils.ts`
 
-#### 5. Code Utilities
+#### 5. Search & Replace Logic
+
+- **Responsibility**: Parses and applies partial code updates using a standard `SEARCH`/`REPLACE` block format. It specifically handles "fuzzy" matching (ignoring whitespace variations) to make AI-generated patches robust against minor indentation errors.
+- **Key Methods**: `parseBlocks`, `applyBlocks`, `findFuzzyMatch`.
+- **Key Files**: `src/services/searchReplaceService.ts`
+
+#### 6. Code Utilities
 
 - **Responsibility**: Provides general-purpose, low-level utility functions for manipulating and analyzing code content, fundamental to code generation, validation, and context building.
 - **Key Methods**:
@@ -313,7 +321,7 @@ The assembled payload (both the current turn and the previous history) must be t
   - `src/utils/codeAnalysisUtils.ts`: `analyzeFileStructure`, `isAIOutputLikelyErrorMessage`, `isRewriteIntentDetected`, `getLanguageId`, `getCodeSnippet`, `formatSelectedFilesIntoSnippets`.
 - **Key Files**: `src/utils/codeUtils.ts`, `src/utils/codeAnalysisUtils.ts`
 
-#### 6. Command Execution Utility
+#### 7. Command Execution Utility
 
 - **Responsibility**: Provides a **secure**, **robust**, and **auditable** mechanism for executing external shell commands, critical for AI-driven workflows to interact with the file system and external tools.
 - **Key Features**:

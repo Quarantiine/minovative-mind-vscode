@@ -81,7 +81,7 @@ function _getLanguageId(extension: string): string {
  * This was originally `_formatFileStructureAnalysis` in `EnhancedCodeGenerator`.
  */
 function _formatFileStructureAnalysis(
-	analysis?: FileStructureAnalysis
+	analysis?: FileStructureAnalysis,
 ): string {
 	if (!analysis) {
 		return "";
@@ -122,7 +122,7 @@ function _formatFileStructureAnalysis(
  */
 export function getEnhancedGenerationSystemInstruction(
 	filePath: string,
-	context: EnhancedGenerationContext & { formattedDiagnostics?: string }
+	context: EnhancedGenerationContext & { formattedDiagnostics?: string },
 ): string {
 	const fileAnalysis = _analyzeFilePath(filePath);
 	const languageId = _getLanguageId(fileAnalysis.extension);
@@ -132,30 +132,30 @@ export function getEnhancedGenerationSystemInstruction(
 
 	if (isRewrite) {
 		requirementsList.push(
-			"**Prioritize New Structure/Content**: You are tasked with generating the new code as specified in the instructions. Prioritize generating the new code structure and content precisely as specified, even if it requires significant deviations from typical patterns or implies a complete overhaul of an existing conceptual file. You have full autonomy to innovate and introduce new patterns/structures if they best fulfill the request."
+			"**Prioritize New Structure/Content**: You are tasked with generating the new code as specified in the instructions. Prioritize generating the new code structure and content precisely as specified, even if it requires significant deviations from typical patterns or implies a complete overhaul of an existing conceptual file. You have full autonomy to innovate and introduce new patterns/structures if they best fulfill the request.",
 		);
 	}
 
 	requirementsList.push(
-		"**Accuracy First**: Ensure all imports, types, and dependencies are *absolutely* correct and precisely specified. Verify module paths, type definitions, and API usage."
+		"**Accuracy First**: Ensure all imports, types, and dependencies are *absolutely* correct and precisely specified. Verify module paths, type definitions, and API usage.",
 	);
 	requirementsList.push(
-		"**Style Consistency**: Adhere * rigorously* to the project's existing coding patterns, conventions, and formatting. Maintain current indentation, naming, and structural choices."
+		"**Style Consistency**: Adhere * rigorously* to the project's existing coding patterns, conventions, and formatting. Maintain current indentation, naming, and structural choices.",
 	);
 	requirementsList.push(
-		"**Error Prevention**: Generate code that will compile and run *without any errors or warnings*. Proactively anticipate and guard against common pitfalls beyond just the immediate task, such as null/undefined checks, any types in typescript, input validations, edge cases, or off-by-one errors."
+		"**Error Prevention**: Generate code that will compile and run *without any errors or warnings*. Proactively anticipate and guard against common pitfalls beyond just the immediate task, such as null/undefined checks, any types in typescript, input validations, edge cases, or off-by-one errors.",
 	);
 	requirementsList.push(
-		"**Best Practices**: Employ modern language features, established design patterns, and industry best practices to ensure high-quality, efficient, and robust code that is production-ready, maintainable, and clean."
+		"**Best Practices**: Employ modern language features, established design patterns, and industry best practices to ensure high-quality, efficient, and robust code that is production-ready, maintainable, and clean.",
 	);
 	requirementsList.push(
-		"**Production Readiness**: Stress robustness, maintainability, and adherence to best practices for the generated code."
+		"**Production Readiness**: Stress robustness, maintainability, and adherence to best practices for the generated code.",
 	);
 	requirementsList.push(
-		"**Security**: Implement secure coding practices meticulously, identifying and addressing potential vulnerabilities relevant to the language and context."
+		"**Security**: Implement secure coding practices meticulously, identifying and addressing potential vulnerabilities relevant to the language and context.",
 	);
 	requirementsList.push(
-		"**Command Execution Format (RunCommandStep)**: For any `RunCommandStep` action, the `command` property MUST be an object `{ executable: string, args: string[], usesShell?: boolean }`. The `executable` should be the command name (e.g., 'npm', 'git') and `args` an array of its arguments (e.g., ['install', '--save-dev', 'package']). If a command *absolutely requires* `shell: true` (e.g., it uses shell-specific features like pipes, redirects, or environment variable expansion inherently for its functionality, and cannot be expressed directly via `executable` and `args`), you MUST explicitly include `usesShell: true` in the object. This flag triggers critical fallback security checks in `PlanExecutorService`. Always prefer `executable` and `args` without `usesShell: true` for security reasons, unless explicitly necessary."
+		"**Command Execution Format (RunCommandStep)**: For any `RunCommandStep` action, the `command` property MUST be an object `{ executable: string, args: string[], usesShell?: boolean }`. The `executable` should be the command name (e.g., 'npm', 'git') and `args` an array of its arguments (e.g., ['install', '--save-dev', 'package']). If a command *absolutely requires* `shell: true` (e.g., it uses shell-specific features like pipes, redirects, or environment variable expansion inherently for its functionality, and cannot be expressed directly via `executable` and `args`), you MUST explicitly include `usesShell: true` in the object. This flag triggers critical fallback security checks in `PlanExecutorService`. Always prefer `executable` and `args` without `usesShell: true` for security reasons, unless explicitly necessary.",
 	);
 
 	return `You are the expert software engineer for me, specializing in ${languageId} development. Your task is to generate production-ready, accurate code. ONLY focus on generating code. EXCLUDE all conversational or meta-commentary.
@@ -176,7 +176,7 @@ ${requirementsList.map((req) => `- ${req}`).join("\n")}`;
  */
 export function getEnhancedGenerationUserMessage(
 	generatePrompt: string,
-	context: EnhancedGenerationContext & { formattedDiagnostics?: string }
+	context: EnhancedGenerationContext & { formattedDiagnostics?: string },
 ): string {
 	return `**Instructions:**
 ${generatePrompt}
@@ -226,7 +226,7 @@ ${context.successfulChangeHistory}
  */
 export function getEnhancedModificationSystemInstruction(
 	filePath: string,
-	context: EnhancedGenerationContext & { formattedDiagnostics?: string }
+	context: EnhancedGenerationContext & { formattedDiagnostics?: string },
 ): string {
 	const languageId = _getLanguageId(path.extname(filePath));
 	const fileAnalysis = context.fileStructureAnalysis;
@@ -235,55 +235,26 @@ export function getEnhancedModificationSystemInstruction(
 	const requirementsList: string[] = [];
 
 	requirementsList.push(
-		"**FINAL OUTPUT FORMAT: IMPORTANT**: When modifying a file, you MUST generate and return the *complete, full content of the entire file* after applying the modifications. The output MUST be a **single, properly formatted markdown code block** (e.g., \n```typescript\n...full_file_content...\n```\n). Do NOT provide only a partial code snippet, diff, specific function/class, or any conversational text outside the code block. The output must be the *whole, updated file* contained within this single code block."
+		"**FINAL OUTPUT FORMAT: IMPORTANT**: You must use the **Search and Replace** block format to modify the code. Do NOT return the full file. Use the following format for *every* change:",
+	);
+	requirementsList.push(
+		"```\n<<<<<<< SEARCH\n[Exact content to be replaced, including correct indentation]\n=======\n[New content to replace with]\n>>>>>>> REPLACE\n```",
+	);
+	requirementsList.push(
+		"**Multiple Changes**: If you need to make multiple changes, provide multiple blocks in sequence.",
+	);
+	requirementsList.push(
+		"**Context Match**: The content in the `SEARCH` block must *exactly* match the existing code in the file (including whitespace) to ensure it can be found. Provide enough context lines to make the match unique.",
+	);
+	requirementsList.push(
+		"**Deletions**: To delete code, leave the `REPLACE` section empty (or just containing newline if needed).",
 	);
 
 	if (isRewrite) {
 		requirementsList.push(
-			"**Prioritize New Structure/Content**: You are tasked with a significant rewrite or overhaul of the existing file. Prioritize generating the new code structure and content precisely as specified in the instructions, even if it requires significant deviations from the existing structure or content. Treat the 'Current Content' as a reference to be completely overhauled, not strictly adhered to for incremental changes. You have full autonomy to innovate and introduce new patterns/structures if they best fulfill the request."
-		);
-		requirementsList.push(
-			"**Drastic Changes Allowed**: This request implies a major overhaul. You are explicitly permitted to make substantial changes to the existing structure, organization, and content. Extensive refactoring or re-implementation is permissible if it supports the requested overhaul."
-		);
-		requirementsList.push(
-			"**Advanced Dependency Management (Rewrite)**: When performing a rewrite, manage imports intelligently: add only strictly necessary new imports, remove all unused imports, and reorder imports for optimal clarity and consistency with project conventions. The goal is a clean, correct, and well-organized import block for the new structure, reflecting best practices."
-		);
-		requirementsList.push(
-			"**Consistent Style (New Code)**: Maintain internal code style (indentation, naming, formatting) for consistency within the *newly generated* sections, following modern best practices for the language."
-		);
-		requirementsList.push(
-			"**Production-Ready Output (Rewrite)**: The generated code, even if a complete overhaul, must be production-ready, robust, highly maintainable, and free of *any* compilation errors, warnings, or runtime issues. Ensure architectural soundness, scalability, and efficiency in the new design, adhering to modern best practices."
-		);
-	} else {
-		requirementsList.push(
-			"**Precise & Minimal Modification**: For non-rewrite operations, make precise, surgical, and targeted changes that directly address the instructions. Avoid any unnecessary refactoring, cosmetic-only alterations, or modifications to surrounding code not directly impacted by the task. The goal is seamless, minimal disruption, and zero unintended side effects, maintaining the existing file's stability."
-		);
-		requirementsList.push(
-			"**Advanced Dependency Management**: Add only strictly necessary new imports. Actively identify and remove *all* unused imports from the entire file. Preserve the existing import order unless a logical reordering is *absolutely essential* for significantly improving clarity, resolving conflicts, or adhering to project-wide standards for a new block of code."
-		);
-		requirementsList.push(
-			"**Consistent Style (Existing Code)**: Strictly follow the existing code style, formatting, and conventions of the current file."
-		);
-		requirementsList.push(
-			"**Production-Ready Output (Incremental)**: All modifications must result in code that is production-ready, robust, highly maintainable, and free of *any* compilation errors, warnings, or runtime issues. Ensure changes integrate seamlessly, maintaining the stability and correctness of the existing codebase."
+			"**Rewrite Exception**: Even for rewrites, try to use large Search/Replace blocks if possible. However, if the entire file is changing significantly, you can use a single Search block containing the *entire* original content and a Replace block with the *entire* new content.",
 		);
 	}
-
-	requirementsList.push(
-		"**Accuracy First**: Ensure all imports, types, and dependencies are *absolutely* correct and precisely specified. Verify module paths, type definitions, and API usage."
-	);
-	requirementsList.push(
-		"**Error Prevention & Robustness**: Generate code that will compile and run *without any errors or warnings*. Proactively anticipate and guard against common pitfalls, such as null/undefined checks, `any` types in TypeScript (unless explicitly justified), input validations, edge cases, and off-by-one errors. Prioritize robust error handling."
-	);
-	requirementsList.push(
-		"**Best Practices**: Employ modern language features, established design patterns, and industry best practices to ensure high-quality, efficient, and robust code that is maintainable and clean."
-	);
-	requirementsList.push(
-		"**Security**: Implement secure coding practices meticulously, identifying and addressing potential vulnerabilities relevant to the language and context."
-	);
-	requirementsList.push(
-		"**Command Execution Format (RunCommandStep)**: For any `RunCommandStep` action, the `command` property MUST be an object `{ executable: string, args: string[], usesShell?: boolean }`. The `executable` should be the command name (e.g., 'npm', 'git') and `args` an array of its arguments (e.g., ['install', '--save-dev', 'package']). If a command *absolutely requires* `shell: true` (e.g., it uses shell-specific features like pipes, redirects, or environment variable expansion inherently for its functionality, and cannot be expressed directly via `executable` and `args`), you MUST explicitly include `usesShell: true` in the object. This flag triggers critical fallback security checks in `PlanExecutorService`. Always prefer `executable` and `args` without `usesShell: true` for security reasons, unless explicitly necessary."
-	);
 
 	return `You are the expert software engineer for me. Your task is to modify the existing file according to the provided instructions. ONLY focus on generating code. EXCLUDE all conversational or meta-commentary.
 
@@ -293,12 +264,18 @@ Language: ${languageId}
 ${_formatFileStructureAnalysis(fileAnalysis)}
 
 **CRITICAL OUTPUT CONSTRAINTS:**
-- You MUST return the complete, full content of the entire file after modifications.
-- The entire output MUST be wrapped in a single, properly formatted markdown code block.
-- A path marker (like \`// Path: ${filePath}\`) is NOT required, but the language fence is mandatory.
-- Example: 
+- Use the **Search and Replace** block format.
+- Wrap the entire output in a single markdown code block.
+
+Example:
 \`\`\`${languageId}
-// ... full file content only ...
+ <<<<<<< SEARCH
+    const x = 1;
+    console.log(x);
+ =======
+    const x = 2;
+    console.log("Value:", x);
+ >>>>>>> REPLACE
 \`\`\`
 
 **Requirements:**
@@ -312,7 +289,7 @@ export function getEnhancedModificationUserMessage(
 	filePath: string,
 	modificationPrompt: string,
 	currentContent: string,
-	context: EnhancedGenerationContext & { formattedDiagnostics?: string }
+	context: EnhancedGenerationContext & { formattedDiagnostics?: string },
 ): string {
 	const languageId = _getLanguageId(path.extname(filePath));
 
@@ -364,7 +341,7 @@ ${context.successfulChangeHistory}
  */
 export function getRefineModificationSystemInstruction(
 	filePath: string,
-	context: EnhancedGenerationContext & { formattedDiagnostics?: string }
+	context: EnhancedGenerationContext & { formattedDiagnostics?: string },
 ): string {
 	const languageId = _getLanguageId(path.extname(filePath));
 
@@ -396,7 +373,7 @@ export function getRefineModificationUserMessage(
 	originalContent: string,
 	modifiedContent: string,
 	diffIssues: string[],
-	context: EnhancedGenerationContext & { formattedDiagnostics?: string }
+	context: EnhancedGenerationContext & { formattedDiagnostics?: string },
 ): string {
 	const languageId = _getLanguageId(path.extname(filePath));
 	let initialFeedback =
@@ -404,7 +381,7 @@ export function getRefineModificationUserMessage(
 
 	if (
 		diffIssues.includes(
-			"Modification seems too drastic - consider a more targeted approach"
+			"Modification seems too drastic - consider a more targeted approach",
 		)
 	) {
 		initialFeedback +=
@@ -473,7 +450,7 @@ ${context.successfulChangeHistory}
 export async function _formatRelevantFilesForPrompt(
 	relevantFilePaths: string[],
 	workspaceRootUri: vscode.Uri,
-	token: vscode.CancellationToken
+	token: vscode.CancellationToken,
 ): Promise<string> {
 	if (!relevantFilePaths || relevantFilePaths.length === 0) {
 		return "";
@@ -518,14 +495,14 @@ export async function _formatRelevantFilesForPrompt(
 
 			if (fileStat.size > maxFileSizeForSnippet) {
 				console.warn(
-					`[EnhancedCodeGenerator] Skipping relevant file '${relativePath}' (size: ${fileStat.size} bytes) due to size limit for prompt inclusion.`
+					`[EnhancedCodeGenerator] Skipping relevant file '${relativePath}' (size: ${fileStat.size} bytes) due to size limit for prompt inclusion.`,
 				);
 				formattedSnippets.push(
 					`--- Relevant File: ${relativePath} ---\nplaintext\n[File skipped: too large for context (${(
 						fileStat.size / 1024
 					).toFixed(2)}KB > ${(maxFileSizeForSnippet / 1024).toFixed(
-						2
-					)}KB)]\n\n`
+						2,
+					)}KB)]\n\n`,
 				);
 				continue;
 			}
@@ -535,10 +512,10 @@ export async function _formatRelevantFilesForPrompt(
 
 			if (content.includes("\0")) {
 				console.warn(
-					`[EnhancedCodeGenerator] Skipping relevant file '${relativePath}' as it appears to be binary.`
+					`[EnhancedCodeGenerator] Skipping relevant file '${relativePath}' as it appears to be binary.`,
 				);
 				formattedSnippets.push(
-					`--- Relevant File: ${relativePath} ---\nplaintext\n[File skipped: appears to be binary]\n\n`
+					`--- Relevant File: ${relativePath} ---\nplaintext\n[File skipped: appears to be binary]\n\n`,
 				);
 				continue;
 			}
@@ -550,27 +527,27 @@ export async function _formatRelevantFilesForPrompt(
 				(error.code === "FileNotFound" || error.code === "EntryNotFound")
 			) {
 				console.warn(
-					`[EnhancedCodeGenerator] Relevant file not found: '${relativePath}'. Skipping.`
+					`[EnhancedCodeGenerator] Relevant file not found: '${relativePath}'. Skipping.`,
 				);
 			} else if (error.message.includes("is not a file")) {
 				console.warn(
-					`[EnhancedCodeGenerator] Skipping directory '${relativePath}' as a relevant file.`
+					`[EnhancedCodeGenerator] Skipping directory '${relativePath}' as a relevant file.`,
 				);
 			} else {
 				console.error(
 					`[EnhancedCodeGenerator] Error reading relevant file '${relativePath}': ${error.message}. Skipping.`,
-					error
+					error,
 				);
 			}
 			formattedSnippets.push(
-				`--- Relevant File: ${relativePath} ---\nplaintext\n[File skipped: could not be read or is inaccessible: ${error.message}]\n\n`
+				`--- Relevant File: ${relativePath} ---\nplaintext\n[File skipped: could not be read or is inaccessible: ${error.message}]\n\n`,
 			);
 			continue;
 		}
 
 		if (fileContent !== null) {
 			formattedSnippets.push(
-				`--- Relevant File: ${relativePath} ---\n${languageId}\n${fileContent}\n\n`
+				`--- Relevant File: ${relativePath} ---\n${languageId}\n${fileContent}\n\n`,
 			);
 		}
 	}

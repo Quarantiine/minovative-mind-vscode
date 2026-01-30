@@ -7,7 +7,7 @@ export function createInitialPlanningExplanationPrompt(
 	editorContext?: sidebarTypes.PlanGenerationContext["editorContext"],
 	diagnosticsString?: string,
 	chatHistory?: sidebarTypes.HistoryEntry[],
-	urlContextString?: string
+	urlContextString?: string,
 ): string {
 	let specificContextContent = "";
 	let planExplanationInstructions = "";
@@ -86,10 +86,10 @@ ${fullText}
 						(entry) =>
 							`Role: ${entry.role}\nContent:\n${entry.parts
 								.filter(
-									(p): p is HistoryEntryPart & { text: string } => "text" in p
+									(p): p is HistoryEntryPart & { text: string } => "text" in p,
 								)
 								.map((p) => p.text)
-								.join("\n")}`
+								.join("\n")}`,
 					)
 					.join("\n---\n")}`
 			: "";
@@ -138,7 +138,7 @@ export function createPlanningPromptForFunctionCall(
 	chatHistory: sidebarTypes.HistoryEntry[] | undefined,
 	textualPlanExplanation: string,
 	recentChanges: string | undefined,
-	urlContextString?: string
+	urlContextString?: string,
 ): string {
 	const chatHistoryForPrompt =
 		chatHistory && chatHistory.length > 0
@@ -147,10 +147,10 @@ export function createPlanningPromptForFunctionCall(
 						(entry) =>
 							`Role: ${entry.role}\nContent:\n${entry.parts
 								.filter(
-									(p): p is HistoryEntryPart & { text: string } => "text" in p
+									(p): p is HistoryEntryPart & { text: string } => "text" in p,
 								)
 								.map((p) => p.text)
-								.join("\n")}`
+								.join("\n")}`,
 					)
 					.join("\n---\n")}`
 			: "";
@@ -227,6 +227,10 @@ Crucial Rules for \`generateExecutionPlan\` Tool:
 - \`create_file\`: You MUST use \`generate_prompt\` for ALL code files (.ts, .tsx, .js, .jsx, .py, .java, .css, etc.) regardless of size.
 - **MANDATORY STREAMING RULE**: Using \`generate_prompt\` for code files is NON-NEGOTIABLE. It enables real-time streaming which the user requires. Use \`content\` ONLY for non-code config files (.gitignore, .env.example).
 - \`modify_file\`: Always provide a non-empty \`modification_prompt\`.
+- **Context Agent (\`use_context_agent\`):**:
+    - Set \`use_context_agent\` to \`true\` ONLY if you need to dynamically search the codebase for information NOT already present in the prompt context (e.g., finding the definition of a symbol that isn't imported, checking usage patterns across the workspace).
+    - Default to \`false\` for straightforward creations or modifications where the context is sufficient.
+    - \`true\` triggers an agentic search (adds latency). Use sparingly.
 - All \`path\` fields must be relative to workspace root, no \`..\` or leading \`/\`.
 - Each step (create/modify) should be a single step.
 - A single \`modification_prompt\` should cohesively describe multiple changes for one file, one step if they're part of one logical task.

@@ -19,7 +19,7 @@ export const PRE_PROMPT_MESSAGE =
 
 export async function handleWebviewMessage(
 	data: any,
-	provider: SidebarProvider
+	provider: SidebarProvider,
 ): Promise<void> {
 	console.log(`[MessageHandler] Message received: ${data.type}`);
 
@@ -29,7 +29,7 @@ export async function handleWebviewMessage(
 	if (!parseResult.success) {
 		console.error(
 			`[MessageHandler] Zod validation failed for incoming message:`,
-			parseResult.error.flatten()
+			parseResult.error.flatten(),
 		);
 		provider.postMessageToWebview({
 			type: "statusUpdate",
@@ -83,7 +83,7 @@ export async function handleWebviewMessage(
 		!allowedDuringBackground.includes(validatedData.type)
 	) {
 		console.warn(
-			`Message type "${validatedData.type}" blocked because an operation is in progress.`
+			`Message type "${validatedData.type}" blocked because an operation is in progress.`,
 		);
 		provider.postMessageToWebview({
 			type: "statusUpdate",
@@ -102,14 +102,14 @@ export async function handleWebviewMessage(
 		switch (validatedData.type) {
 			case "universalCancel":
 				console.log(
-					"[MessageHandler] Received universal cancellation request."
+					"[MessageHandler] Received universal cancellation request.",
 				);
 				await provider.triggerUniversalCancellation();
 				break;
 
 			case "operationCancelledConfirmation":
 				console.log(
-					"[WebviewMessageHandler] Received operationCancelledConfirmation from extension."
+					"[WebviewMessageHandler] Received operationCancelledConfirmation from extension.",
 				);
 				// When the extension confirms cancellation, the webview updates its UI state.
 				provider.postMessageToWebview({
@@ -129,7 +129,7 @@ export async function handleWebviewMessage(
 				await provider.startUserOperation("plan"); // Start the operation and set generating state
 				provider.chatHistoryManager.addHistoryEntry(
 					"user",
-					`/plan ${userRequest}`
+					`/plan ${userRequest}`,
 				);
 				// The planService will handle the rest, including UI updates
 				await provider.planService.handleInitialPlanRequest(userRequest);
@@ -144,7 +144,7 @@ export async function handleWebviewMessage(
 					};
 					provider.pendingPlanGenerationContext = null;
 					await provider.planService.generateStructuredPlanAndExecute(
-						contextForExecution
+						contextForExecution,
 					);
 				} else {
 					const errorMessage =
@@ -166,10 +166,10 @@ export async function handleWebviewMessage(
 					const contextForRetry = { ...provider.lastPlanGenerationContext };
 					provider.chatHistoryManager.addHistoryEntry(
 						"model",
-						"User requested retry of structured plan generation."
+						"User requested retry of structured plan generation.",
 					);
 					await provider.planService.generateStructuredPlanAndExecute(
-						contextForRetry
+						contextForRetry,
 					);
 				} else {
 					const errorMessage =
@@ -200,7 +200,7 @@ export async function handleWebviewMessage(
 					// The token is already available via provider.activeOperationCancellationTokenSource
 					await provider.startUserOperation("commit");
 					await provider.commitService.handleCommitCommand(
-						provider.activeOperationCancellationTokenSource!.token
+						provider.activeOperationCancellationTokenSource!.token,
 					);
 					break; // Exit case after handling /commit
 				}
@@ -230,7 +230,7 @@ export async function handleWebviewMessage(
 						} else {
 							console.warn(
 								"[MessageHandler] Skipping invalid or malformed image part: ",
-								imgWrapper
+								imgWrapper,
 							);
 							continue;
 						}
@@ -258,7 +258,7 @@ export async function handleWebviewMessage(
 			case "commitRequest": {
 				await provider.startUserOperation("commit"); // Start the operation and set generating state
 				await provider.commitService.handleCommitCommand(
-					provider.activeOperationCancellationTokenSource!.token
+					provider.activeOperationCancellationTokenSource!.token,
 				);
 				break;
 			}
@@ -287,7 +287,7 @@ export async function handleWebviewMessage(
 				const currentEstimates =
 					provider.tokenTrackingService.getCurrentStreamingEstimates(
 						inputText || "",
-						outputText || ""
+						outputText || "",
 					);
 				provider.postMessageToWebview({
 					type: "updateCurrentTokenEstimates",
@@ -298,10 +298,10 @@ export async function handleWebviewMessage(
 			case "openSidebar":
 				try {
 					await vscode.commands.executeCommand(
-						"minovative-mind.activitybar.focus"
+						"minovative-mind.activitybar.focus",
 					);
 					console.log(
-						"[MessageHandler] Sidebar opened automatically after plan completion."
+						"[MessageHandler] Sidebar opened automatically after plan completion.",
 					);
 				} catch (error: any) {
 					console.error("[MessageHandler] Failed to open sidebar:", error);
@@ -310,7 +310,7 @@ export async function handleWebviewMessage(
 						value: formatUserFacingErrorMessage(
 							error,
 							"Failed to open sidebar.",
-							"Error: "
+							"Error: ",
 						),
 						isError: true,
 					});
@@ -330,7 +330,7 @@ export async function handleWebviewMessage(
 					"Are you sure you want to delete the active API key?",
 					{ modal: true },
 					"Yes",
-					"No"
+					"No",
 				);
 				if (result === "Yes") {
 					const activeIndex = provider.apiKeyManager.getActiveApiKeyIndex();
@@ -374,16 +374,16 @@ export async function handleWebviewMessage(
 					provider.postMessageToWebview({ type: "reenableInput" });
 
 					console.log(
-						"[MessageHandler] Chat history cleared and all past changes reverted successfully."
+						"[MessageHandler] Chat history cleared and all past changes reverted successfully.",
 					);
 				} catch (error: any) {
 					console.error(
 						"[MessageHandler] Error clearing chat or reverting changes:",
-						error
+						error,
 					);
 					const errorMessage = formatUserFacingErrorMessage(
 						error,
-						"Failed to clear chat and revert changes."
+						"Failed to clear chat and revert changes.",
 					);
 					provider.postMessageToWebview({
 						type: "statusUpdate",
@@ -414,31 +414,31 @@ export async function handleWebviewMessage(
 
 			case "deleteSpecificMessage":
 				provider.chatHistoryManager.deleteHistoryEntry(
-					validatedData.messageIndex
+					validatedData.messageIndex,
 				);
 				break;
 
 			case "toggleRelevantFilesDisplay": {
 				provider.chatHistoryManager.updateMessageRelevantFilesExpandedState(
 					validatedData.messageIndex,
-					validatedData.isExpanded
+					validatedData.isExpanded,
 				);
 				break;
 			}
 
 			case "selectModel":
 				await provider.settingsManager.handleModelSelection(
-					validatedData.value
+					validatedData.value,
 				);
 				break;
 
 			case "toggleHeuristicContextUsage": {
 				const isEnabled = validatedData.isEnabled;
 				console.log(
-					`[MessageHandler] Received toggleHeuristicContextUsage: ${isEnabled}`
+					`[MessageHandler] Received toggleHeuristicContextUsage: ${isEnabled}`,
 				);
 				await provider.settingsManager.updateHeuristicSelectionEnabled(
-					isEnabled
+					isEnabled,
 				);
 				break;
 			}
@@ -456,7 +456,7 @@ export async function handleWebviewMessage(
 				if (panelId) {
 					try {
 						await vscode.commands.executeCommand(
-							"minovative-mind.openSettingsPanel"
+							"minovative-mind.openSettingsPanel",
 						);
 						provider.postMessageToWebview({
 							type: "statusUpdate",
@@ -466,14 +466,14 @@ export async function handleWebviewMessage(
 					} catch (error: any) {
 						console.error(
 							`[MessageHandler] Error opening settings panel ${panelId}:`,
-							error
+							error,
 						);
 						provider.postMessageToWebview({
 							type: "statusUpdate",
 							value: formatUserFacingErrorMessage(
 								error,
 								"Failed to open settings panel.",
-								"Error: "
+								"Error: ",
 							),
 							isError: true,
 						});
@@ -495,11 +495,11 @@ export async function handleWebviewMessage(
 				if (relativeFilePathFromWebview.trim() === "") {
 					const errorMessage = formatUserFacingErrorMessage(
 						new Error(
-							`The provided file path is invalid or malformed: "${relativeFilePathFromWebview}".`
+							`The provided file path is invalid or malformed: "${relativeFilePathFromWebview}".`,
 						),
 						"Security alert: The provided file path is invalid or malformed. Operation blocked.",
 						"Security alert: ",
-						vscode.workspace.workspaceFolders?.[0]?.uri
+						vscode.workspace.workspaceFolders?.[0]?.uri,
 					);
 					console.warn(`[MessageHandler] ${errorMessage}`);
 					provider.postMessageToWebview({
@@ -524,14 +524,14 @@ export async function handleWebviewMessage(
 					try {
 						absoluteFileUri = vscode.Uri.joinPath(
 							rootFolder.uri,
-							relativeFilePathFromWebview
+							relativeFilePathFromWebview,
 						);
 					} catch (uriError: any) {
 						const errorMessage = formatUserFacingErrorMessage(
 							uriError,
 							"Error: The file path could not be resolved. Please ensure the path is valid and accessible.",
 							"Error: ",
-							vscode.workspace.workspaceFolders?.[0]?.uri
+							vscode.workspace.workspaceFolders?.[0]?.uri,
 						);
 						console.error(`[MessageHandler] ${errorMessage}`, uriError);
 						provider.postMessageToWebview({
@@ -543,7 +543,7 @@ export async function handleWebviewMessage(
 					}
 
 					const absoluteNormalizedFilePath = path.normalize(
-						absoluteFileUri.fsPath
+						absoluteFileUri.fsPath,
 					);
 
 					if (
@@ -556,7 +556,7 @@ export async function handleWebviewMessage(
 					const errorMessage = formatUserFacingErrorMessage(
 						new Error("No VS Code workspace folder is currently open."),
 						"Security alert: Cannot open file. No VS Code workspace is currently open. Please open a project folder to proceed.",
-						"Security alert: "
+						"Security alert: ",
 					);
 					console.warn(`[MessageHandler] ${errorMessage}`);
 					provider.postMessageToWebview({
@@ -570,11 +570,11 @@ export async function handleWebviewMessage(
 				if (!isPathWithinWorkspace || !absoluteFileUri) {
 					const errorMessage = formatUserFacingErrorMessage(
 						new Error(
-							`Attempted to open a file located outside the current VS Code workspace: "${relativeFilePathFromWebview}".`
+							`Attempted to open a file located outside the current VS Code workspace: "${relativeFilePathFromWebview}".`,
 						),
 						"Security alert: Attempted to open a file located outside the current VS Code workspace. This operation is blocked for security reasons.",
 						"Security alert: ",
-						vscode.workspace.workspaceFolders?.[0]?.uri
+						vscode.workspace.workspaceFolders?.[0]?.uri,
 					);
 					console.warn(`[MessageHandler] ${errorMessage}`);
 					provider.postMessageToWebview({
@@ -598,11 +598,11 @@ export async function handleWebviewMessage(
 						openError,
 						"Error opening file: Failed to open the specified file.",
 						"Error opening file: ",
-						vscode.workspace.workspaceFolders?.[0]?.uri
+						vscode.workspace.workspaceFolders?.[0]?.uri,
 					);
 					console.error(
 						`[MessageHandler] Error opening file ${absoluteFileUri.fsPath} in VS Code:`,
-						openError
+						openError,
 					);
 					provider.postMessageToWebview({
 						type: "statusUpdate",
@@ -618,8 +618,8 @@ export async function handleWebviewMessage(
 				console.log(
 					`[MessageHandler] Received editChatMessage for index ${messageIndex}: "${newContent.substring(
 						0,
-						50
-					)}..."`
+						50,
+					)}..."`,
 				);
 
 				provider.isEditingMessageActive = true; // Set flag at the start of the edit operation
@@ -639,7 +639,7 @@ export async function handleWebviewMessage(
 
 					provider.chatHistoryManager.editMessageAndTruncate(
 						messageIndex,
-						newContent
+						newContent,
 					);
 					provider.chatHistoryManager.restoreChatHistoryToWebview(); // Restore history to reflect the edit
 
@@ -665,19 +665,19 @@ export async function handleWebviewMessage(
 						// Use the token from the currently active operation, created by startUserOperation
 						await provider.startUserOperation("commit");
 						await provider.commitService.handleCommitCommand(
-							provider.activeOperationCancellationTokenSource!.token
+							provider.activeOperationCancellationTokenSource!.token,
 						);
 					} else {
 						// If it's not a recognized command, proceed with regular chat message regeneration
 						await provider.chatService.regenerateAiResponseFromHistory(
-							messageIndex
+							messageIndex,
 						);
 					}
 				} catch (error: any) {
 					const isCancellation = error.message === ERROR_OPERATION_CANCELLED;
 					if (isCancellation) {
 						console.log(
-							"[MessageHandler] editChatMessage: Operation cancelled during processing."
+							"[MessageHandler] editChatMessage: Operation cancelled during processing.",
 						);
 						// endUserOperation("cancelled") will be called by triggerUniversalCancellation if triggered by user
 						// or here if it's an internal cancellation.
@@ -686,11 +686,11 @@ export async function handleWebviewMessage(
 						const formattedError = formatUserFacingErrorMessage(
 							error,
 							"Failed to process edited message.",
-							"Error processing edit: "
+							"Error processing edit: ",
 						);
 						console.error(
 							`[MessageHandler] Error processing editChatMessage:`,
-							error
+							error,
 						);
 						provider.postMessageToWebview({
 							type: "statusUpdate",
@@ -718,7 +718,7 @@ export async function handleWebviewMessage(
 					const errorMessage =
 						"Error: Could not generate plan prompt. Invalid AI message context.";
 					console.error(
-						`[MessageHandler] Invalid history entry for index ${messageIndex} or not an AI message.`
+						`[MessageHandler] Invalid history entry for index ${messageIndex} or not an AI message.`,
 					);
 					provider.postMessageToWebview({
 						type: "statusUpdate",
@@ -738,7 +738,7 @@ export async function handleWebviewMessage(
 					const errorMessage =
 						"Error: AI message content is empty, cannot generate plan prompt.";
 					console.error(
-						`[MessageHandler] AI message content is empty for index ${messageIndex}.`
+						`[MessageHandler] AI message content is empty for index ${messageIndex}.`,
 					);
 					provider.postMessageToWebview({
 						type: "statusUpdate",
@@ -762,12 +762,12 @@ export async function handleWebviewMessage(
 						aiMessageContent,
 						DEFAULT_FLASH_LITE_MODEL,
 						provider.aiRequestService,
-						token
+						token,
 					);
 
 					if (token.isCancellationRequested) {
 						console.log(
-							"[MessageHandler] generatePlanPromptFromAIMessage: Operation cancelled after generation but before pre-fill."
+							"[MessageHandler] generatePlanPromptFromAIMessage: Operation cancelled after generation but before pre-fill.",
 						);
 						await provider.endUserOperation("cancelled");
 						return; // Crucially, exit the handler early.
@@ -786,18 +786,18 @@ export async function handleWebviewMessage(
 					const isCancellation = error.message === ERROR_OPERATION_CANCELLED;
 					if (isCancellation) {
 						console.log(
-							"[MessageHandler] generatePlanPromptFromAIMessage: Operation cancelled during generation."
+							"[MessageHandler] generatePlanPromptFromAIMessage: Operation cancelled during generation.",
 						);
 						await provider.endUserOperation("cancelled");
 					} else {
 						const formattedError = formatUserFacingErrorMessage(
 							error,
 							"Failed to generate plan prompt.",
-							"Error generating plan prompt: "
+							"Error generating plan prompt: ",
 						);
 						console.error(
 							`[MessageHandler] Error generating lightweight plan prompt:`,
-							error
+							error,
 						);
 						provider.postMessageToWebview({
 							type: "statusUpdate",
@@ -838,7 +838,7 @@ export async function handleWebviewMessage(
 						!historyEntry.parts.length
 					) {
 						throw new Error(
-							"Selected message is not a user or AI message or has no content."
+							"Selected message is not a user or AI message or has no content.",
 						);
 					}
 
@@ -874,21 +874,21 @@ export async function handleWebviewMessage(
 								forceAISelectionRecalculation: false,
 							},
 							false, // includePersona
-							false // includeVerboseHeaders
+							false, // includeVerboseHeaders
 						);
 
 					const relevantFiles = contextResult.relevantFiles;
 
 					const fileTreeContent = createAsciiTree(
 						relevantFiles,
-						"Project Root"
+						"Project Root",
 					);
 
 					let allFileContents = "";
 					for (const relativePath of relevantFiles) {
 						const uri = vscode.Uri.joinPath(
 							provider.workspaceRootUri,
-							relativePath
+							relativePath,
 						);
 						try {
 							const contentBytes = await vscode.workspace.fs.readFile(uri);
@@ -896,7 +896,7 @@ export async function handleWebviewMessage(
 							allFileContents += `--- File: ${relativePath} ---\n${fileContent}\n\n`;
 						} catch (fileReadError: any) {
 							console.warn(
-								`[MessageHandler] Could not read file ${relativePath}: ${fileReadError.message}`
+								`[MessageHandler] Could not read file ${relativePath}: ${fileReadError.message}`,
 							);
 							allFileContents += `--- File: ${relativePath} ---\n[Error reading file: ${fileReadError.message}]\n\n`;
 						}
@@ -918,7 +918,7 @@ export async function handleWebviewMessage(
 					const errorMessage = formatUserFacingErrorMessage(
 						error,
 						"Failed to copy message context to clipboard.",
-						"Error copying context: "
+						"Error copying context: ",
 					);
 					console.error(`[MessageHandler] ${errorMessage}`, error);
 					provider.postMessageToWebview({
@@ -932,24 +932,24 @@ export async function handleWebviewMessage(
 
 			case "requestWorkspaceFiles":
 				console.log(
-					"[WebviewMessageHandler] Webview requested workspace files."
+					"[WebviewMessageHandler] Webview requested workspace files.",
 				);
 				try {
 					const allScannedFilesUris = await scanWorkspace({ useCache: true });
 					const allScannedFilesRelativePaths = allScannedFilesUris.map((uri) =>
-						vscode.workspace.asRelativePath(uri)
+						vscode.workspace.asRelativePath(uri),
 					);
 					provider.postMessageToWebview({
 						type: "receiveWorkspaceFiles",
 						value: allScannedFilesRelativePaths,
 					});
 					console.log(
-						`[WebviewMessageHandler] Sent ${allScannedFilesRelativePaths.length} workspace file paths to webview.`
+						`[WebviewMessageHandler] Sent ${allScannedFilesRelativePaths.length} workspace file paths to webview.`,
 					);
 				} catch (error: any) {
 					console.error(
 						"[WebviewMessageHandler] Error scanning workspace files for webview:",
-						error
+						error,
 					);
 					provider.postMessageToWebview({
 						type: "receiveWorkspaceFiles",
@@ -960,7 +960,7 @@ export async function handleWebviewMessage(
 						value: formatUserFacingErrorMessage(
 							error,
 							"An unknown error occurred while scanning workspace files.",
-							"Error scanning workspace files: "
+							"Error scanning workspace files: ",
 						),
 						isError: true,
 					});
@@ -988,7 +988,7 @@ export async function handleWebviewMessage(
 				const errorMessage = formatUserFacingErrorMessage(
 					error,
 					"Failed to parse AI-generated plan structure.",
-					"Error: "
+					"Error: ",
 				);
 				provider.postMessageToWebview({
 					type: "statusUpdate",
@@ -1009,17 +1009,17 @@ export async function handleWebviewMessage(
 				console.warn(
 					`Unknown message type received: ${
 						(validatedData as { type: unknown }).type
-					}`
+					}`,
 				);
 		}
 	} catch (error: any) {
 		const errorMessage = formatUserFacingErrorMessage(
 			error,
-			"An unexpected error occurred while processing your request."
+			"An unexpected error occurred while processing your request.",
 		);
 		console.error(
 			`[MessageHandler] Unhandled error in handleWebviewMessage:`,
-			error
+			error,
 		);
 
 		// If a user operation was initially generating and its ID hasn't changed,

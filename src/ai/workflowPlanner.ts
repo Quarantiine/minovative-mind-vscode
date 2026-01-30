@@ -27,6 +27,7 @@ interface CreateFileStepDetails {
 	content?: string;
 	generate_prompt?: string;
 	description?: string;
+	use_context_agent?: boolean;
 }
 
 interface ModifyFileStepDetails {
@@ -34,6 +35,7 @@ interface ModifyFileStepDetails {
 	path: string;
 	modification_prompt: string;
 	description?: string;
+	use_context_agent?: boolean;
 }
 
 interface RunCommandStepDetails {
@@ -135,7 +137,7 @@ export interface ParsedPlanResult {
  */
 export async function parseAndValidatePlan(
 	source: string | object, // Updated parameter type
-	workspaceRootUri: vscode.Uri
+	workspaceRootUri: vscode.Uri,
 ): Promise<ParsedPlanResult> {
 	console.log("Attempting to parse and validate plan source:", source);
 
@@ -170,7 +172,7 @@ export async function parseAndValidatePlan(
 
 			let extractedJsonString = cleanedString.substring(
 				firstBraceIndex,
-				lastBraceIndex + 1
+				lastBraceIndex + 1,
 			);
 
 			const stringLiteralRegex = /"((?:\\.|[^"\\])*)"/g;
@@ -201,7 +203,7 @@ export async function parseAndValidatePlan(
 						}
 					}
 					return `"${processedContent}"`;
-				}
+				},
 			);
 
 			potentialPlan = JSON.parse(sanitizedJsonString);
@@ -273,7 +275,7 @@ export async function parseAndValidatePlan(
 						ig.ignores(relativePath + "/"))
 				) {
 					console.warn(
-						`Skipping step ${flatStep.step} because its path '${flatStep.path}' is ignored by .gitignore.`
+						`Skipping step ${flatStep.step} because its path '${flatStep.path}' is ignored by .gitignore.`,
 					);
 					continue;
 				}
@@ -319,6 +321,24 @@ export async function parseAndValidatePlan(
 
 			// Transform the validated flat step into the nested structure used by the application
 			const { step: stepNumber, ...stepDetails } = flatStep;
+
+			// Explicitly optional checks for boolean flag use_context_agent to ensure it passes through
+			if (typeof (stepDetails as any).use_context_agent !== "undefined") {
+				if (typeof (stepDetails as any).use_context_agent !== "boolean") {
+					// Fallback: if somehow not boolean, ignore or try to coerce? simpler to just ignore or let it be if it's potentially truthy/falsy
+					// But let's strictly validate if present to be safe, or just allow it.
+					// Since flatStep is 'any' (implicitly from JSON), we should check.
+					// If invalid type, maybe just skip assigning it or warn?
+					// Let's assume validation is loose for optional fields, but we want to ensure cleaner types.
+					if (
+						(stepDetails as any).use_context_agent !== true &&
+						(stepDetails as any).use_context_agent !== false
+					) {
+						delete (stepDetails as any).use_context_agent;
+					}
+				}
+			}
+
 			finalSteps.push({ step: stepDetails as any });
 		}
 
