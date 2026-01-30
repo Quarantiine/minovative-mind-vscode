@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { AIRequestService } from "./aiRequestService";
 import { DEFAULT_FLASH_LITE_MODEL } from "../sidebar/common/sidebarConstants";
+import { SUPPORTED_CODE_EXTENSIONS } from "../utils/languageUtils";
 
 export class LightweightClassificationService {
 	constructor(private aiRequestService: AIRequestService) {}
@@ -107,6 +108,13 @@ Response (YES/NO):`;
 	): Promise<string> {
 		if (!content || content.trim().length === 0) {
 			return "Empty file.";
+		}
+
+		// Check if file extension is supported
+		const fileExtension = filePath.split(".").pop()?.toLowerCase() || "";
+		if (!SUPPORTED_CODE_EXTENSIONS.includes(fileExtension)) {
+			// For non-code files, return a generic unavailable message or simple description
+			return `File type .${fileExtension} is not supported for deep analysis.`;
 		}
 
 		const prompt = `

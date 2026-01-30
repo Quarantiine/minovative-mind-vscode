@@ -5,7 +5,7 @@ import {
 	DEFAULT_FLASH_LITE_MODEL,
 	TEMPERATURE,
 } from "../sidebar/common/sidebarConstants";
-
+import { SUPPORTED_CODE_EXTENSIONS } from "../utils/languageUtils";
 export interface FileSummary {
 	filePath: string;
 	relativePath: string;
@@ -28,7 +28,7 @@ export interface SequentialProcessingOptions {
 	onProgress?: (
 		currentFile: string,
 		totalFiles: number,
-		progress: number
+		progress: number,
 	) => void;
 	onFileProcessed?: (summary: FileSummary) => void;
 }
@@ -55,7 +55,7 @@ export class SequentialFileProcessor {
 		workspaceRoot: vscode.Uri,
 		postMessageToWebview: (message: any) => void,
 		fileDependencies: Map<string, string[]>,
-		reverseFileDependencies: Map<string, string[]>
+		reverseFileDependencies: Map<string, string[]>,
 	) {
 		this.aiRequestService = aiRequestService;
 		this.workspaceRoot = workspaceRoot;
@@ -70,7 +70,7 @@ export class SequentialFileProcessor {
 	public async processFilesSequentially(
 		files: vscode.Uri[],
 		userRequest: string,
-		options: SequentialProcessingOptions = {}
+		options: SequentialProcessingOptions = {},
 	): Promise<{
 		summaries: FileSummary[];
 		finalContext: string;
@@ -141,7 +141,7 @@ export class SequentialFileProcessor {
 							includeDependencies,
 							complexityThreshold,
 							modelName,
-						}
+						},
 					);
 
 					processingContext.processedFiles.push(summary);
@@ -209,7 +209,7 @@ export class SequentialFileProcessor {
 			includeDependencies: boolean;
 			complexityThreshold: "low" | "medium" | "high";
 			modelName: string;
-		}
+		},
 	): Promise<FileSummary> {
 		const relativePath = vscode.workspace.asRelativePath(fileUri);
 		const fileExtension = this._getFileExtension(relativePath);
@@ -240,7 +240,7 @@ export class SequentialFileProcessor {
 			fileContent,
 			symbols,
 			undefined, // No active symbol info for batch processing
-			options.summaryLength
+			options.summaryLength,
 		);
 
 		// Generate AI-powered detailed analysis if enabled
@@ -255,7 +255,7 @@ export class SequentialFileProcessor {
 				fileContent,
 				initialSummary,
 				context,
-				options
+				options,
 			);
 
 			try {
@@ -267,7 +267,7 @@ export class SequentialFileProcessor {
 					{
 						temperature: TEMPERATURE,
 						maxOutputTokens: 65000, // Allow large responses for detailed analysis
-					}
+					},
 				);
 
 				// Parse the AI response to extract structured information
@@ -278,7 +278,7 @@ export class SequentialFileProcessor {
 			} catch (error) {
 				console.warn(
 					`[SequentialFileProcessor] Failed to get detailed analysis for ${relativePath}:`,
-					error
+					error,
 				);
 				// Fallback to basic analysis
 				keyInsights = this.generateBasicInsights(fileContent, fileExtension);
@@ -295,9 +295,27 @@ export class SequentialFileProcessor {
 		// Extract dependencies if enabled
 		let dependencies: string[] = [];
 		if (options.includeDependencies) {
-			const resolvedDependencies =
-				this.fileDependencies.get(relativePath) || [];
-			dependencies = resolvedDependencies;
+			// Try AI-based extraction
+			try {
+				const aiDependencies = await this.extractDependenciesAI(
+					fileContent,
+					fileExtension,
+					options.modelName,
+				);
+
+				dependencies = aiDependencies;
+			} catch (error) {
+				console.warn(
+					`[SequentialFileProcessor] AI dependency extraction failed for ${relativePath}. Falling back to regex.`,
+					error,
+				);
+
+				// Fallback to regex
+				const resolvedDependencies =
+					this.fileDependencies.get(relativePath) ||
+					this.extractDependencies(fileContent, fileExtension);
+				dependencies = resolvedDependencies;
+			}
 		}
 
 		const summary: FileSummary = {
@@ -336,7 +354,7 @@ export class SequentialFileProcessor {
 		fileContent: string,
 		initialSummary: string,
 		context: ProcessingContext,
-		options: any
+		options: any,
 	): string {
 		let contextInfo = "";
 		// Condense contextInfo to include mainPurpose and keyInsights of a few critical, highly relevant previously processed files.
@@ -420,7 +438,7 @@ Main purpose should be a concise string description.
 					: [];
 				if (keyInsights.length === 0) {
 					console.warn(
-						`[SequentialFileProcessor] 'keyInsights' field is missing, empty, or not an array of strings in AI analysis.`
+						`[SequentialFileProcessor] 'keyInsights' field is missing, empty, or not an array of strings in AI analysis.`,
 					);
 				}
 
@@ -432,12 +450,12 @@ Main purpose should be a concise string description.
 						complexity = lowerComplexity as "low" | "medium" | "high";
 					} else {
 						console.warn(
-							`[SequentialFileProcessor] Invalid 'complexity' value received: "${parsed.complexity}". Defaulting to "medium".`
+							`[SequentialFileProcessor] Invalid 'complexity' value received: "${parsed.complexity}". Defaulting to "medium".`,
 						);
 					}
 				} else {
 					console.warn(
-						`[SequentialFileProcessor] Missing or invalid 'complexity' field in AI analysis. Defaulting to "medium".`
+						`[SequentialFileProcessor] Missing or invalid 'complexity' field in AI analysis. Defaulting to "medium".`,
 					);
 				}
 
@@ -448,7 +466,7 @@ Main purpose should be a concise string description.
 						: "Unknown";
 				if (mainPurpose === "Unknown") {
 					console.warn(
-						`[SequentialFileProcessor] Missing or empty 'mainPurpose' field in AI analysis.`
+						`[SequentialFileProcessor] Missing or empty 'mainPurpose' field in AI analysis.`,
 					);
 				}
 
@@ -459,18 +477,18 @@ Main purpose should be a concise string description.
 				};
 			} else {
 				console.warn(
-					"[SequentialFileProcessor] No valid JSON block found in AI analysis response. Falling back to default values."
+					"[SequentialFileProcessor] No valid JSON block found in AI analysis response. Falling back to default values.",
 				);
 			}
 		} catch (error) {
 			// 3. Implementing default values and logging for parsing errors
 			console.warn(
 				"[SequentialFileProcessor] Failed to parse AI analysis response as JSON:",
-				error
+				error,
 			);
 			console.warn(
 				"[SequentialFileProcessor] Raw AI analysis response (for debugging):",
-				analysis.substring(0, 500) + (analysis.length > 500 ? "..." : "")
+				analysis.substring(0, 500) + (analysis.length > 500 ? "..." : ""),
 			);
 		}
 
@@ -492,7 +510,7 @@ Main purpose should be a concise string description.
 	 */
 	private generateBasicInsights(
 		fileContent: string,
-		fileExtension: string
+		fileExtension: string,
 	): string[] {
 		const insights: string[] = [];
 
@@ -526,14 +544,14 @@ Main purpose should be a concise string description.
 	 */
 	private _calculateMaxNestingDepth(
 		symbols: vscode.DocumentSymbol[],
-		currentDepth: number = 0
+		currentDepth: number = 0,
 	): number {
 		let maxDepth = currentDepth;
 		for (const symbol of symbols) {
 			if (symbol.children && symbol.children.length > 0) {
 				maxDepth = Math.max(
 					maxDepth,
-					this._calculateMaxNestingDepth(symbol.children, currentDepth + 1)
+					this._calculateMaxNestingDepth(symbol.children, currentDepth + 1),
 				);
 			}
 		}
@@ -551,7 +569,7 @@ Main purpose should be a concise string description.
 	 */
 	private estimateComplexity(
 		fileContent: string,
-		symbols?: vscode.DocumentSymbol[]
+		symbols?: vscode.DocumentSymbol[],
 	): "low" | "medium" | "high" {
 		const lines = fileContent.split("\n").length;
 		const symbolCount = symbols?.length || 0;
@@ -564,12 +582,12 @@ Main purpose should be a concise string description.
 			functionMethodCount = symbols.filter(
 				(s) =>
 					s.kind === vscode.SymbolKind.Function ||
-					s.kind === vscode.SymbolKind.Method
+					s.kind === vscode.SymbolKind.Method,
 			).length;
 			classInterfaceCount = symbols.filter(
 				(s) =>
 					s.kind === vscode.SymbolKind.Class ||
-					s.kind === vscode.SymbolKind.Interface
+					s.kind === vscode.SymbolKind.Interface,
 			).length;
 			maxNestingDepth = this._calculateMaxNestingDepth(symbols);
 		}
@@ -635,7 +653,7 @@ Main purpose should be a concise string description.
 	 */
 	private determineMainPurpose(
 		fileExtension: string,
-		relativePath: string
+		relativePath: string,
 	): string {
 		const pathLower = relativePath.toLowerCase();
 
@@ -827,7 +845,7 @@ Main purpose should be a concise string description.
 	 */
 	private extractDependencies(
 		fileContent: string,
-		fileExtension: string
+		fileExtension: string,
 	): string[] {
 		const dependencies: string[] = [];
 
@@ -883,13 +901,13 @@ Main purpose should be a concise string description.
 		// Group files by complexity and purpose
 		const byComplexity = {
 			high: context.processedFiles.filter(
-				(f) => f.estimatedComplexity === "high"
+				(f) => f.estimatedComplexity === "high",
 			),
 			medium: context.processedFiles.filter(
-				(f) => f.estimatedComplexity === "medium"
+				(f) => f.estimatedComplexity === "medium",
 			),
 			low: context.processedFiles.filter(
-				(f) => f.estimatedComplexity === "low"
+				(f) => f.estimatedComplexity === "low",
 			),
 		};
 
@@ -946,7 +964,7 @@ Main purpose should be a concise string description.
 	public async getFileContextForAI(
 		fileUri: vscode.Uri,
 		previousSummaries: FileSummary[],
-		userRequest: string
+		userRequest: string,
 	): Promise<string> {
 		const relativePath = vscode.workspace.asRelativePath(fileUri);
 
@@ -961,7 +979,7 @@ Main purpose should be a concise string description.
 			const relevantFiles = this.findRelevantPreviousFiles(
 				previousSummaries,
 				fileUri, // Pass fileUri to `findRelevantPreviousFiles` for more granular path-based checks.
-				userRequest
+				userRequest,
 			);
 
 			// Limit the number of previously processed file summaries included to prevent context overload.
@@ -1006,7 +1024,7 @@ Main purpose should be a concise string description.
 	private findRelevantPreviousFiles(
 		previousSummaries: FileSummary[],
 		currentFileUri: vscode.Uri,
-		userRequest: string
+		userRequest: string,
 	): FileSummary[] {
 		const currentRelativePath = vscode.workspace.asRelativePath(currentFileUri);
 		const currentFsPath = currentFileUri.fsPath;
@@ -1046,7 +1064,7 @@ Main purpose should be a concise string description.
 			}
 			if (
 				file.keyInsights.some((insight) =>
-					insight.toLowerCase().includes(requestLower)
+					insight.toLowerCase().includes(requestLower),
 				)
 			) {
 				purposeInsightsScore += 2; // Moderate score for insight match
@@ -1086,5 +1104,65 @@ Main purpose should be a concise string description.
 	 */
 	private _getFileExtension(relativePath: string): string {
 		return relativePath.split(".").pop()?.toLowerCase() || "unknown";
+	}
+
+	/**
+	 * Uses AI to extract dependencies from file content.
+	 * Falls back to regex if AI fails.
+	 */
+	private async extractDependenciesAI(
+		fileContent: string,
+		fileExtension: string,
+		modelName: string,
+	): Promise<string[]> {
+		// Skip for non-code files
+		if (!SUPPORTED_CODE_EXTENSIONS.includes(fileExtension)) {
+			return [];
+		}
+
+		const prompt = `Extract all imported module names (e.g. 'react', './utils', 'fs') from this ${fileExtension} code.
+Ignore built-in language keywords unless they are explicitly imported modules.
+Return ONLY a valid JSON array of strings. Do not include markdown code blocks.
+
+Code:
+${fileContent.substring(0, 8000)} // Truncate to avoid token limits on huge files
+`;
+
+		try {
+			const response = await this.aiRequestService.generateWithRetry(
+				[{ text: prompt }],
+				modelName,
+				undefined,
+				"dependency_extraction",
+				{ responseMimeType: "application/json" },
+				undefined,
+				undefined,
+				false,
+				"You are a code analysis expert. Extract all module dependencies from the provided code snippet. Return a strict JSON array of strings choices.",
+			);
+
+			// Clean and parse JSON
+			const jsonMatch = response.match(/\[.*\]/s);
+			if (jsonMatch) {
+				const parsed = JSON.parse(jsonMatch[0]);
+				if (
+					Array.isArray(parsed) &&
+					parsed.every((i) => typeof i === "string")
+				) {
+					return parsed;
+				}
+			}
+			console.warn(
+				"[SequentialFileProcessor] AI response was not a valid string array:",
+				response,
+			);
+			throw new Error("Invalid JSON response");
+		} catch (error) {
+			console.warn(
+				"[SequentialFileProcessor] AI Dependency extraction error:",
+				error,
+			);
+			throw error; // Re-throw to trigger fallback
+		}
 	}
 }

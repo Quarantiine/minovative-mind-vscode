@@ -4,6 +4,7 @@ import BPromise from "bluebird"; // using bluebird map for concurrency control
 import * as path from "path";
 import { loadGitIgnoreMatcher } from "../utils/ignoreUtils";
 import { DEFAULT_SIZE } from "../sidebar/common/sidebarConstants";
+import { SUPPORTED_CODE_EXTENSIONS } from "../utils/languageUtils";
 
 // Interface for scan options (can be expanded later for settings)
 interface ScanOptions {
@@ -25,118 +26,28 @@ interface ScanCache {
 }
 
 // File type patterns for better filtering (default fallback)
-const RELEVANT_FILE_EXTENSIONS = [
-	// --- Web Technologies (Frontend & JavaScript/TypeScript Ecosystem) ---
-	".html",
-	".htm",
-	".css",
-	".scss",
-	".sass",
-	".less",
-	".js",
-	".mjs",
-	".cjs",
-	".jsx",
-	".ts",
-	".tsx",
-	".d.ts", // TypeScript Declaration Files
-	".vue",
-	".svelte",
-	".json", // Often used for data, config, or even web components
-	".graphql", // GraphQL schema/query files
-	".gql", // GraphQL query files
-
-	// --- General Purpose & Backend Languages ---
-	".py", // Python
-	".java", // Java
-	".kt", // Kotlin
-	".kts", // Kotlin Script
-	".scala", // Scala
-	".groovy", // Groovy
-	".go", // Go
-	".rs", // Rust
-	".php", // PHP
-	".rb", // Ruby
-	".swift", // Swift
-	".dart", // Dart
-	".cs", // C#
-	".vb", // Visual Basic
-	".fs", // F#
-	".fsx", // F# Script
-	".jl", // Julia
-	".ml", // OCaml
-	".mli", // OCaml Interface
-
-	// --- Low-level & Systems Programming ---
-	".cpp",
-	".cc",
-	".cxx",
-	".c",
-	".h",
-	".hpp",
-	".asm", // Assembly
-
-	// --- Scripting & Shell Languages ---
-	".sh", // Shell script
-	".bash", // Bash script
-	".zsh", // Zsh script
-	".ps1", // PowerShell script
-	".psm1", // PowerShell module
-	".psd1", // PowerShell data
-	".lua", // Lua
-	".luau", // Luau (Roblox)
-	".pl", // Perl
-	".pm", // Perl Module
-
-	// --- Database Query Languages ---
-	".sql",
-
-	// --- Infrastructure as Code (IaC) ---
-	".tf", // Terraform
-	".hcl", // HashiCorp Configuration Language
-
-	// --- Blockchain / Smart Contract Languages ---
-	".sol", // Solidity
-
-	// --- Game Development Specific ---
-	".gd", // GDScript (Godot Engine)
-
-	// --- Configuration, Markup & Documentation Files (by extension) ---
-	".yaml",
-	".yml",
-	".toml",
-	".ini",
-	".cfg",
-	".xml",
-	".svg",
-	".md",
-	".txt",
-	".config", // General configuration (e.g., .NET web.config)
-	".conf", // General configuration
-	".properties", // Java properties files
-	".R", // R Language (often for data analysis/statistics, but also scripts)
-	".r", // R Language (alternative extension)
-
-	// --- Major Project/Build System Files (by full name) ---
-	"package.json", // Node.js/JavaScript projects
-	"tsconfig.json", // TypeScript configuration
-	"webpack.config.js", // Webpack configuration
-	"vite.config.js", // Vite configuration
-	"rollup.config.js", // Rollup configuration
-	"jest.config.js", // Jest configuration
-	"Dockerfile", // Docker container definition
-	"docker-compose.yml", // Docker Compose configuration
-	"docker-compose.yaml", // Docker Compose configuration
-	".gitignore", // Git ignore rules
-	".eslintrc", // ESLint configuration
-	".prettierrc", // Prettier configuration
-
-	// --- Core Project Documentation & Metadata Files (by full name) ---
+// Now using the centralized list from languageUtils, but formatted with dot prefix
+const RELEVANT_FILE_EXTENSIONS = SUPPORTED_CODE_EXTENSIONS.map(
+	(ext) => `.${ext}`,
+).concat([
+	// Add specific filenames that are important but not covered by simple extensions
+	"package.json",
+	"tsconfig.json",
+	"webpack.config.js",
+	"vite.config.js",
+	"rollup.config.js",
+	"jest.config.js",
+	"Dockerfile",
+	"docker-compose.yml",
+	"docker-compose.yaml",
+	".gitignore",
+	".eslintrc",
+	".prettierrc",
 	"README.md",
 	"CHANGELOG.md",
 	"LICENSE",
 	"CONTRIBUTING.md",
-];
+]);
 
 // Cache storage
 const scanCache = new Map<string, ScanCache>();
@@ -149,7 +60,7 @@ const scanCache = new Map<string, ScanCache>();
  * @returns A promise that resolves to an array of vscode.Uri objects representing relevant files.
  */
 export async function scanWorkspace(
-	options?: ScanOptions
+	options?: ScanOptions,
 ): Promise<vscode.Uri[]> {
 	const workspaceFolders = vscode.workspace.workspaceFolders;
 	if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -191,10 +102,10 @@ export async function scanWorkspace(
 
 	// Make RELEVANT_FILE_EXTENSIONS configurable via VS Code settings
 	const config = vscode.workspace.getConfiguration(
-		"minovativeMind.workspaceScanner"
+		"minovativeMind.workspaceScanner",
 	);
 	const userDefinedFileExtensions = config.get<string[]>(
-		"relevantFileExtensions"
+		"relevantFileExtensions",
 	);
 
 	// Use user-defined extensions from settings, fallback to options filter, then to hardcoded default
@@ -280,7 +191,7 @@ export async function scanWorkspace(
 					}
 					// Ignore symlinks and other types for now
 				},
-				{ concurrency: concurrency }
+				{ concurrency: concurrency },
 			);
 		} catch (error) {
 			console.error(`Error reading directory ${dirUri.fsPath}:`, error);
@@ -294,7 +205,7 @@ export async function scanWorkspace(
 
 	const scanTime = Date.now() - startTime;
 	console.log(
-		`Workspace scan finished in ${scanTime}ms. Found ${relevantFiles.length} relevant files.`
+		`Workspace scan finished in ${scanTime}ms. Found ${relevantFiles.length} relevant files.`,
 	);
 
 	// Cache the results
@@ -307,7 +218,7 @@ export async function scanWorkspace(
 	}
 
 	console.log(
-		`[WorkspaceScanner] Final scan results: Found ${relevantFiles.length} relevant files in ${rootFolder.uri.fsPath}.`
+		`[WorkspaceScanner] Final scan results: Found ${relevantFiles.length} relevant files in ${rootFolder.uri.fsPath}.`,
 	);
 	return relevantFiles;
 }

@@ -45,6 +45,7 @@ import {
 	DEFAULT_FLASH_MODEL,
 	DEFAULT_SIZE,
 } from "../sidebar/common/sidebarConstants";
+import { SUPPORTED_CODE_EXTENSIONS } from "../utils/languageUtils";
 
 // Constants for symbol processing
 export const MAX_REFERENCED_TYPE_CONTENT_CHARS_CONSTANT = 20000;
@@ -358,7 +359,14 @@ export class ContextService {
 								const stat = await vscode.workspace.fs.stat(potentialUri);
 								if (stat.type === vscode.FileType.File) {
 									// Ensure it's a file, not a directory
-									foundUris.push(potentialUri);
+									// Check if file extension is supported
+									const ext = path
+										.extname(potentialUri.fsPath)
+										.toLowerCase()
+										.replace(".", "");
+									if (SUPPORTED_CODE_EXTENSIONS.includes(ext)) {
+										foundUris.push(potentialUri);
+									}
 								}
 							} catch (statError: any) {
 								// File does not exist or cannot be accessed, or it's a directory

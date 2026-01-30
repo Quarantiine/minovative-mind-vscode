@@ -131,7 +131,7 @@ export interface SelectRelevantFilesAIOptions {
 					onComplete?: () => void;
 			  }
 			| undefined,
-		token: vscode.CancellationToken | undefined
+		token: vscode.CancellationToken | undefined,
 	) => Promise<string>;
 	aiRequestService?: AIRequestService; // New: Pass service for tool calls
 	postMessageToWebview?: (message: any) => void; // New: For logging to chat
@@ -148,7 +148,7 @@ function generateAISelectionCacheKey(
 	userRequest: string,
 	allScannedFiles: ReadonlyArray<vscode.Uri>,
 	activeEditorContext?: PlanGenerationContext["editorContext"],
-	preSelectedHeuristicFiles?: vscode.Uri[]
+	preSelectedHeuristicFiles?: vscode.Uri[],
 ): string {
 	const activeFile = activeEditorContext?.filePath || "";
 	const heuristicFiles =
@@ -176,7 +176,7 @@ function optimizePrompt(
 	contextPrompt: string,
 	dependencyInfo: string,
 	fileListString: string,
-	maxLength: number = 50000
+	maxLength: number = 50000,
 ): string {
 	let totalLength =
 		contextPrompt.length + dependencyInfo.length + fileListString.length;
@@ -197,7 +197,7 @@ function optimizePrompt(
 	if (totalLength > targetLength) {
 		const fileListLines = fileListString.split("\n");
 		const maxFileLines = Math.floor(
-			(targetLength - contextPrompt.length - dependencyInfo.length) / 100
+			(targetLength - contextPrompt.length - dependencyInfo.length) / 100,
 		);
 
 		if (fileListLines.length > maxFileLines) {
@@ -231,7 +231,7 @@ function optimizePrompt(
  * Now includes caching, better prompt optimization, and performance improvements.
  */
 export async function selectRelevantFilesAI(
-	options: SelectRelevantFilesAIOptions
+	options: SelectRelevantFilesAIOptions,
 ): Promise<FileSelection[]> {
 	const {
 		userRequest,
@@ -264,7 +264,7 @@ export async function selectRelevantFilesAI(
 			userRequest,
 			allScannedFiles,
 			activeEditorContext,
-			preSelectedHeuristicFiles
+			preSelectedHeuristicFiles,
 		);
 
 		const cached = aiSelectionCache.get(cacheKey);
@@ -272,8 +272,8 @@ export async function selectRelevantFilesAI(
 			console.log(
 				`Using cached AI selection results for request: ${userRequest.substring(
 					0,
-					50
-				)}...`
+					50,
+				)}...`,
 			);
 			if (postMessageToWebview) {
 				postMessageToWebview({
@@ -299,7 +299,7 @@ export async function selectRelevantFilesAI(
 	}
 
 	const relativeFilePaths = allScannedFiles.map((uri) =>
-		path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/")
+		path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/"),
 	);
 
 	// Start logging for visibility
@@ -313,7 +313,7 @@ export async function selectRelevantFilesAI(
 			value: {
 				text: `[Context Agent] Analysis started for: "${userRequest.substring(
 					0,
-					50
+					50,
 				)}..."`,
 			},
 		});
@@ -332,10 +332,10 @@ export async function selectRelevantFilesAI(
 
 	if (preSelectedHeuristicFiles && preSelectedHeuristicFiles.length > 0) {
 		const heuristicPaths = preSelectedHeuristicFiles.map((uri) =>
-			path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/")
+			path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/"),
 		);
 		contextPrompt += `\nHeuristically Pre-selected Files (strong candidates, but critically evaluate them): ${heuristicPaths.join(
-			", "
+			", ",
 		)}\n`;
 	}
 
@@ -347,7 +347,7 @@ export async function selectRelevantFilesAI(
 		if (activeEditorContext.selectedText?.trim()) {
 			contextPrompt += `Selected Text: "${activeEditorContext.selectedText.substring(
 				0,
-				200
+				200,
 			)}"\n`;
 		}
 	}
@@ -378,19 +378,19 @@ export async function selectRelevantFilesAI(
 		if (activeSymbolDetailedInfo.implementations) {
 			addPathsToPrompt(
 				"Implementations in",
-				activeSymbolDetailedInfo.implementations.map((i) => i.uri)
+				activeSymbolDetailedInfo.implementations.map((i) => i.uri),
 			);
 		}
 		if (activeSymbolDetailedInfo.incomingCalls) {
 			addPathsToPrompt(
 				"Incoming calls from",
-				activeSymbolDetailedInfo.incomingCalls.map((c) => c.from.uri)
+				activeSymbolDetailedInfo.incomingCalls.map((c) => c.from.uri),
 			);
 		}
 		if (activeSymbolDetailedInfo.outgoingCalls) {
 			addPathsToPrompt(
 				"Outgoing calls to",
-				activeSymbolDetailedInfo.outgoingCalls.map((c) => c.to.uri)
+				activeSymbolDetailedInfo.outgoingCalls.map((c) => c.to.uri),
 			);
 		}
 		if (
@@ -402,7 +402,7 @@ export async function selectRelevantFilesAI(
 			].slice(0, 10);
 			if (typeDefPaths.length > 0) {
 				contextPrompt += `References types defined in: ${typeDefPaths.join(
-					", "
+					", ",
 				)}\n`;
 			}
 		}
@@ -441,8 +441,8 @@ export async function selectRelevantFilesAI(
 		// Create a set of heuristic files for faster lookup
 		const heuristicPathSet = new Set(
 			preSelectedHeuristicFiles?.map((uri) =>
-				path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/")
-			) || []
+				path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/"),
+			) || [],
 		);
 
 		fileListString =
@@ -491,16 +491,54 @@ export async function selectRelevantFilesAI(
 	}
 
 	// Detect if the user request appears to be about fixing an error
-	const errorKeywords =
+	// Use AI classification if available, otherwise fallback to regex
+	const errorKeywordsRegex =
 		/\b(error|bug|fix|issue|exception|crash|fail|broken|undefined|null|cannot|warning|problem)\b/i;
-	const isLikelyErrorRequest = errorKeywords.test(userRequest);
+
+	let isLikelyErrorRequest = errorKeywordsRegex.test(userRequest);
+
+	if (aiRequestService) {
+		try {
+			const classificationPrompt = `Analyze the following user request and determine if it is asking to fix a bug, error, or issue.
+User Request: "${userRequest}"
+Return ONLY a JSON object: { "isErrorFix": boolean }`;
+
+			const response = await aiRequestService.generateWithRetry(
+				[{ text: classificationPrompt }],
+				modelName,
+				undefined,
+				"intent_classification",
+				{ responseMimeType: "application/json" },
+				undefined,
+				undefined, // token
+				false, // isMergeOperation
+				"You are an intelligent intent classifier. Your job is to determine if a user request indicates a software bug, error, or issue that requires investigation. Output strict JSON.", // systemInstruction
+			);
+
+			const jsonMatch = response.match(/\{.*\}/s);
+			if (jsonMatch) {
+				const parsed = JSON.parse(jsonMatch[0]);
+				if (typeof parsed.isErrorFix === "boolean") {
+					isLikelyErrorRequest = parsed.isErrorFix;
+					console.log(
+						`[SmartContextSelector] AI classified intent: isErrorFix=${isLikelyErrorRequest}`,
+					);
+				}
+			}
+		} catch (error) {
+			console.warn(
+				"[SmartContextSelector] AI intent classification failed, using regex fallback:",
+				error,
+			);
+		}
+	}
 
 	// Build diagnostics context if available
 	let diagnosticsContext = "";
 	if (diagnostics && diagnostics.trim().length > 0) {
 		diagnosticsContext = `\n--- VS Code Diagnostics (Errors/Warnings) ---\n${diagnostics.substring(
 			0,
-			2000
+			2000,
 		)}\n--- End Diagnostics ---\n`;
 	}
 
@@ -528,7 +566,7 @@ export async function selectRelevantFilesAI(
 			const truncatedHistory =
 				historyString.length > MAX_HISTORY_LENGTH
 					? "...(older history truncated)\n" +
-					  historyString.substring(historyString.length - MAX_HISTORY_LENGTH)
+						historyString.substring(historyString.length - MAX_HISTORY_LENGTH)
 					: historyString;
 
 			historyContext = `\n--- Recent Conversation History ---\n${truncatedHistory}\n--- End Conversation History ---\n`;
@@ -584,7 +622,7 @@ ${investigationInstruction}
 `.trim();
 
 	console.log(
-		`[SmartContextSelector] Sending prompt to AI for file selection (${selectionPrompt.length} chars)`
+		`[SmartContextSelector] Sending prompt to AI for file selection (${selectionPrompt.length} chars)`,
 	);
 
 	try {
@@ -682,18 +720,18 @@ ${investigationInstruction}
 						tools,
 						FunctionCallingMode.AUTO,
 						cancellationToken,
-						"context_agent_turn"
+						"context_agent_turn",
 					);
 				} catch (e) {
 					console.warn(
-						`[SmartContextSelector] Agentic loop error: ${(e as Error).message}`
+						`[SmartContextSelector] Agentic loop error: ${(e as Error).message}`,
 					);
 					break;
 				}
 
 				if (!functionCall) {
 					console.warn(
-						`[SmartContextSelector] Agent returned text instead of function call. Retrying.`
+						`[SmartContextSelector] Agent returned text instead of function call. Retrying.`,
 					);
 					currentHistory.push({
 						role: "user",
@@ -709,7 +747,7 @@ ${investigationInstruction}
 				// Handle
 				if (functionCall.name === "finish_selection") {
 					console.log(
-						`[SmartContextSelector] Agent finished selection used tool.`
+						`[SmartContextSelector] Agent finished selection used tool.`,
 					);
 					const args = functionCall.args as any;
 					const selectedPaths = args["selectedFiles"];
@@ -718,7 +756,7 @@ ${investigationInstruction}
 						allScannedFiles,
 						projectRoot,
 						relativeFilePaths,
-						activeEditorContext
+						activeEditorContext,
 					);
 
 					// Cache result
@@ -727,7 +765,7 @@ ${investigationInstruction}
 							userRequest,
 							allScannedFiles,
 							activeEditorContext,
-							preSelectedHeuristicFiles
+							preSelectedHeuristicFiles,
 						);
 						aiSelectionCache.set(cacheKey, {
 							timestamp: Date.now(),
@@ -768,7 +806,7 @@ ${investigationInstruction}
 					try {
 						output = await SafeCommandExecutor.execute(
 							command,
-							projectRoot.fsPath
+							projectRoot.fsPath,
 						);
 					} catch (e: any) {
 						output = `Error: ${e.message}`;
@@ -830,7 +868,7 @@ ${investigationInstruction}
 						const symbols: vscode.SymbolInformation[] =
 							await vscode.commands.executeCommand(
 								"vscode.executeWorkspaceSymbolProvider",
-								query
+								query,
 							);
 
 						if (symbols && symbols.length > 0) {
@@ -844,7 +882,7 @@ ${investigationInstruction}
 								}) - ${relativePath}:${s.location.range.start.line + 1}`;
 							});
 							output = `Found ${symbols.length} symbol(s):\n${results.join(
-								"\n"
+								"\n",
 							)}`;
 						} else {
 							output = `No symbols found matching "${query}".`;
@@ -887,7 +925,7 @@ ${investigationInstruction}
 					});
 				} else {
 					console.warn(
-						`[SmartContextSelector] Unknown tool: ${functionCall.name}`
+						`[SmartContextSelector] Unknown tool: ${functionCall.name}`,
 					);
 					break;
 				}
@@ -899,7 +937,7 @@ ${investigationInstruction}
 				});
 			}
 			console.log(
-				`[SmartContextSelector] Agentic loop finished without selection, falling back.`
+				`[SmartContextSelector] Agentic loop finished without selection, falling back.`,
 			);
 		}
 
@@ -909,7 +947,7 @@ ${investigationInstruction}
 		}
 
 		console.warn(
-			"[SmartContextSelector] Agentic Selection not available or failed. Falling back to simple prompt."
+			"[SmartContextSelector] Agentic Selection not available or failed. Falling back to simple prompt.",
 		);
 
 		const generationConfig: GenerationConfig = {
@@ -974,12 +1012,12 @@ JSON Array of selected file paths:
 			"file_selection",
 			generationConfig,
 			undefined,
-			cancellationToken
+			cancellationToken,
 		);
 
 		console.log(
 			"[SmartContextSelector] AI response for file selection (Legacy):",
-			aiResponse
+			aiResponse,
 		);
 
 		const selectedPaths = JSON.parse(aiResponse.trim());
@@ -988,7 +1026,7 @@ JSON Array of selected file paths:
 			allScannedFiles,
 			projectRoot,
 			relativeFilePaths,
-			activeEditorContext
+			activeEditorContext,
 		);
 
 		// Cache result for legacy path too
@@ -997,7 +1035,7 @@ JSON Array of selected file paths:
 				userRequest,
 				allScannedFiles,
 				activeEditorContext,
-				preSelectedHeuristicFiles
+				preSelectedHeuristicFiles,
 			);
 			aiSelectionCache.set(cacheKey, {
 				timestamp: Date.now(),
@@ -1013,7 +1051,7 @@ JSON Array of selected file paths:
 	} catch (error) {
 		console.error(
 			"[SmartContextSelector] Error during AI file selection:",
-			error
+			error,
 		);
 		// Fallback to heuristics + active file on any error
 		const fallbackFiles = new Set(preSelectedHeuristicFiles || []);
@@ -1036,7 +1074,7 @@ function _processSelectedPaths(
 	allScannedFiles: readonly vscode.Uri[],
 	projectRoot: vscode.Uri,
 	relativeFilePaths: string[],
-	activeEditorContext: any
+	activeEditorContext: any,
 ): FileSelection[] {
 	if (
 		!Array.isArray(selectedPaths) ||
@@ -1064,7 +1102,7 @@ function _processSelectedPaths(
 					path
 						.relative(projectRoot.fsPath, uri.fsPath)
 						.replace(/\\/g, "/")
-						.toLowerCase() === normalizedPath.toLowerCase()
+						.toLowerCase() === normalizedPath.toLowerCase(),
 			);
 			if (originalUri) {
 				const existingSelection = finalSelections.get(originalUri.fsPath);
@@ -1122,7 +1160,7 @@ function _processSelectedPaths(
 	if (
 		activeEditorContext?.documentUri &&
 		!finalResultSelections.some(
-			(sel) => sel.uri.fsPath === activeEditorContext.documentUri.fsPath
+			(sel) => sel.uri.fsPath === activeEditorContext.documentUri.fsPath,
 		)
 	) {
 		finalResultSelections.unshift({
@@ -1178,7 +1216,7 @@ export function getAISelectionCacheStats(): {
 			fileCount: cache.fileCount,
 			selectedCount: cache.selectedFiles.length,
 			heuristicCount: cache.heuristicFilesCount,
-		})
+		}),
 	);
 
 	return {
