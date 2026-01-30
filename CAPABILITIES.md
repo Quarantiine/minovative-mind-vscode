@@ -89,7 +89,7 @@ Minovative Mind builds a profound understanding of your project using comprehens
 - **Semantic Linking & Conceptual Proximity**: File relevance is augmented by Semantic Linking, and prioritization is based on conceptual topic proximity scoring (e.g., TF-IDF analysis).
 - **Prioritized Context**: Prioritizes files that are recently modified, linked by symbols, or are directly related to the user's active context, with refined relevance scoring considering file dependency graphs and explicit dependency relationship types (`runtime`, `type`).
 - **Intelligent File Summarization**: Summarizes file content to fit within token limits while preserving critical information, including detailed file complexity estimation and enhanced main purpose detection.
-- **Dependency Extraction**: Performs expanded and refined dependency extraction directly from code, enriching file summaries.
+- **AI-Powered Dependency Extraction**: Performs expanded and refined dependency extraction using AI models to handle complex imports and dynamic loading patterns, enriching file summaries.
 - **Configurable Heuristic Selection**: Utilizes configurable rules (e.g., directory proximity, dependency analysis, symbol relevance) for intelligent file selection.
 - **Cached Analysis**: Caches and batches dependency graph analysis to improve performance for symbol and reference lookups. It also includes internal file caching to prevent redundant processing.
 - **Smart Truncation & Progressive Loading**: Employs intelligent truncation and progressive loading of content to optimize token usage and response times.
@@ -97,7 +97,7 @@ Minovative Mind builds a profound understanding of your project using comprehens
 ### 3.4 Agentic Context Investigation
 
 - **Active Codebase Exploration**: The Context Agent proactively "looks around" your codebase using high-performance, cost-effective models (**Gemini Flash Lite**) and safe terminal commands (`ls`, `grep`, `find`, `cat`) to discover relevant files that static analysis might miss.
-- **Error-Aware Investigation**: Automatically detects when you're asking about errors or bugs and proactively investigates error messages, stack traces, and relevant code paths before generating a response.
+- **AI-Driven Error Investigation**: Automatically detects when you're asking about errors or bugs using intelligent intent classification and proactively investigates error messages, stack traces, and relevant code paths before generating a response.
 - **Safe Execution Environment**: All investigation commands are executed in a secure, read-only sandbox that prevents modification or external network access.
 - **Transparent Operation**: You see exactly what the agent is doing—every command run and its output is logged transparently in the chat interface.
 
