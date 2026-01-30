@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.47.0] - January 30, 2026
+
+### Centralized Language Support and Intent-Aware Context
+
+This update centralizes supported file extensions into a single source of truth, improving consistency across scanning and analysis, and enhances the context selection engine with AI-driven intent classification and more robust dependency extraction.
+
+- Centralized `SUPPORTED_CODE_EXTENSIONS` in `src/utils/languageUtils.ts` for consistent workspace-wide file filtering.
+- Implemented AI-based intent classification in `SmartContextSelector` to better prioritize context for bug fixing vs. general queries.
+- Enhanced `SequentialFileProcessor` with AI-powered dependency extraction and a reliable regex fallback mechanism.
+- Refactored `WorkspaceScanner` and `LightweightClassificationService` to leverage the new centralized extension list for better performance and consistency.
+
 ## [2.46.0] - January 28, 2026
 
 ### Flash Lite Migration and Lightweight Classification
