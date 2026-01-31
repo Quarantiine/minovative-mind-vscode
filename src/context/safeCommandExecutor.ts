@@ -81,6 +81,22 @@ export class SafeCommandExecutor {
 		});
 	}
 
+	/**
+	 * Checks if a specific tool is available in the system PATH.
+	 * @param tool The name of the tool to check (e.g., "rg", "git").
+	 * @returns Promise<boolean> true if available, false otherwise.
+	 */
+	public static async checkToolAvailability(tool: string): Promise<boolean> {
+		if (!this.ALLOWED_COMMANDS.has(tool)) {
+			return false; // Don't even check for forbidden tools
+		}
+		return new Promise((resolve) => {
+			cp.exec(`which ${tool}`, (error) => {
+				resolve(!error);
+			});
+		});
+	}
+
 	private static isSafe(command: string): boolean {
 		const trimmed = command.trim();
 		if (!trimmed) {

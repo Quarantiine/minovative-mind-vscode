@@ -1131,6 +1131,9 @@ export class PlanExecutorService {
 				aiRequestService: this.provider.aiRequestService,
 				modelName: this.provider.settingsManager.getSelectedModelName(),
 				postMessageToWebview: this.postMessageToWebview,
+				addContextAgentLogToHistory: (log) => {
+					/* Optional: propagate logs to main chat? */
+				},
 				cancellationToken: combinedToken,
 				selectionOptions: {
 					alwaysRunInvestigation: true,

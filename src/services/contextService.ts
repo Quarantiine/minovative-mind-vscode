@@ -1137,9 +1137,10 @@ export class ContextService {
 									this.settingsManager.getOptimizationSettings()
 										.alwaysRunInvestigation,
 							},
-							aiRequestService: this.aiRequestService,
-							postMessageToWebview: this.postMessageToWebview,
+							aiRequestService: this.aiRequestService, // Correctly passing aiRequestService
+							postMessageToWebview: this.postMessageToWebview, // Correctly passing postMessageToWebview
 							addContextAgentLogToHistory: (logText: string) => {
+								// Correctly passing log handler
 								this.chatHistoryManager.addHistoryEntry(
 									"model",
 									logText,

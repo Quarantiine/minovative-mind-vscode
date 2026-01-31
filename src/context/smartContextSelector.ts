@@ -7,7 +7,6 @@ import {
 	PlanGenerationContext,
 } from "../sidebar/common/sidebarTypes";
 import { TEMPERATURE } from "../sidebar/common/sidebarConstants";
-import * as SymbolService from "../services/symbolService";
 import { ActiveSymbolDetailedInfo } from "../services/contextService";
 import { SafeCommandExecutor } from "./safeCommandExecutor";
 import { AIRequestService } from "../services/aiRequestService";
@@ -25,6 +24,9 @@ import {
 
 const MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION = 10000;
 export { MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION };
+
+const RG_CACHE_TIMEOUT = 60 * 60 * 1000; // 1 hour
+let rgAvailableCache: { available: boolean; timestamp: number } | undefined;
 
 /**
  * Represents a file selection with optional line range constraints.
@@ -401,6 +403,38 @@ export async function selectRelevantFilesAI(
 		addContextAgentLogToHistory,
 	} = options;
 
+	// Check rg availability with module-level cache
+	let isRgAvailable = false;
+	const now = Date.now();
+	if (rgAvailableCache && now - rgAvailableCache.timestamp < RG_CACHE_TIMEOUT) {
+		isRgAvailable = rgAvailableCache.available;
+		if (postMessageToWebview) {
+			postMessageToWebview({
+				type: "contextAgentLog",
+				value: {
+					text: `[Context Agent] Using cached ripgrep status: ${
+						isRgAvailable ? "Available" : "Not Available"
+					}`,
+				},
+			});
+		}
+	} else {
+		isRgAvailable = await SafeCommandExecutor.checkToolAvailability("rg");
+		rgAvailableCache = { available: isRgAvailable, timestamp: now };
+		if (postMessageToWebview) {
+			postMessageToWebview({
+				type: "contextAgentLog",
+				value: {
+					text: `[Context Agent] Ripgrep (rg) detection: ${
+						isRgAvailable
+							? "Available"
+							: "Not Available (falling back to find/grep)"
+					}`,
+				},
+			});
+		}
+	}
+
 	if (allScannedFiles.length === 0) {
 		return [];
 	}
@@ -666,18 +700,28 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 
 	// Build investigation instruction based on context
 	let investigationInstruction: string;
+
 	if (isTruncated || alwaysRunInvestigation || isLikelyErrorRequest) {
-		investigationInstruction = `2.  **Investigate (REQUIRED)**: The file list is TRUNCATED. You MUST run a \`run_terminal_command\` to find specific files.
-    *   **POWERFUL SEARCH**: You can use \`|\` (pipes) and \`grep\` / \`rg\` (ripgrep) to filter results.
+		const searchToolInstructions = isRgAvailable
+			? `*   **POWERFUL SEARCH**: You can use \`|\` (pipes) and \`grep\` / \`rg\` (ripgrep) to filter results.
     *   **Examples**:
         *   \`ls -R | grep "auth"\` (Find files with "auth" in name)
         *   \`find src -name "*.ts" | xargs grep "interface User"\` (Search content)
-        *   \`rg "class User" src\` (Fast content search with ripgrep)
+        *   \`rg "class User" src\` (Fast content search with ripgrep)`
+			: `*   **POWERFUL SEARCH**: You can use \`|\` (pipes) and \`grep\` / \`find\` to filter results. (Note: \`rg\` is NOT available).
+    *   **Examples**:
+        *   \`ls -R | grep "auth"\` (Find files with "auth" in name)
+        *   \`find src -name "*.ts" -exec grep -l "interface User" {} +\` (Find files containing text)
+        *   \`grep -r "class User" src\` (Search content recursively)`;
+
+		investigationInstruction = `2.  **Investigate (REQUIRED)**: The file list is TRUNCATED or this is a high-priority request. You MUST run a \`run_terminal_command\` to find specific files.
+    ${searchToolInstructions}
     *   **CHECK BEFORE READING**: Use \`wc -l file\` to check size.
     *   **EXIT STRATEGY**: As soon as you find the relevant file path, **STOP** investigating. Call \`finish_selection\`.`;
 	} else {
-		investigationInstruction =
-			"2.  **Investigate (Highly Recommended)**: Use `run_terminal_command` with `ls`, `find`, or `rg` to verify file existence and content before selecting.";
+		investigationInstruction = isRgAvailable
+			? "2.  **Investigate (Highly Recommended)**: Use `run_terminal_command` with `ls`, `find`, or `rg` to verify file existence and content before selecting."
+			: "2.  **Investigate (Highly Recommended)**: Use `run_terminal_command` with `ls`, `find`, or `grep -r` to verify file existence and content before selecting.";
 	}
 
 	const selectionPrompt = `
@@ -720,15 +764,17 @@ ${investigationInstruction}
 				functionDeclarations: [
 					{
 						name: "run_terminal_command",
-						description:
-							"Execute a safe terminal command (ls, grep, find, cat, git, sed, head, tail, wc, file, xargs, rg) to investigate the codebase. Pipes (|) ARE ALLOWED. Use `rg` (ripgrep) for fast searching.",
+						description: isRgAvailable
+							? "Execute a safe terminal command (ls, grep, find, cat, git, sed, head, tail, wc, file, xargs, rg) to investigate the codebase. Pipes (|) ARE ALLOWED. Use `rg` (ripgrep) for fast searching."
+							: "Execute a safe terminal command (ls, grep, find, cat, git, sed, head, tail, wc, file, xargs, grep) to investigate the codebase. Pipes (|) ARE ALLOWED. Note: `rg` (ripgrep) is NOT available in this environment, use `grep -r` or `find` for searching.",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {
 								command: {
 									type: SchemaType.STRING,
-									description:
-										"The terminal command to execute. Allowed: ls, grep, find, cat, git, sed, head, tail, wc, file, xargs, rg. PIPES (|) ARE SUPPORTED. Example: `find . -name '*.ts' | xargs grep 'foo'`.",
+									description: isRgAvailable
+										? "The terminal command to execute. Allowed: ls, grep, find, cat, git, sed, head, tail, wc, file, xargs, rg. PIPES (|) ARE SUPPORTED. Example: `find . -name '*.ts' | xargs grep 'foo'`."
+										: "The terminal command to execute. Allowed: ls, grep, find, cat, git, sed, head, tail, wc, file, xargs. PIPES (|) ARE SUPPORTED. Example: `grep -r 'foo' src`. IMPORTANT: `rg` is NOT available, use `find` and `grep` instead.",
 								},
 							},
 							required: ["command"],
@@ -1029,8 +1075,55 @@ ${investigationInstruction}
 		}
 
 		// --- Fallback / Legacy Logic ---
-		if (!aiModelCall) {
-			throw new Error("No AI model call function provided.");
+		let effectiveAiModelCall = aiModelCall;
+
+		if (!effectiveAiModelCall && aiRequestService) {
+			console.log(
+				"[SmartContextSelector] aiModelCall missing, creating adapter for aiRequestService",
+			);
+			if (postMessageToWebview) {
+				postMessageToWebview({
+					type: "contextAgentLog",
+					value: {
+						text: `[Context Agent] Using internal request service for legacy selection fallback.`,
+					},
+				});
+			}
+
+			// Adapter for aiRequestService to match aiModelCall signature
+			effectiveAiModelCall = async (
+				prompt: string,
+				model: string,
+				history: HistoryEntry[] | undefined,
+				requestType: string,
+				config: GenerationConfig | undefined,
+				streamCallbacks: any,
+				token: vscode.CancellationToken | undefined,
+			) => {
+				return await aiRequestService.generateWithRetry(
+					[{ text: prompt }],
+					model,
+					history,
+					requestType, // Passes requestType as traceId/identifier
+					config, // Passes generationConfig (including temperature)
+					streamCallbacks,
+					token,
+					false, // isMergeOperation
+					"You are an expert AI developer assistant. Select the most relevant files based on the context provided.", // systemInstruction
+				);
+			};
+		}
+
+		if (!effectiveAiModelCall) {
+			const errorMsg =
+				"CRITICAL ERROR: No AI model call mechanism established for file selection. Ensure either aiModelCall or aiRequestService is provided in options.";
+			if (postMessageToWebview) {
+				postMessageToWebview({
+					type: "contextAgentLog",
+					value: { text: `[Context Agent] ${errorMsg}` },
+				});
+			}
+			throw new Error(errorMsg);
 		}
 
 		console.warn(
@@ -1092,7 +1185,7 @@ ${fileListString}
 JSON Array of selected file paths:
 `.trim();
 
-		const aiResponse = await aiModelCall(
+		const aiResponse = await effectiveAiModelCall(
 			legacyPrompt,
 			modelName,
 			undefined,

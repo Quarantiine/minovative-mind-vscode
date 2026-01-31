@@ -37,9 +37,10 @@ export interface SequentialContextOptions {
 	onProgress?: (
 		currentFile: string,
 		totalFiles: number,
-		progress: number
+		progress: number,
 	) => void;
 	onFileProcessed?: (summary: FileSummary) => void;
+	addContextAgentLogToHistory?: (logText: string) => void;
 }
 
 export interface SequentialContextResult {
@@ -70,7 +71,7 @@ export class SequentialContextService {
 		postMessageToWebview: (message: any) => void,
 		settingsManager: SettingsManager,
 		fileDependencies: Map<string, DependencyRelation[]>,
-		reverseFileDependencies: Map<string, DependencyRelation[]>
+		reverseFileDependencies: Map<string, DependencyRelation[]>,
 	) {
 		this.aiRequestService = aiRequestService;
 		this.workspaceRoot = workspaceRoot;
@@ -83,7 +84,7 @@ export class SequentialContextService {
 			workspaceRoot,
 			postMessageToWebview,
 			this.convertDependencyMapToStringMap(this.fileDependencies),
-			this.convertDependencyMapToStringMap(this.reverseFileDependencies)
+			this.convertDependencyMapToStringMap(this.reverseFileDependencies),
 		);
 	}
 
@@ -92,7 +93,7 @@ export class SequentialContextService {
 	 */
 	public async buildSequentialContext(
 		userRequest: string,
-		options: SequentialContextOptions = {}
+		options: SequentialContextOptions = {},
 	): Promise<SequentialContextResult> {
 		const {
 			enableSequentialProcessing = true,
@@ -142,7 +143,8 @@ export class SequentialContextService {
 		const relevantFiles = await this.filterRelevantFiles(
 			allFiles,
 			userRequest,
-			modelName
+			modelName,
+			options,
 		);
 
 		if (relevantFiles.length === 0) {
@@ -178,7 +180,7 @@ export class SequentialContextService {
 				modelName,
 				onProgress,
 				onFileProcessed,
-			}
+			},
 		);
 
 		// Build final context string
@@ -200,7 +202,7 @@ export class SequentialContextService {
 		targetFile: vscode.Uri,
 		userRequest: string,
 		previousSummaries: FileSummary[] = [],
-		options: SequentialContextOptions = {}
+		options: SequentialContextOptions = {},
 	): Promise<SequentialContextResult> {
 		const {
 			enableSequentialProcessing = true,
@@ -219,7 +221,7 @@ export class SequentialContextService {
 		this.postMessageToWebview({
 			type: "statusUpdate",
 			value: `Analyzing specific file: ${vscode.workspace.asRelativePath(
-				targetFile
+				targetFile,
 			)}`,
 		});
 
@@ -228,7 +230,7 @@ export class SequentialContextService {
 			await this.sequentialProcessor.getFileContextForAI(
 				targetFile,
 				previousSummaries,
-				userRequest
+				userRequest,
 			);
 
 		// Process the target file
@@ -250,7 +252,7 @@ export class SequentialContextService {
 				includeDependencies,
 				complexityThreshold,
 				modelName,
-			}
+			},
 		);
 
 		// Build context with the new file
@@ -277,7 +279,7 @@ export class SequentialContextService {
 	public async buildIncrementalContext(
 		currentSummaries: FileSummary[],
 		userRequest: string,
-		options: SequentialContextOptions = {}
+		options: SequentialContextOptions = {},
 	): Promise<string> {
 		const { enableSequentialProcessing = true, maxFilesPerBatch = 10 } =
 			options;
@@ -295,7 +297,7 @@ export class SequentialContextService {
 		const byComplexity = {
 			high: currentSummaries.filter((f) => f.estimatedComplexity === "high"),
 			medium: currentSummaries.filter(
-				(f) => f.estimatedComplexity === "medium"
+				(f) => f.estimatedComplexity === "medium",
 			),
 			low: currentSummaries.filter((f) => f.estimatedComplexity === "low"),
 		};
@@ -345,7 +347,8 @@ export class SequentialContextService {
 	private async filterRelevantFiles(
 		allFiles: vscode.Uri[],
 		userRequest: string,
-		modelName: string
+		modelName: string,
+		options: SequentialContextOptions = {},
 	): Promise<vscode.Uri[]> {
 		this.postMessageToWebview({
 			type: "statusUpdate",
@@ -391,7 +394,7 @@ export class SequentialContextService {
 			undefined, // No active symbol info for filtering
 			undefined, // No semantic graph
 			undefined, // No cancellation token
-			heuristicOptions // Pass heuristicOptions as options parameter
+			heuristicOptions, // Pass heuristicOptions as options parameter
 		);
 
 		// If we have a reasonable number of files, use AI to refine the selection
@@ -417,7 +420,7 @@ export class SequentialContextService {
 								fileContent,
 								undefined, // No symbols for quick filtering
 								undefined,
-								500 // Shorter summary for filtering
+								500, // Shorter summary for filtering
 							);
 
 							fileSummaries.set(relativePath, summary);
@@ -451,7 +454,7 @@ export class SequentialContextService {
 									onComplete?: () => void;
 							  }
 							| undefined,
-						token: vscode.CancellationToken | undefined
+						token: vscode.CancellationToken | undefined,
 					) => {
 						const userContentParts: HistoryEntryPart[] = [{ text: prompt }];
 						return await this.aiRequestService.generateWithRetry(
@@ -461,13 +464,16 @@ export class SequentialContextService {
 							requestType,
 							generationConfig,
 							streamCallbacks,
-							token
+							token,
 						);
 					},
+					aiRequestService: this.aiRequestService,
+					postMessageToWebview: this.postMessageToWebview,
+					addContextAgentLogToHistory: options.addContextAgentLogToHistory,
 					modelName,
 					cancellationToken: undefined,
 					fileDependencies: this.convertDependencyMapToStringMap(
-						this.fileDependencies
+						this.fileDependencies,
 					), // Pass file dependencies for AI filtering
 					preSelectedHeuristicFiles: heuristicFiles,
 					fileSummaries,
@@ -493,7 +499,7 @@ export class SequentialContextService {
 			} catch (error) {
 				console.warn(
 					"AI file selection failed, falling back to heuristic selection:",
-					error
+					error,
 				);
 			}
 		}
@@ -511,13 +517,13 @@ export class SequentialContextService {
 	 * This is necessary for components (like SequentialFileProcessor) expecting legacy format.
 	 */
 	private convertDependencyMapToStringMap(
-		dependencyMap: Map<string, DependencyRelation[]>
+		dependencyMap: Map<string, DependencyRelation[]>,
 	): Map<string, string[]> {
 		const stringMap = new Map<string, string[]>();
 		for (const [key, relations] of dependencyMap.entries()) {
 			stringMap.set(
 				key,
-				relations.map((rel) => rel.path)
+				relations.map((rel) => rel.path),
 			);
 		}
 		return stringMap;
@@ -528,7 +534,7 @@ export class SequentialContextService {
 	 */
 	private buildFinalContext(
 		summaries: FileSummary[],
-		userRequest: string
+		userRequest: string,
 	): string {
 		if (summaries.length === 0) {
 			return "No files were processed.";
@@ -616,7 +622,7 @@ export class SequentialContextService {
 
 		// Add detailed summaries for high-complexity files
 		const highComplexityFiles = summaries.filter(
-			(f) => f.estimatedComplexity === "high"
+			(f) => f.estimatedComplexity === "high",
 		);
 		if (highComplexityFiles.length > 0) {
 			context += `\n=== High Complexity File Details ===\n`;
@@ -639,7 +645,7 @@ export class SequentialContextService {
 	 * Fallback to traditional context building
 	 */
 	private async buildTraditionalContext(
-		userRequest: string
+		userRequest: string,
 	): Promise<SequentialContextResult> {
 		this.postMessageToWebview({
 			type: "statusUpdate",
@@ -660,7 +666,7 @@ export class SequentialContextService {
 			{
 				useCache: true,
 				maxConcurrency: 10,
-			}
+			},
 		);
 
 		// Build basic context string
@@ -717,7 +723,7 @@ export class SequentialContextService {
 
 		const totalInsights = summaries.reduce(
 			(sum, file) => sum + file.keyInsights.length,
-			0
+			0,
 		);
 		const averageInsightsPerFile =
 			summaries.length > 0 ? totalInsights / summaries.length : 0;
