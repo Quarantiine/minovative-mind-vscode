@@ -25,9 +25,6 @@ import {
 const MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION = 10000;
 export { MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION };
 
-const RG_CACHE_TIMEOUT = 60 * 60 * 1000; // 1 hour
-let rgAvailableCache: { available: boolean; timestamp: number } | undefined;
-
 /**
  * Represents a file selection with optional line range constraints.
  * Used for chunked/targeted file reading to reduce context size.
@@ -403,38 +400,6 @@ export async function selectRelevantFilesAI(
 		addContextAgentLogToHistory,
 	} = options;
 
-	// Check rg availability with module-level cache
-	let isRgAvailable = false;
-	const now = Date.now();
-	if (rgAvailableCache && now - rgAvailableCache.timestamp < RG_CACHE_TIMEOUT) {
-		isRgAvailable = rgAvailableCache.available;
-		if (postMessageToWebview) {
-			postMessageToWebview({
-				type: "contextAgentLog",
-				value: {
-					text: `[Context Agent] Using cached ripgrep status: ${
-						isRgAvailable ? "Available" : "Not Available"
-					}`,
-				},
-			});
-		}
-	} else {
-		isRgAvailable = await SafeCommandExecutor.checkToolAvailability("rg");
-		rgAvailableCache = { available: isRgAvailable, timestamp: now };
-		if (postMessageToWebview) {
-			postMessageToWebview({
-				type: "contextAgentLog",
-				value: {
-					text: `[Context Agent] Ripgrep (rg) detection: ${
-						isRgAvailable
-							? "Available"
-							: "Not Available (falling back to find/grep)"
-					}`,
-				},
-			});
-		}
-	}
-
 	if (allScannedFiles.length === 0) {
 		return [];
 	}
@@ -702,13 +667,7 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 	let investigationInstruction: string;
 
 	if (isTruncated || alwaysRunInvestigation || isLikelyErrorRequest) {
-		const searchToolInstructions = isRgAvailable
-			? `*   **POWERFUL SEARCH**: You can use \`|\` (pipes) and \`grep\` / \`rg\` (ripgrep) to filter results.
-    *   **Examples**:
-        *   \`ls -R | grep "auth"\` (Find files with "auth" in name)
-        *   \`find src -name "*.ts" | xargs grep "interface User"\` (Search content)
-        *   \`rg "class User" src\` (Fast content search with ripgrep)`
-			: `*   **POWERFUL SEARCH**: You can use \`|\` (pipes) and \`grep\` / \`find\` to filter results. (Note: \`rg\` is NOT available).
+		const searchToolInstructions = `*   **POWERFUL SEARCH**: You can use \`|\` (pipes) and \`grep\` / \`find\` to filter results.
     *   **Examples**:
         *   \`ls -R | grep "auth"\` (Find files with "auth" in name)
         *   \`find src -name "*.ts" -exec grep -l "interface User" {} +\` (Find files containing text)
@@ -719,9 +678,8 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
     *   **CHECK BEFORE READING**: Use \`wc -l file\` to check size.
     *   **EXIT STRATEGY**: As soon as you find the relevant file path, **STOP** investigating. Call \`finish_selection\`.`;
 	} else {
-		investigationInstruction = isRgAvailable
-			? "2.  **Investigate (Highly Recommended)**: Use `run_terminal_command` with `ls`, `find`, or `rg` to verify file existence and content before selecting."
-			: "2.  **Investigate (Highly Recommended)**: Use `run_terminal_command` with `ls`, `find`, or `grep -r` to verify file existence and content before selecting.";
+		investigationInstruction =
+			"2.  **Investigate (Highly Recommended)**: Use `run_terminal_command` with `ls`, `find`, or `grep -r` to verify file existence and content before selecting.";
 	}
 
 	const selectionPrompt = `
@@ -764,17 +722,15 @@ ${investigationInstruction}
 				functionDeclarations: [
 					{
 						name: "run_terminal_command",
-						description: isRgAvailable
-							? "Execute a safe terminal command (ls, grep, find, cat, git, sed, head, tail, wc, file, xargs, rg) to investigate the codebase. Pipes (|) ARE ALLOWED. Use `rg` (ripgrep) for fast searching."
-							: "Execute a safe terminal command (ls, grep, find, cat, git, sed, head, tail, wc, file, xargs, grep) to investigate the codebase. Pipes (|) ARE ALLOWED. Note: `rg` (ripgrep) is NOT available in this environment, use `grep -r` or `find` for searching.",
+						description:
+							"Execute a safe terminal command (ls, grep, find, cat, git, sed, head, tail, wc, file, xargs, grep) to investigate the codebase. Pipes (|) ARE ALLOWED.",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {
 								command: {
 									type: SchemaType.STRING,
-									description: isRgAvailable
-										? "The terminal command to execute. Allowed: ls, grep, find, cat, git, sed, head, tail, wc, file, xargs, rg. PIPES (|) ARE SUPPORTED. Example: `find . -name '*.ts' | xargs grep 'foo'`."
-										: "The terminal command to execute. Allowed: ls, grep, find, cat, git, sed, head, tail, wc, file, xargs. PIPES (|) ARE SUPPORTED. Example: `grep -r 'foo' src`. IMPORTANT: `rg` is NOT available, use `find` and `grep` instead.",
+									description:
+										"The terminal command to execute. Allowed: ls, grep, find, cat, git, sed, head, tail, wc, file, xargs. PIPES (|) ARE SUPPORTED. Example: `grep -r 'foo' src`.",
 								},
 							},
 							required: ["command"],

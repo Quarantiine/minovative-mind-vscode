@@ -514,6 +514,30 @@ export class AIRequestService {
 	}
 
 	/**
+	 * Handles a simple text prompt completion request using the robust retry mechanism.
+	 * This is typically used by internal services like PlanExecutionService for general reasoning tasks.
+	 */
+	public async requestCompletion(
+		prompt: string,
+		model: string,
+		token: vscode.CancellationToken,
+	): Promise<{ content: string }> {
+		const result = await this.generateWithRetry(
+			[{ text: prompt }], // userContentParts: [{ text: string }]
+			model,
+			undefined, // history
+			"completion_request", // requestType
+			undefined, // generationConfig
+			undefined, // streamCallbacks (no streaming needed for simple completion)
+			token,
+			false, // isMergeOperation
+			undefined, // systemInstruction
+		);
+
+		return { content: result };
+	}
+
+	/**
 	 * Generates a function call response from the AI based on provided content and tools.
 	 * It includes cancellation token support to abort long-running requests.
 	 * @param apiKey The API key to use for the request.

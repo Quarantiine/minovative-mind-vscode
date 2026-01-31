@@ -55,6 +55,15 @@ export interface PlanStepExecutionResult {
 	diffContent?: string;
 }
 
+export interface ExecutionResultAggregate {
+	initialResults: PlanStepExecutionResult[];
+	refinementResults?: PlanStepExecutionResult[];
+	initialPlan: PlanStep[];
+	refinementPlan?: PlanStep[];
+	overallSuccess: boolean;
+	diagnostics?: string[];
+}
+
 export class PlanExecutionService {
 	constructor(
 		private readonly changeLogger: ProjectChangeLogger,
@@ -65,13 +74,39 @@ export class PlanExecutionService {
 			diffContent?: string;
 		}) => void,
 		private readonly postMessageToWebview: (
-			message: ExtensionToWebviewMessages
+			message: ExtensionToWebviewMessages,
 		) => void,
-		private readonly enhancedCodeGenerator: EnhancedCodeGenerator
+		private readonly enhancedCodeGenerator: EnhancedCodeGenerator,
 	) {}
 
 	private _simpleDelay(ms: number): Promise<void> {
 		return new Promise((resolve) => setTimeout(resolve, ms));
+	}
+
+	private _getDiagnosticsForFiles(modifiedFiles: Set<string>): string[] {
+		const diagnostics: string[] = [];
+		for (const filePath of modifiedFiles) {
+			const uri = vscode.Uri.file(filePath);
+			const fileDiagnostics = vscode.languages.getDiagnostics(uri);
+
+			for (const diagnostic of fileDiagnostics) {
+				if (
+					diagnostic.severity === vscode.DiagnosticSeverity.Error ||
+					diagnostic.severity === vscode.DiagnosticSeverity.Warning
+				) {
+					const severityText =
+						diagnostic.severity === vscode.DiagnosticSeverity.Error
+							? "Error"
+							: "Warning";
+					diagnostics.push(
+						`[File: ${path.basename(filePath)}] Line ${
+							diagnostic.range.start.line + 1
+						}: ${severityText}: ${diagnostic.message}`,
+					);
+				}
+			}
+		}
+		return diagnostics;
 	}
 
 	private _reportErrorAndReturnResult(
@@ -79,14 +114,14 @@ export class PlanExecutionService {
 		defaultMessage: string,
 		filePath: string | undefined,
 		actionType: PlanStepAction,
-		workspaceRootUri: vscode.Uri | undefined
+		workspaceRootUri: vscode.Uri | undefined,
 	): PlanStepExecutionResult {
 		let errorType: PlanStepExecutionResult["errorType"] = "non-transient";
 		const errorMessage = formatUserFacingErrorMessage(
 			error,
 			defaultMessage,
 			`[PlanExecutionService:${actionType}] `,
-			workspaceRootUri
+			workspaceRootUri,
 		);
 
 		if (errorMessage.includes(ERROR_OPERATION_CANCELLED)) {
@@ -106,8 +141,8 @@ export class PlanExecutionService {
 			value: {
 				text: filePath
 					? `Error processing file \`${path.basename(
-							filePath
-					  )}\`: ${errorMessage}`
+							filePath,
+						)}\`: ${errorMessage}`
 					: `Error: ${errorMessage}`,
 				isError: true,
 			},
@@ -124,7 +159,7 @@ export class PlanExecutionService {
 		editor: vscode.TextEditor,
 		content: string,
 		token: vscode.CancellationToken,
-		progress?: vscode.Progress<{ message?: string; increment?: number }>
+		progress?: vscode.Progress<{ message?: string; increment?: number }>,
 	): Promise<void> {
 		const chunkSize = 5; // Characters per chunk
 		const delayMs = 0; // Delay between chunks
@@ -136,12 +171,12 @@ export class PlanExecutionService {
 			}
 			const chunk = content.substring(
 				i,
-				Math.min(i + chunkSize, content.length)
+				Math.min(i + chunkSize, content.length),
 			);
 
 			await editor.edit((editBuilder) => {
 				const endPosition = editor.document.positionAt(
-					editor.document.getText().length
+					editor.document.getText().length,
 				);
 				editBuilder.insert(endPosition, chunk);
 			});
@@ -152,7 +187,7 @@ export class PlanExecutionService {
 			if (progress) {
 				progress.report({
 					message: `Typing content into ${path.basename(
-						editor.document.fileName
+						editor.document.fileName,
 					)}...`,
 				});
 			}
@@ -166,7 +201,7 @@ export class PlanExecutionService {
 		step: PlanStep,
 		token: vscode.CancellationToken,
 		progress: vscode.Progress<{ message?: string; increment?: number }>,
-		workspaceRootUri: vscode.Uri
+		workspaceRootUri: vscode.Uri,
 	): Promise<PlanStepExecutionResult> {
 		if (token.isCancellationRequested) {
 			throw new Error(ERROR_OPERATION_CANCELLED);
@@ -178,7 +213,7 @@ export class PlanExecutionService {
 				errMsg,
 				step.file,
 				PlanStepAction.TypeContent,
-				workspaceRootUri
+				workspaceRootUri,
 			);
 		}
 		const docToTypeUri = vscode.Uri.file(step.file);
@@ -189,18 +224,18 @@ export class PlanExecutionService {
 				editorToType,
 				step.content,
 				token,
-				progress
+				progress,
 			);
 			return { success: true };
 		} catch (error: any) {
 			return this._reportErrorAndReturnResult(
 				error,
 				`Failed to type content into editor for ${path.basename(
-					docToTypeUri.fsPath
+					docToTypeUri.fsPath,
 				)}.`,
 				step.file,
 				PlanStepAction.TypeContent,
-				workspaceRootUri
+				workspaceRootUri,
 			);
 		}
 	}
@@ -209,7 +244,7 @@ export class PlanExecutionService {
 		step: PlanStep,
 		token: vscode.CancellationToken,
 		progress: vscode.Progress<{ message?: string; increment?: number }>,
-		workspaceRootUri: vscode.Uri
+		workspaceRootUri: vscode.Uri,
 	): Promise<PlanStepExecutionResult> {
 		if (token.isCancellationRequested) {
 			throw new Error(ERROR_OPERATION_CANCELLED);
@@ -221,7 +256,7 @@ export class PlanExecutionService {
 				errMsg,
 				step.file,
 				PlanStepAction.DeleteFile,
-				workspaceRootUri
+				workspaceRootUri,
 			);
 		}
 		const targetFileUri = vscode.Uri.joinPath(workspaceRootUri, step.file);
@@ -241,7 +276,7 @@ export class PlanExecutionService {
 				(error.code === "FileNotFound" || error.code === "EntryNotFound")
 			) {
 				console.warn(
-					`[PlanExecutionService] File ${fileName} not found for reading before deletion. Assuming empty content for logging.`
+					`[PlanExecutionService] File ${fileName} not found for reading before deletion. Assuming empty content for logging.`,
 				);
 				fileContentBeforeDelete = "";
 			} else {
@@ -250,7 +285,7 @@ export class PlanExecutionService {
 					`Failed to read file ${fileName} before deletion.`,
 					step.file,
 					PlanStepAction.DeleteFile,
-					workspaceRootUri
+					workspaceRootUri,
 				);
 			}
 		}
@@ -259,7 +294,7 @@ export class PlanExecutionService {
 			progress.report({ message: `Deleting file: ${fileName}...` });
 			await vscode.workspace.fs.delete(targetFileUri, { useTrash: true });
 			console.log(
-				`[PlanExecutionService] Successfully deleted file: ${fileName}`
+				`[PlanExecutionService] Successfully deleted file: ${fileName}`,
 			);
 		} catch (error: any) {
 			if (
@@ -267,7 +302,7 @@ export class PlanExecutionService {
 				(error.code === "FileNotFound" || error.code === "EntryNotFound")
 			) {
 				console.warn(
-					`[PlanExecutionService] File ${fileName} already not found. No deletion needed.`
+					`[PlanExecutionService] File ${fileName} already not found. No deletion needed.`,
 				);
 			} else {
 				return this._reportErrorAndReturnResult(
@@ -275,7 +310,7 @@ export class PlanExecutionService {
 					`Failed to delete file ${fileName}.`,
 					step.file,
 					PlanStepAction.DeleteFile,
-					workspaceRootUri
+					workspaceRootUri,
 				);
 			}
 		}
@@ -317,7 +352,8 @@ export class PlanExecutionService {
 		token: vscode.CancellationToken,
 		progress: vscode.Progress<{ message?: string; increment?: number }>,
 		workspaceRootUri: vscode.Uri,
-		modelName: string
+		modelName: string,
+		projectContext: string = "",
 	): Promise<PlanStepExecutionResult> {
 		if (token.isCancellationRequested) {
 			throw new Error(ERROR_OPERATION_CANCELLED);
@@ -329,7 +365,7 @@ export class PlanExecutionService {
 				errMsg,
 				step.file,
 				PlanStepAction.CreateFile,
-				workspaceRootUri
+				workspaceRootUri,
 			);
 		}
 		const targetFileUri = vscode.Uri.joinPath(workspaceRootUri, step.file);
@@ -339,7 +375,7 @@ export class PlanExecutionService {
 		if (step.generate_prompt && !step.content) {
 			progress.report({
 				message: `Generating content for new file: ${path.basename(
-					targetFileUri.fsPath
+					targetFileUri.fsPath,
 				)}...`,
 			});
 
@@ -358,9 +394,9 @@ export class PlanExecutionService {
 			const generationContext: EnhancedGenerationContext = {
 				editorContext: editorContext,
 				successfulChangeHistory: formatSuccessfulChangesForPrompt(
-					this.changeLogger.getCompletedPlanChangeSets()
+					this.changeLogger.getCompletedPlanChangeSets(),
 				),
-				projectContext: "",
+				projectContext: projectContext,
 				activeSymbolInfo: undefined,
 				relevantSnippets: "",
 			};
@@ -378,7 +414,7 @@ export class PlanExecutionService {
 						step.generate_prompt,
 						generationContext,
 						modelName,
-						token
+						token,
 					);
 
 				contentToProcess = cleanCodeOutput(generatedContentResult.content);
@@ -400,11 +436,11 @@ export class PlanExecutionService {
 				return this._reportErrorAndReturnResult(
 					aiError,
 					`Failed to generate content for ${path.basename(
-						targetFileUri.fsPath
+						targetFileUri.fsPath,
 					)}.`,
 					step.file,
 					PlanStepAction.CreateFile,
-					workspaceRootUri
+					workspaceRootUri,
 				);
 			}
 		} else if (!step.content) {
@@ -415,7 +451,7 @@ export class PlanExecutionService {
 				errMsg,
 				step.file,
 				PlanStepAction.CreateFile,
-				workspaceRootUri
+				workspaceRootUri,
 			);
 		} else {
 			contentToProcess = cleanCodeOutput(step.content);
@@ -429,67 +465,64 @@ export class PlanExecutionService {
 				errMsg,
 				step.file,
 				PlanStepAction.CreateFile,
-				workspaceRootUri
+				workspaceRootUri,
 			);
 		}
 
 		try {
 			await vscode.workspace.fs.stat(targetFileUri);
 
-			const existingContentBuffer = await vscode.workspace.fs.readFile(
-				targetFileUri
-			);
+			const existingContentBuffer =
+				await vscode.workspace.fs.readFile(targetFileUri);
 			const existingContent = existingContentBuffer.toString();
 
 			if (existingContent === contentToProcess) {
 				progress.report({
 					message: `File ${path.basename(
-						targetFileUri.fsPath
+						targetFileUri.fsPath,
 					)} already has the target content. Skipping update.`,
 				});
 				return { success: true };
 			} else {
 				progress.report({
 					message: `Updating content of ${path.basename(
-						targetFileUri.fsPath
+						targetFileUri.fsPath,
 					)}...`,
 				});
 
 				let documentToUpdate: vscode.TextDocument;
 				try {
-					documentToUpdate = await vscode.workspace.openTextDocument(
-						targetFileUri
-					);
+					documentToUpdate =
+						await vscode.workspace.openTextDocument(targetFileUri);
 				} catch (error: any) {
 					return this._reportErrorAndReturnResult(
 						error,
 						`Failed to open document ${targetFileUri.fsPath} for update.`,
 						step.file,
 						PlanStepAction.CreateFile,
-						workspaceRootUri
+						workspaceRootUri,
 					);
 				}
 
-				const editorToUpdate = await vscode.window.showTextDocument(
-					documentToUpdate
-				);
+				const editorToUpdate =
+					await vscode.window.showTextDocument(documentToUpdate);
 
 				try {
 					await applyAITextEdits(
 						editorToUpdate,
 						existingContent,
 						contentToProcess,
-						token
+						token,
 					);
 				} catch (editError: any) {
 					return this._reportErrorAndReturnResult(
 						editError,
 						`Failed to apply AI text edits to ${path.basename(
-							targetFileUri.fsPath
+							targetFileUri.fsPath,
 						)}.`,
 						step.file,
 						PlanStepAction.CreateFile,
-						workspaceRootUri
+						workspaceRootUri,
 					);
 				}
 
@@ -497,7 +530,7 @@ export class PlanExecutionService {
 					await generateFileChangeSummary(
 						existingContent,
 						contentToProcess,
-						step.file
+						step.file,
 					);
 
 				const updateChangeEntry: FileChangeEntry = {
@@ -517,7 +550,7 @@ export class PlanExecutionService {
 					type: "appendRealtimeModelMessage",
 					value: {
 						text: `Successfully updated file \`${path.basename(
-							targetFileUri.fsPath
+							targetFileUri.fsPath,
 						)}\`.`,
 						isError: false,
 					},
@@ -526,7 +559,7 @@ export class PlanExecutionService {
 
 				progress.report({
 					message: `Successfully updated file ${path.basename(
-						targetFileUri.fsPath
+						targetFileUri.fsPath,
 					)}.`,
 				});
 				return { success: true, diffContent: formattedDiff };
@@ -538,13 +571,13 @@ export class PlanExecutionService {
 			) {
 				progress.report({
 					message: `Creating new file: ${path.basename(
-						targetFileUri.fsPath
+						targetFileUri.fsPath,
 					)}...`,
 				});
 				try {
 					await vscode.workspace.fs.writeFile(
 						targetFileUri,
-						Buffer.from(contentToProcess)
+						Buffer.from(contentToProcess),
 					);
 				} catch (writeError: any) {
 					return this._reportErrorAndReturnResult(
@@ -552,7 +585,7 @@ export class PlanExecutionService {
 						`Failed to write content to new file ${targetFileUri.fsPath}.`,
 						step.file,
 						PlanStepAction.CreateFile,
-						workspaceRootUri
+						workspaceRootUri,
 					);
 				}
 
@@ -580,7 +613,7 @@ export class PlanExecutionService {
 					type: "appendRealtimeModelMessage",
 					value: {
 						text: `Successfully created file \`${path.basename(
-							targetFileUri.fsPath
+							targetFileUri.fsPath,
 						)}\`.`,
 						isError: false,
 					},
@@ -589,7 +622,7 @@ export class PlanExecutionService {
 
 				progress.report({
 					message: `Successfully created file ${path.basename(
-						targetFileUri.fsPath
+						targetFileUri.fsPath,
 					)}.`,
 				});
 				return { success: true, diffContent: createFormattedDiff };
@@ -599,7 +632,7 @@ export class PlanExecutionService {
 					`Error accessing or creating file ${targetFileUri.fsPath}.`,
 					step.file,
 					PlanStepAction.CreateFile,
-					workspaceRootUri
+					workspaceRootUri,
 				);
 			}
 		}
@@ -610,7 +643,8 @@ export class PlanExecutionService {
 		token: vscode.CancellationToken,
 		progress: vscode.Progress<{ message?: string; increment?: number }>,
 		workspaceRootUri: vscode.Uri,
-		modelName: string
+		modelName: string,
+		projectContext: string = "",
 	): Promise<PlanStepExecutionResult> {
 		if (token.isCancellationRequested) {
 			throw new Error(ERROR_OPERATION_CANCELLED);
@@ -623,7 +657,7 @@ export class PlanExecutionService {
 				errMsg,
 				step.file,
 				PlanStepAction.ModifyFile,
-				workspaceRootUri
+				workspaceRootUri,
 			);
 		}
 		const targetFileUri = vscode.Uri.joinPath(workspaceRootUri, step.file);
@@ -642,7 +676,7 @@ export class PlanExecutionService {
 			) {
 				progress.report({
 					message: `File ${path.basename(
-						targetFileUri.fsPath
+						targetFileUri.fsPath,
 					)} not found. Attempting to generate initial content and create it...`,
 				});
 
@@ -651,7 +685,7 @@ export class PlanExecutionService {
 					file: step.file,
 					generate_prompt: step.modificationPrompt,
 					description: `Creating missing file ${path.basename(
-						targetFileUri.fsPath
+						targetFileUri.fsPath,
 					)} from modification prompt.`,
 				};
 
@@ -660,7 +694,8 @@ export class PlanExecutionService {
 					token,
 					progress,
 					workspaceRootUri,
-					modelName
+					modelName,
+					projectContext,
 				);
 			} else {
 				return this._reportErrorAndReturnResult(
@@ -668,14 +703,14 @@ export class PlanExecutionService {
 					`Failed to access or open document ${targetFileUri.fsPath}.`,
 					step.file,
 					PlanStepAction.ModifyFile,
-					workspaceRootUri
+					workspaceRootUri,
 				);
 			}
 		}
 
 		progress.report({
 			message: `Analyzing and modifying ${path.basename(
-				targetFileUri.fsPath
+				targetFileUri.fsPath,
 			)} with AI...`,
 		});
 
@@ -691,7 +726,7 @@ export class PlanExecutionService {
 				this.enhancedCodeGenerator,
 				token,
 				this.postMessageToWebview,
-				false
+				false,
 			);
 			cleanedAIContent = aiModifiedContent;
 		} catch (aiError: any) {
@@ -700,7 +735,7 @@ export class PlanExecutionService {
 				`Failed to modify file ${path.basename(targetFileUri.fsPath)}.`,
 				step.file,
 				PlanStepAction.ModifyFile,
-				workspaceRootUri
+				workspaceRootUri,
 			);
 		}
 
@@ -710,11 +745,11 @@ export class PlanExecutionService {
 			return this._reportErrorAndReturnResult(
 				editError,
 				`Failed to apply AI text edits to ${path.basename(
-					targetFileUri.fsPath
+					targetFileUri.fsPath,
 				)}.`,
 				step.file,
 				PlanStepAction.ModifyFile,
-				workspaceRootUri
+				workspaceRootUri,
 			);
 		}
 
@@ -722,7 +757,7 @@ export class PlanExecutionService {
 			await generateFileChangeSummary(
 				originalContent,
 				cleanedAIContent,
-				step.file
+				step.file,
 			);
 
 		const newChangeEntry: FileChangeEntry = {
@@ -742,7 +777,7 @@ export class PlanExecutionService {
 			type: "appendRealtimeModelMessage",
 			value: {
 				text: `Successfully applied modifications to \`${path.basename(
-					targetFileUri.fsPath
+					targetFileUri.fsPath,
 				)}\`.`,
 				isError: false,
 			},
@@ -751,15 +786,209 @@ export class PlanExecutionService {
 
 		progress.report({
 			message: `Successfully applied modifications to ${path.basename(
-				targetFileUri.fsPath
+				targetFileUri.fsPath,
 			)}.`,
 		});
 		return { success: true, diffContent: formattedDiff };
 	}
 
+	private async _analyzeResultsAndGenerateRefinementPlan(
+		userRequest: string,
+		projectContext: string,
+		initialPlan: PlanStep[],
+		initialResults: PlanStepExecutionResult[],
+		diagnostics: string[],
+		modelName: string,
+		token: vscode.CancellationToken,
+	): Promise<PlanStep[] | null> {
+		const failedStepsSummary = initialPlan
+			.map((step, index) => {
+				const result = initialResults[index];
+				if (!result || result.success) return null;
+				return {
+					action: step.action,
+					description: step.description,
+					status: "failed",
+					error: result.errorMessage?.substring(0, 500),
+				};
+			})
+			.filter((s) => s !== null);
+
+		if (failedStepsSummary.length === 0 && diagnostics.length === 0)
+			return null;
+
+		this.postChatUpdate({
+			type: "appendRealtimeModelMessage",
+			value: {
+				text: "Analyzing execution errors/diagnostics and generating a refinement plan...",
+				isError: false,
+			},
+		});
+
+		const analysisPrompt = `Project Context:
+${projectContext}
+
+The original user request was: "${userRequest}"
+The initial plan execution resulted in failures or code diagnostics.
+
+Failed Execution Steps:
+${JSON.stringify(failedStepsSummary, null, 2)}
+
+Code Diagnostics (Errors/Warnings):
+${diagnostics.join("\n")}
+
+Please analyze these issues and generate a new corrective plan (PlanStep[]) to fix the problems. 
+Return the new plan as a JSON array of PlanStep objects. If no further action is needed or the errors are unrecoverable, return an empty array [].`;
+
+		try {
+			const aiResponse = await this.aiRequestService.requestCompletion(
+				analysisPrompt,
+				modelName,
+				token,
+			);
+
+			if (token.isCancellationRequested) return null;
+
+			const cleanedOutput = cleanCodeOutput(aiResponse.content);
+			const jsonMatch = cleanedOutput.match(/\[[\s\S]*\]/);
+			const refinementPlan = JSON.parse(
+				jsonMatch ? jsonMatch[0] : cleanedOutput,
+			) as PlanStep[];
+
+			if (refinementPlan && refinementPlan.length > 0) {
+				return refinementPlan;
+			}
+			return null;
+		} catch (error) {
+			console.error("Failed to generate or parse refinement plan:", error);
+			return null;
+		}
+	}
+
+	public async executeWorkflowCycle(
+		userRequest: string,
+		initialPlanSteps: PlanStep[],
+		projectContext: string,
+		token: vscode.CancellationToken,
+		progress: vscode.Progress<{ message?: string; increment?: number }>,
+	): Promise<ExecutionResultAggregate> {
+		const aggregate: ExecutionResultAggregate = {
+			initialPlan: initialPlanSteps,
+			initialResults: [],
+			overallSuccess: true,
+		};
+
+		this.postMessageToWebview({ type: "planExecutionStarted" });
+
+		const modelName: string = vscode.workspace
+			.getConfiguration("minovativeMind")
+			.get("modelName", DEFAULT_FLASH_MODEL);
+
+		const modifiedFiles = new Set<string>();
+
+		// Phase 1: Initial Execution
+		for (const step of initialPlanSteps) {
+			if (token.isCancellationRequested) {
+				throw new Error(ERROR_OPERATION_CANCELLED);
+			}
+
+			const result = await this.executePlanStep(
+				step,
+				token,
+				progress,
+				projectContext,
+			);
+			aggregate.initialResults.push(result);
+
+			if (result.success && step.file) {
+				modifiedFiles.add(step.file);
+			}
+
+			if (!result.success) {
+				if (result.errorType === "cancellation") {
+					throw new Error(ERROR_OPERATION_CANCELLED);
+				}
+				aggregate.overallSuccess = false;
+			}
+		}
+
+		const diagnostics = this._getDiagnosticsForFiles(modifiedFiles);
+		aggregate.diagnostics = diagnostics;
+
+		const hasSignificantErrors = aggregate.initialResults.some(
+			(r) => !r.success && r.errorType !== "cancellation",
+		);
+		const hasDiagnostics = diagnostics.length > 0;
+
+		// Phase 2: Error Check & Analysis
+		if (hasSignificantErrors || hasDiagnostics) {
+			const refinementPlan =
+				await this._analyzeResultsAndGenerateRefinementPlan(
+					userRequest,
+					projectContext,
+					aggregate.initialPlan,
+					aggregate.initialResults,
+					diagnostics,
+					modelName,
+					token,
+				);
+
+			if (refinementPlan && refinementPlan.length > 0) {
+				aggregate.refinementPlan = refinementPlan;
+				aggregate.refinementResults = [];
+
+				if (token.isCancellationRequested) {
+					throw new Error(ERROR_OPERATION_CANCELLED);
+				}
+
+				this.postChatUpdate({
+					type: "appendRealtimeModelMessage",
+					value: {
+						text: "Starting refinement plan execution...",
+						isError: false,
+					},
+				});
+
+				// Phase 3: Refinement Execution
+				let refinementSuccess = true;
+				for (const step of refinementPlan) {
+					if (token.isCancellationRequested) {
+						throw new Error(ERROR_OPERATION_CANCELLED);
+					}
+					const result = await this.executePlanStep(
+						step,
+						token,
+						progress,
+						projectContext,
+					);
+					aggregate.refinementResults.push(result);
+
+					if (result.success && step.file) {
+						modifiedFiles.add(step.file);
+					}
+
+					if (!result.success) {
+						refinementSuccess = false;
+					}
+				}
+
+				const finalDiagnostics = this._getDiagnosticsForFiles(modifiedFiles);
+				aggregate.diagnostics = finalDiagnostics;
+				aggregate.overallSuccess =
+					refinementSuccess && finalDiagnostics.length === 0;
+			} else {
+				// No refinement plan possible but initial errors/diagnostics existed
+				aggregate.overallSuccess = false;
+			}
+		}
+
+		this.postMessageToWebview({ type: "planExecutionEnded" });
+		return aggregate;
+	}
+
 	private async _handleRunCommandAction(
 		step: PlanStep,
-		workspaceRootUri: vscode.Uri
+		workspaceRootUri: vscode.Uri,
 	): Promise<PlanStepExecutionResult> {
 		if (!step.command) {
 			const errMsg = "Missing command for RunCommand action.";
@@ -768,7 +997,7 @@ export class PlanExecutionService {
 				errMsg,
 				undefined,
 				PlanStepAction.RunCommand,
-				workspaceRootUri
+				workspaceRootUri,
 			);
 		}
 
@@ -799,7 +1028,8 @@ export class PlanExecutionService {
 	public async executePlanStep(
 		step: PlanStep,
 		token: vscode.CancellationToken,
-		progress: vscode.Progress<{ message?: string; increment?: number }>
+		progress: vscode.Progress<{ message?: string; increment?: number }>,
+		projectContext: string = "",
 	): Promise<PlanStepExecutionResult> {
 		progress.report({ message: step.description });
 
@@ -838,7 +1068,8 @@ export class PlanExecutionService {
 						token,
 						progress,
 						workspaceRootUri,
-						modelName
+						modelName,
+						projectContext,
 					);
 
 				case PlanStepAction.TypeContent:
@@ -846,7 +1077,7 @@ export class PlanExecutionService {
 						step,
 						token,
 						progress,
-						workspaceRootUri
+						workspaceRootUri,
 					);
 
 				case PlanStepAction.CreateFile:
@@ -855,7 +1086,8 @@ export class PlanExecutionService {
 						token,
 						progress,
 						workspaceRootUri,
-						modelName
+						modelName,
+						projectContext,
 					);
 
 				case PlanStepAction.DeleteFile:
@@ -863,7 +1095,7 @@ export class PlanExecutionService {
 						step,
 						token,
 						progress,
-						workspaceRootUri
+						workspaceRootUri,
 					);
 
 				case PlanStepAction.RunCommand:
@@ -877,7 +1109,7 @@ export class PlanExecutionService {
 							errMsg,
 							step.file,
 							PlanStepAction.ViewFile,
-							workspaceRootUri
+							workspaceRootUri,
 						);
 					}
 					const fileUri = vscode.Uri.joinPath(workspaceRootUri, step.file);
@@ -898,11 +1130,11 @@ export class PlanExecutionService {
 						return this._reportErrorAndReturnResult(
 							error,
 							`Failed to open file ${path.basename(
-								fileUri.fsPath
+								fileUri.fsPath,
 							)} for viewing.`,
 							step.file,
 							PlanStepAction.ViewFile,
-							workspaceRootUri
+							workspaceRootUri,
 						);
 					}
 				}
@@ -915,7 +1147,7 @@ export class PlanExecutionService {
 							errMsg,
 							undefined,
 							PlanStepAction.ExecuteCommand,
-							workspaceRootUri
+							workspaceRootUri,
 						);
 					}
 					try {
@@ -924,7 +1156,7 @@ export class PlanExecutionService {
 						});
 						await vscode.commands.executeCommand(
 							step.command,
-							...(step.args || [])
+							...(step.args || []),
 						);
 						this.postChatUpdate({
 							type: "appendRealtimeModelMessage",
@@ -940,7 +1172,7 @@ export class PlanExecutionService {
 							`Failed to execute command ${step.command}.`,
 							undefined,
 							PlanStepAction.ExecuteCommand,
-							workspaceRootUri
+							workspaceRootUri,
 						);
 					}
 				}
@@ -953,7 +1185,7 @@ export class PlanExecutionService {
 							errMsg,
 							undefined,
 							PlanStepAction.ShowMessage,
-							workspaceRootUri
+							workspaceRootUri,
 						);
 					}
 					this.postChatUpdate({
@@ -970,7 +1202,7 @@ export class PlanExecutionService {
 						errMsg,
 						undefined,
 						step.action as PlanStepAction,
-						workspaceRootUri
+						workspaceRootUri,
 					);
 				}
 			}
@@ -983,7 +1215,7 @@ export class PlanExecutionService {
 				`An unexpected error occurred during plan step execution.`,
 				step.file,
 				step.action,
-				workspaceRootUri
+				workspaceRootUri,
 			);
 		}
 	}

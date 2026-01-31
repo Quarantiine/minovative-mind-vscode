@@ -13,7 +13,6 @@ export class SafeCommandExecutor {
 		"wc",
 		"file",
 		"xargs",
-		"rg",
 		// Read-only additions
 		"less",
 		"more",
