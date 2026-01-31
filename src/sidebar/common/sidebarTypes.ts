@@ -90,6 +90,14 @@ export interface RequestWorkspaceFilesMessage {
 	type: "requestWorkspaceFiles";
 }
 
+export interface RebuildProjectContextMessage {
+	type: "rebuildProjectContext";
+}
+
+export interface CancelContextAgentMessage {
+	type: "cancelContextAgent";
+}
+
 export interface CopyContextMessagePayload {
 	messageIndex: number;
 	contentToCopy: string;
@@ -107,6 +115,8 @@ export type WebviewToExtensionMessages =
 	| RevertRequestMessage
 	| WebviewToExtensionChatMessageType
 	| RequestWorkspaceFilesMessage
+	| RebuildProjectContextMessage
+	| CancelContextAgentMessage
 	| { type: "copyContextMessage"; payload: CopyContextMessagePayload };
 
 // Extension to Webview for signaling plan timeline initialization

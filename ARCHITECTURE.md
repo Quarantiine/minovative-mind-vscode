@@ -76,6 +76,7 @@ This system ensures that diagnostic information, particularly 'Information' and 
   - **Safe Command Execution**: The `SafeCommandExecutor` class (`src/context/safeCommandExecutor.ts`) enforces strict security by allowlisting only read-only commands (`ls`, `grep`, `find`, `cat`, `git grep`) and blocking dangerous operations like chaining (`&&`, `|`) or redirection.
   - **Error-Aware Investigation**: When the user's request contains error-related keywords ("error", "bug", "fix"), the AI is prompted to prioritize investigation commands and actively search for relevant code paths using diagnostics and stack traces.
   - **Transparent Logging**: Every command executed by the Context Agent and its output is logged to the chat interface, providing full transparency to the user.
+  - **Progressive Context Discovery**: For larger projects (>10 files), the agent receives a truncated "Optimized View" of the project structure (top-level folders only) and is explicitly instructed to use tools to discover files. This mimics a human developer's exploration process and significantly reduces token usage.
 - **Key Files**: `src/context/smartContextSelector.ts`, `src/context/safeCommandExecutor.ts`
 
 #### 5. URL Context Retrieval

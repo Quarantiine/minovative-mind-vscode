@@ -25,7 +25,7 @@ const MAX_REFERENCED_TYPES_TO_INCLUDE = 30;
  */
 function _formatFileChangePathsForContext(
 	changeLog: FileChangeEntry[],
-	rootFolderUri: vscode.Uri
+	rootFolderUri: vscode.Uri,
 ): string {
 	if (!changeLog || changeLog.length === 0) {
 		return ""; // No changes to report
@@ -75,14 +75,14 @@ export function addFileStructureToContext(
 	workspaceRoot: vscode.Uri,
 	currentContext: string,
 	currentTotalLength: number,
-	config: ContextConfig
+	config: ContextConfig,
 ): { context: string; currentTotalLength: number } {
 	let context = currentContext;
 	let length = currentTotalLength;
 
 	const rootName = path.basename(workspaceRoot.fsPath);
 	const relativePaths = relevantFiles.map((uri) =>
-		path.relative(workspaceRoot.fsPath, uri.fsPath).replace(/\\/g, "/")
+		path.relative(workspaceRoot.fsPath, uri.fsPath).replace(/\\/g, "/"),
 	);
 	let fileStructureString = createAsciiTree(relativePaths, rootName);
 
@@ -93,7 +93,7 @@ export function addFileStructureToContext(
 
 	if (length + estimatedSectionLength > config.maxTotalLength) {
 		console.warn(
-			`Generated file structure tree (${fileStructureString.length} chars) exceeds total context limit (${config.maxTotalLength} chars). Truncating structure.`
+			`Generated file structure tree (${fileStructureString.length} chars) exceeds total context limit (${config.maxTotalLength} chars). Truncating structure.`,
 		);
 		const availableLengthForContent =
 			config.maxTotalLength - length - treeHeader.length - treeFooter.length; // Reserve space for header, footer, and truncation message
@@ -101,19 +101,19 @@ export function addFileStructureToContext(
 			fileStructureString.length
 		} chars to ${Math.max(
 			0,
-			availableLengthForContent
+			availableLengthForContent,
 		)} chars due to total context limit)`;
 
 		fileStructureString =
 			fileStructureString.substring(
 				0,
-				Math.max(0, availableLengthForContent - truncationMessage.length)
+				Math.max(0, availableLengthForContent - truncationMessage.length),
 			) + truncationMessage;
 
 		context += treeHeader + fileStructureString + treeFooter;
 		length = config.maxTotalLength; // Maxed out after adding truncated structure
 		console.log(
-			`Truncated context size after adding structure: ${length} chars.`
+			`Truncated context size after adding structure: ${length} chars.`,
 		);
 	} else {
 		context += treeHeader + fileStructureString + treeFooter;
@@ -136,7 +136,7 @@ export function addRecentChangesToContext(
 	recentChanges: FileChangeEntry[] | undefined,
 	currentContext: string,
 	currentTotalLength: number,
-	config: ContextConfig
+	config: ContextConfig,
 ): { context: string; currentTotalLength: number } {
 	let context = currentContext;
 	let length = currentTotalLength;
@@ -159,7 +159,7 @@ export function addRecentChangesToContext(
 				config.maxTotalLength
 			) {
 				changesSectionContent.push(
-					"... (additional changes omitted due to context limit)"
+					"... (additional changes omitted due to context limit)",
 				);
 				tempLength +=
 					changesSectionContent[changesSectionContent.length - 1].length;
@@ -174,18 +174,18 @@ export function addRecentChangesToContext(
 		// Final check and truncate if necessary after joining
 		if (length + fullChangesSection.length > config.maxTotalLength) {
 			console.warn(
-				`Recent changes section exceeds total context limit. Truncating.`
+				`Recent changes section exceeds total context limit. Truncating.`,
 			);
 			const availableLength = config.maxTotalLength - length - 50; // Reserve space for truncation message
 			const originalLength = fullChangesSection.length;
 			const truncatedSection =
 				fullChangesSection.substring(
 					0,
-					availableLength > 0 ? availableLength : 0
+					availableLength > 0 ? availableLength : 0,
 				) +
 				`\n... (Recent changes truncated from ${originalLength} chars to ${Math.max(
 					0,
-					availableLength
+					availableLength,
 				)} chars due to total size limit)\n\n`; // Add final newlines
 			context += truncatedSection;
 			length = config.maxTotalLength;
@@ -213,7 +213,7 @@ export function addExistingFilePathsSection(
 	workspaceRoot: vscode.Uri,
 	currentContext: string,
 	currentTotalLength: number,
-	config: ContextConfig
+	config: ContextConfig,
 ): { context: string; currentTotalLength: number } {
 	let context = currentContext;
 	let length = currentTotalLength;
@@ -238,18 +238,18 @@ export function addExistingFilePathsSection(
 
 	if (length + existingPathsSection.length > config.maxTotalLength) {
 		console.warn(
-			`Existing paths list exceeds total context limit. Truncating.`
+			`Existing paths list exceeds total context limit. Truncating.`,
 		);
 		const availableLength = config.maxTotalLength - length - 50; // Reserve space for truncation message
 		const originalLength = existingPathsSection.length;
 		existingPathsSection =
 			existingPathsSection.substring(
 				0,
-				availableLength > 0 ? availableLength : 0
+				availableLength > 0 ? availableLength : 0,
 			) +
 			`\n... (Existing paths list truncated from ${originalLength} chars to ${Math.max(
 				0,
-				availableLength
+				availableLength,
 			)} chars due to total size limit)\n\n`;
 		context += existingPathsSection;
 		length = config.maxTotalLength;
@@ -258,7 +258,7 @@ export function addExistingFilePathsSection(
 		length += existingPathsSection.length;
 	}
 	console.log(
-		`Context size after adding existing paths list: ${length} chars.`
+		`Context size after adding existing paths list: ${length} chars.`,
 	);
 	return { context, currentTotalLength: length };
 }
@@ -278,14 +278,14 @@ export function addModifiedCreatedPathsSection(
 	workspaceRoot: vscode.Uri,
 	currentContext: string,
 	currentTotalLength: number,
-	config: ContextConfig
+	config: ContextConfig,
 ): { context: string; currentTotalLength: number } {
 	let context = currentContext;
 	let length = currentTotalLength;
 
 	const fileChangePathsSection = _formatFileChangePathsForContext(
 		recentChanges || [],
-		workspaceRoot
+		workspaceRoot,
 	);
 
 	if (fileChangePathsSection) {
@@ -293,7 +293,7 @@ export function addModifiedCreatedPathsSection(
 		const estimatedLength = fileChangePathsSection.length + 2;
 		if (length + estimatedLength > config.maxTotalLength) {
 			console.warn(
-				`Modified/Created file paths section exceeds total context limit. Truncating.`
+				`Modified/Created file paths section exceeds total context limit. Truncating.`,
 			);
 			const availableLength = config.maxTotalLength - length - 50; // Reserve space for truncation message
 			const originalLength = fileChangePathsSection.length;
@@ -313,7 +313,7 @@ export function addModifiedCreatedPathsSection(
 			context += fileChangePathsSection + "\n\n";
 			length += estimatedLength;
 			console.log(
-				`Context size after adding modified/created paths: ${length} chars.`
+				`Context size after adding modified/created paths: ${length} chars.`,
 			);
 		}
 	}
@@ -337,7 +337,7 @@ export function addSymbolInfoSection(
 	workspaceRoot: vscode.Uri,
 	currentContext: string,
 	currentTotalLength: number,
-	config: ContextConfig
+	config: ContextConfig,
 ): { context: string; currentTotalLength: number } {
 	let context = currentContext;
 	let length = currentTotalLength;
@@ -370,7 +370,7 @@ export function addSymbolInfoSection(
 						fileSymbolContentParts.push(
 							`... (${
 								symbolsForFile.length - symbolsAddedToFile
-							} more symbols omitted for this file)\n`
+							} more symbols omitted for this file)\n`,
 						);
 						fileSymbolContentLength +=
 							fileSymbolContentParts[fileSymbolContentParts.length - 1].length;
@@ -392,7 +392,7 @@ export function addSymbolInfoSection(
 						config.maxTotalSymbolChars
 					) {
 						fileSymbolContentParts.push(
-							"... (remaining symbols omitted due to total symbol context limit)\n"
+							"... (remaining symbols omitted due to total symbol context limit)\n",
 						);
 						fileSymbolContentLength +=
 							fileSymbolContentParts[fileSymbolContentParts.length - 1].length;
@@ -414,7 +414,7 @@ export function addSymbolInfoSection(
 						.join("")
 						.substring(
 							0,
-							config.maxTotalSymbolChars - truncationMessage.length
+							config.maxTotalSymbolChars - truncationMessage.length,
 						);
 					symbolInfoParts.push(truncationMessage);
 					break; // Stop processing further files for symbols
@@ -428,18 +428,18 @@ export function addSymbolInfoSection(
 		if (symbolInfoSection.length > 0) {
 			if (length + symbolInfoSection.length > config.maxTotalLength) {
 				console.warn(
-					`Symbol information section exceeds total context limit. Truncating.`
+					`Symbol information section exceeds total context limit. Truncating.`,
 				);
 				const availableLength = config.maxTotalLength - length - 50; // Reserve space for truncation message
 				const originalLength = symbolInfoSection.length;
 				symbolInfoSection =
 					symbolInfoSection.substring(
 						0,
-						availableLength > 0 ? availableLength : 0
+						availableLength > 0 ? availableLength : 0,
 					) +
 					`\n... (Symbol information truncated from ${originalLength} chars to ${Math.max(
 						0,
-						availableLength
+						availableLength,
 					)} chars due to total size limit)\n\n`;
 			}
 			context += symbolInfoSection;
@@ -465,7 +465,7 @@ export function addActiveSymbolDetailSection(
 	workspaceRoot: vscode.Uri,
 	currentContext: string,
 	currentTotalLength: number,
-	config: ContextConfig
+	config: ContextConfig,
 ): { context: string; currentTotalLength: number } {
 	let context = currentContext;
 	let length = currentTotalLength;
@@ -473,11 +473,11 @@ export function addActiveSymbolDetailSection(
 
 	if (activeSymbolDetailedInfo && activeSymbolDetailedInfo.name) {
 		activeSymbolDetailParts.push(
-			`Active Symbol Detail: ${activeSymbolDetailedInfo.name}\n`
+			`Active Symbol Detail: ${activeSymbolDetailedInfo.name}\n`,
 		);
 
 		const formatLocation = (
-			location: vscode.Location | vscode.Location[] | undefined
+			location: vscode.Location | vscode.Location[] | undefined,
 		): string => {
 			if (!location) {
 				return "N/A";
@@ -498,7 +498,7 @@ export function addActiveSymbolDetailSection(
 		};
 
 		const formatLocations = (
-			locations: vscode.Location[] | undefined
+			locations: vscode.Location[] | undefined,
 		): string => {
 			if (!locations || locations.length === 0) {
 				return "None";
@@ -511,7 +511,7 @@ export function addActiveSymbolDetailSection(
 				| vscode.CallHierarchyIncomingCall[]
 				| vscode.CallHierarchyOutgoingCall[]
 				| undefined,
-			type: "incoming" | "outgoing"
+			type: "incoming" | "outgoing",
 		): string => {
 			if (!calls || calls.length === 0) {
 				return type === "incoming" ? `No Incoming Calls` : `No Outgoing Calls`;
@@ -536,9 +536,9 @@ export function addActiveSymbolDetailSection(
 										.line + 1
 								: "N/A"
 							: (call as vscode.CallHierarchyOutgoingCall).fromRanges.length > 0
-							? (call as vscode.CallHierarchyOutgoingCall).fromRanges![0].start
-									.line + 1
-							: item.range.start.line + 1;
+								? (call as vscode.CallHierarchyOutgoingCall).fromRanges![0]
+										.start.line + 1
+								: item.range.start.line + 1;
 					const detail = item.detail ? ` (Detail: ${item.detail})` : "";
 					return `${item.name} (${relativePath}:${lineNumber})${detail}`;
 				})
@@ -550,25 +550,25 @@ export function addActiveSymbolDetailSection(
 		activeSymbolDetailParts.push(
 			`  Definition: ${formatLocation(activeSymbolDetailedInfo.definition)}\n`,
 			`  Type Definition: ${formatLocation(
-				activeSymbolDetailedInfo.typeDefinition
+				activeSymbolDetailedInfo.typeDefinition,
 			)}\n`,
 			`  Implementations: ${formatLocations(
-				activeSymbolDetailedInfo.implementations
+				activeSymbolDetailedInfo.implementations,
 			)}\n`,
-			`  Detail: ${activeSymbolDetailedInfo.detail || "N/A"}\n`
+			`  Detail: ${activeSymbolDetailedInfo.detail || "N/A"}\n`,
 		);
 
 		if (activeSymbolDetailedInfo.fullRange) {
 			activeSymbolDetailParts.push(
 				`  Full Range: Lines ${
 					activeSymbolDetailedInfo.fullRange.start.line + 1
-				}-${activeSymbolDetailedInfo.fullRange.end.line + 1}\n`
+				}-${activeSymbolDetailedInfo.fullRange.end.line + 1}\n`,
 			);
 		}
 
 		if (activeSymbolDetailedInfo.childrenHierarchy) {
 			activeSymbolDetailParts.push(
-				`  Children Hierarchy:\n${activeSymbolDetailedInfo.childrenHierarchy}\n`
+				`  Children Hierarchy:\n${activeSymbolDetailedInfo.childrenHierarchy}\n`,
 			);
 		}
 
@@ -586,7 +586,7 @@ export function addActiveSymbolDetailSection(
 					activeSymbolDetailParts.push(
 						`    ... (${
 							activeSymbolDetailedInfo.referencedTypeDefinitions.size - count
-						} more referenced types omitted)\n`
+						} more referenced types omitted)\n`,
 					);
 					break;
 				}
@@ -600,7 +600,7 @@ export function addActiveSymbolDetailSection(
 				}
 				activeSymbolDetailParts.push(
 					`    File: ${filePath}\n`,
-					`    Content:\n\`\`\`\n${processedContent}\n\`\`\`\n`
+					`    Content:\n\`\`\`\n${processedContent}\n\`\`\`\n`,
 				);
 				count++;
 			}
@@ -609,13 +609,13 @@ export function addActiveSymbolDetailSection(
 		activeSymbolDetailParts.push(
 			`  Incoming Calls:\n${formatCallHierarchy(
 				activeSymbolDetailedInfo.incomingCalls,
-				"incoming"
+				"incoming",
 			)}\n`,
 			`  Outgoing Calls:\n${formatCallHierarchy(
 				activeSymbolDetailedInfo.outgoingCalls,
-				"outgoing"
+				"outgoing",
 			)}\n`,
-			`\n` // Add a newline for separation
+			`\n`, // Add a newline for separation
 		);
 
 		let activeSymbolDetailSection = activeSymbolDetailParts.join("");
@@ -639,24 +639,24 @@ export function addActiveSymbolDetailSection(
 		if (activeSymbolDetailSection.length > 0) {
 			if (length + activeSymbolDetailSection.length > config.maxTotalLength) {
 				console.warn(
-					`Active symbol detail section exceeds total context limit. Truncating.`
+					`Active symbol detail section exceeds total context limit. Truncating.`,
 				);
 				const availableLength = config.maxTotalLength - length - 50; // Reserve space for truncation message
 				const originalLength = activeSymbolDetailSection.length;
 				activeSymbolDetailSection =
 					activeSymbolDetailSection.substring(
 						0,
-						availableLength > 0 ? availableLength : 0
+						availableLength > 0 ? availableLength : 0,
 					) +
 					`\n... (Active symbol detail truncated from ${originalLength} chars to ${Math.max(
 						0,
-						availableLength
+						availableLength,
 					)} chars due to total size limit)\n\n`;
 			}
 			context += activeSymbolDetailSection;
 			length += activeSymbolDetailSection.length;
 			console.log(
-				`Context size after adding active symbol detail: ${length} chars.`
+				`Context size after adding active symbol detail: ${length} chars.`,
 			);
 		}
 	}

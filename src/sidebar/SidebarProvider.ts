@@ -120,6 +120,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	public activeOperationCancellationTokenSource:
 		| vscode.CancellationTokenSource
 		| undefined;
+	/** Cancellation token source used to cancel the context agent loading operation. */
+	public contextAgentCancellationTokenSource:
+		| vscode.CancellationTokenSource
+		| undefined;
 	/** A list of active child processes (e.g., Git commands) that should be killed upon cancellation. */
 	public activeChildProcesses: ChildProcess[] = [];
 	/** Context data for a plan that is currently being reviewed by the user (pending confirmation or rejection). */
@@ -886,6 +890,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			this.activeOperationCancellationTokenSource.dispose();
 			this.activeOperationCancellationTokenSource = undefined;
 		}
+
+		if (this.contextAgentCancellationTokenSource) {
+			console.log(
+				"[SidebarProvider] Disposing contextAgentCancellationTokenSource.",
+			);
+			this.contextAgentCancellationTokenSource.dispose();
+			this.contextAgentCancellationTokenSource = undefined;
+		}
+
 		// Clear persisted streaming state
 		await this.updatePersistedAiStreamingState(null);
 		this.currentActiveChatOperationId = null; // Clear the operation ID
@@ -1002,6 +1015,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			this.activeOperationCancellationTokenSource.cancel();
 		}
 
+		// Cancel the context agent token source if it exists.
+		if (this.contextAgentCancellationTokenSource) {
+			this.contextAgentCancellationTokenSource.cancel();
+		}
+
 		// Dispose and clear the token source and operation ID.
 		this.clearActiveOperationState();
 
@@ -1041,6 +1059,32 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 */
 	public async cancelPendingPlan(): Promise<void> {
 		await this.triggerUniversalCancellation();
+	}
+
+	/**
+	 * Finalizes the context loading state, cleaning up the cancellation token and notifying the webview.
+	 */
+	public finalizeContextLoadingState(): void {
+		if (this.contextAgentCancellationTokenSource) {
+			this.contextAgentCancellationTokenSource.dispose();
+			this.contextAgentCancellationTokenSource = undefined;
+		}
+		this.isContextAgentLoading = false;
+		this.postMessageToWebview({
+			type: "setContextAgentLoading",
+			value: false,
+		});
+	}
+
+	/**
+	 * Cancels the ongoing context agent operation.
+	 */
+	public async cancelContextAgent(): Promise<void> {
+		if (this.contextAgentCancellationTokenSource) {
+			console.log("[SidebarProvider] Cancelling context agent operation.");
+			this.contextAgentCancellationTokenSource.cancel();
+		}
+		this.finalizeContextLoadingState();
 	}
 
 	/**

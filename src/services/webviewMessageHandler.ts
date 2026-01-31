@@ -76,6 +76,8 @@ export async function handleWebviewMessage(
 		"copyContextMessage", // Allowed during background operations
 		"setApiActiveKey", // Allow API key switching
 		"toggleHeuristicContextUsage", // Allowed as a UI interaction during background operations
+		"rebuildProjectContext", // Allowed during background operations
+		"cancelContextAgent", // Allowed during background operations
 	];
 
 	if (
@@ -1004,6 +1006,27 @@ export async function handleWebviewMessage(
 				await provider.endUserOperation("review");
 				break;
 			}
+
+			case "rebuildProjectContext":
+				provider.contextAgentCancellationTokenSource =
+					new vscode.CancellationTokenSource();
+				provider.isContextAgentLoading = true;
+				provider.postMessageToWebview({
+					type: "setContextAgentLoading",
+					value: true,
+				});
+				try {
+					await provider.contextService.buildProjectContext(
+						provider.contextAgentCancellationTokenSource.token,
+					);
+				} finally {
+					provider.finalizeContextLoadingState();
+				}
+				break;
+
+			case "cancelContextAgent":
+				provider.cancelContextAgent();
+				break;
 
 			default:
 				console.warn(

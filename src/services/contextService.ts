@@ -133,9 +133,11 @@ export class ContextService {
 	/**
 	 * Initialize sequential context service if not already initialized
 	 */
-	private async initializeSequentialContextService(): Promise<SequentialContextService> {
+	private async initializeSequentialContextService(
+		cancellationToken?: vscode.CancellationToken,
+	): Promise<SequentialContextService> {
 		if (!this.sequentialContextService) {
-			await this._computeWorkspaceDependencies();
+			await this._computeWorkspaceDependencies(cancellationToken);
 			const workspaceFolders = vscode.workspace.workspaceFolders;
 			if (!workspaceFolders || workspaceFolders.length === 0) {
 				throw new Error("No workspace folder open");
@@ -215,9 +217,15 @@ export class ContextService {
 		console.log("[ContextService] Workspace file system watchers registered.");
 	}
 
-	private async _computeWorkspaceDependencies(): Promise<void> {
+	private async _computeWorkspaceDependencies(
+		cancellationToken?: vscode.CancellationToken,
+	): Promise<void> {
 		if (this.areDependenciesComputed) {
 			return;
+		}
+
+		if (cancellationToken?.isCancellationRequested) {
+			throw new vscode.CancellationError();
 		}
 
 		const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -231,10 +239,19 @@ export class ContextService {
 
 		try {
 			console.log("[ContextService] Computing workspace dependencies...");
+
+			if (cancellationToken?.isCancellationRequested) {
+				throw new vscode.CancellationError();
+			}
+
 			// scanWorkspace and buildDependencyGraph are already imported
 			const allScannedFiles = await scanWorkspace({
 				/* default options */
 			});
+
+			if (cancellationToken?.isCancellationRequested) {
+				throw new vscode.CancellationError();
+			}
 
 			if (allScannedFiles.length === 0) {
 				console.warn(
@@ -251,6 +268,11 @@ export class ContextService {
 					/* default options */
 				},
 			);
+
+			if (cancellationToken?.isCancellationRequested) {
+				throw new vscode.CancellationError();
+			}
+
 			this.fileDependencies = fileDependencies;
 
 			this.reverseFileDependencies = buildReverseDependencyGraph(
@@ -314,7 +336,7 @@ export class ContextService {
 			matches,
 			async (match: string) => {
 				if (cancellationToken?.isCancellationRequested) {
-					return;
+					throw new vscode.CancellationError();
 				}
 
 				// Clean the matched path: remove leading/trailing quotes, backticks,
@@ -437,6 +459,10 @@ export class ContextService {
 		const enablePerformanceMonitoring =
 			options?.enablePerformanceMonitoring ?? true;
 
+		if (cancellationToken?.isCancellationRequested) {
+			throw new vscode.CancellationError();
+		}
+
 		try {
 			// Get workspace root with better error handling
 			const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -483,12 +509,20 @@ export class ContextService {
 				showLoadingDots: true,
 			});
 
+			if (cancellationToken?.isCancellationRequested) {
+				throw new vscode.CancellationError();
+			}
+
 			const allScannedFiles = await scanWorkspace({
 				useCache: options?.useScanCache ?? true,
 				maxConcurrentReads: options?.maxConcurrency ?? 15,
 				maxFileSize: options?.maxFileSize ?? DEFAULT_SIZE,
 				cacheTimeout: 5 * 60 * 1000, // 5 minutes
 			});
+
+			if (cancellationToken?.isCancellationRequested) {
+				throw new vscode.CancellationError();
+			}
 
 			// Detect project type after scanning
 			const detectedProjectProfile = await detectProjectType(
@@ -555,6 +589,10 @@ export class ContextService {
 			let reverseFileDependencies = new Map<string, DependencyRelation[]>();
 			let dependencyBuildTime = 0;
 
+			if (cancellationToken?.isCancellationRequested) {
+				throw new vscode.CancellationError();
+			}
+
 			// 2. Gate the entire Dependency Graph building block
 			if (shouldRunHeuristics) {
 				const dependencyStartTime = Date.now();
@@ -619,7 +657,7 @@ export class ContextService {
 					filesForSymbolProcessing,
 					async (fileUri: vscode.Uri) => {
 						if (cancellationToken?.isCancellationRequested) {
-							return;
+							throw new vscode.CancellationError();
 						}
 						try {
 							const symbols = await SymbolService.getSymbolsInDocument(
@@ -643,6 +681,10 @@ export class ContextService {
 			// --- Determine effective diagnostics string ---
 			let effectiveDiagnosticsString: string | undefined =
 				initialDiagnosticsString;
+
+			if (cancellationToken?.isCancellationRequested) {
+				throw new vscode.CancellationError();
+			}
 
 			if (editorContext?.documentUri) {
 				// If there's an active editor, always fetch and filter live diagnostics
@@ -791,6 +833,9 @@ export class ContextService {
 											await BPromise.map(
 												typeDefs,
 												async (typeDef) => {
+													if (cancellationToken?.isCancellationRequested) {
+														throw new vscode.CancellationError();
+													}
 													try {
 														const content =
 															await SymbolService.getDocumentContentAtLocation(
@@ -875,6 +920,10 @@ export class ContextService {
 			let filesForContextBuilding = allScannedFiles;
 			let heuristicSelectedFiles: vscode.Uri[] = []; // Declare heuristicSelectedFiles
 
+			if (cancellationToken?.isCancellationRequested) {
+				throw new vscode.CancellationError();
+			}
+
 			// Populate heuristicSelectedFiles by awaiting a call to getHeuristicRelevantFiles
 			try {
 				heuristicSelectedFiles = await getHeuristicRelevantFiles(
@@ -942,7 +991,7 @@ export class ContextService {
 					filesToSummarizeForSelectionPrompt.map(
 						async (fileUri: vscode.Uri) => {
 							if (cancellationToken?.isCancellationRequested) {
-								return;
+								throw new vscode.CancellationError();
 							}
 							const relativePath = path
 								.relative(rootFolder.uri.fsPath, fileUri.fsPath)
@@ -1008,6 +1057,10 @@ export class ContextService {
 			// Update the last processed operation ID
 			if (currentOperationId) {
 				this.lastProcessedOperationId = currentOperationId;
+			}
+
+			if (cancellationToken?.isCancellationRequested) {
+				throw new vscode.CancellationError();
 			}
 
 			// 3. Restructure the final file selection block
@@ -1099,6 +1152,10 @@ export class ContextService {
 								);
 							},
 						};
+						if (cancellationToken?.isCancellationRequested) {
+							throw new vscode.CancellationError();
+						}
+
 						const selectedFileSelections =
 							await selectRelevantFilesAI(selectionOptions);
 						const selectedFiles = selectedFileSelections.map((s) => s.uri);
@@ -1231,6 +1288,10 @@ export class ContextService {
 				verboseHeaderMarker = "/* VERBOSE_HEADERS_ENABLED */";
 			}
 
+			if (cancellationToken?.isCancellationRequested) {
+				throw new vscode.CancellationError();
+			}
+
 			// 3. Update the final call to buildContextString to pass activeSymbolDetailedInfo
 			const rawContextString = await buildContextString(
 				filesForContextBuilding, // Still pass URIs to buildContextString for content reading
@@ -1302,6 +1363,9 @@ export class ContextService {
 				activeSymbolDetailedInfo: activeSymbolDetailedInfo,
 			};
 		} catch (error: any) {
+			if (error instanceof vscode.CancellationError) {
+				throw error;
+			}
 			console.error(`[ContextService] Error building project context:`, error);
 			this.postMessageToWebview({
 				type: "statusUpdate",
@@ -1319,6 +1383,7 @@ export class ContextService {
 	 * Build context using sequential file processing
 	 */
 	public async buildSequentialProjectContext(
+		cancellationToken: vscode.CancellationToken | undefined,
 		userRequest: string,
 		options?: {
 			enableSequentialProcessing?: boolean;
@@ -1336,8 +1401,13 @@ export class ContextService {
 			onFileProcessed?: (summary: any) => void;
 		},
 	): Promise<BuildProjectContextResult> {
+		if (cancellationToken?.isCancellationRequested) {
+			throw new vscode.CancellationError();
+		}
+
 		try {
-			const sequentialService = await this.initializeSequentialContextService();
+			const sequentialService =
+				await this.initializeSequentialContextService(cancellationToken);
 
 			const result = await sequentialService.buildSequentialContext(
 				userRequest,
@@ -1370,10 +1440,13 @@ export class ContextService {
 				},
 			};
 		} catch (error) {
+			if (error instanceof vscode.CancellationError) {
+				throw error;
+			}
 			console.error("Error in sequential context building:", error);
 			// Fallback to traditional context building
 			return this.buildProjectContext(
-				undefined,
+				cancellationToken,
 				userRequest,
 				undefined,
 				undefined,

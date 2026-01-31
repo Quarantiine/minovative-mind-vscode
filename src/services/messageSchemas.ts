@@ -168,6 +168,14 @@ const toggleHeuristicContextUsageSchema = z.object({
 	isEnabled: z.boolean(),
 });
 
+const rebuildProjectContextSchema = z.object({
+	type: z.literal("rebuildProjectContext"),
+});
+
+const cancelContextAgentSchema = z.object({
+	type: z.literal("cancelContextAgent"),
+});
+
 export const allMessageSchemas = z.discriminatedUnion("type", [
 	planRequestSchema,
 	chatMessageSchema,
@@ -209,6 +217,8 @@ export const allMessageSchemas = z.discriminatedUnion("type", [
 	copyContextMessageSchema, // New schema added here
 	aiRetryNotificationSchema,
 	toggleHeuristicContextUsageSchema, // New schema added here
+	rebuildProjectContextSchema,
+	cancelContextAgentSchema,
 ]);
 
 // Export individual schemas if they are needed for more granular error reporting

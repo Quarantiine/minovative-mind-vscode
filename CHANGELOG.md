@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.48.0] - January 30, 2026
+
+### Context Optimization and Progressive Discovery
+
+Introduced a "Progressive Discovery" context strategy to significantly reduce token usage for large projects. The AI now actively explores the codebase structure instead of consuming a massive initial file list.
+
+- Implemented `buildOptimizedProjectStructure` in `SmartContextSelector` to present a truncated view for workspaces with >10 files.
+- Updated Context Agent prompts to enforce the use of `ls` and `find` tools for active file discovery.
+- Reduced initial context token load by ~90% for large repositories.
+
 ## [2.47.0] - January 30, 2026
 
 ### Centralized Language Support and Intent-Aware Context

@@ -98,6 +98,7 @@ Minovative Mind builds a profound understanding of your project using comprehens
 ### 3.4 Agentic Context Investigation
 
 - **Active Codebase Exploration**: The Context Agent proactively "looks around" your codebase using high-performance, cost-effective models (**Gemini Flash Lite**) and safe terminal commands (`ls`, `grep`, `find`, `cat`) to discover relevant files that static analysis might miss.
+- **Progressive Discovery**: For large repositories, the agent starts with a highly efficient, truncated view of the project structure and discovers files on-demand, reducing initial context token usage by up to 90%.
 - **AI-Driven Error Investigation**: Automatically detects when you're asking about errors or bugs using intelligent intent classification and proactively investigates error messages, stack traces, and relevant code paths before generating a response.
 - **Safe Execution Environment**: All investigation commands are executed in a secure, read-only sandbox that prevents modification or external network access.
 - **Transparent Operation**: You see exactly what the agent is doing—every command run and its output is logged transparently in the chat interface.

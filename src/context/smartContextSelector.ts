@@ -667,15 +667,17 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 	// Build investigation instruction based on context
 	let investigationInstruction: string;
 	if (isTruncated || alwaysRunInvestigation || isLikelyErrorRequest) {
-		investigationInstruction = `2.  **Investigate (REQUIRED)**: The file list is TRUNCATED (it shows only the top level). You MUST run at least one \`run_terminal_command\` (like \`ls -R subfolder\` or \`find .\`) to explore the codebase and find the specific files you need.
-    *   **ERROR DETECTION TIP**: If the user mentions an error, extract file paths, function names, or error messages and use \`grep -i\` (case insensitive) to find them.
-    *   **IMPORTANT**: No pipes (|), OR chaining (||), or AND chaining (&&) allowed. Run ONE command at a time.
-    *   **CHECK BEFORE READING**: Use \`wc -l file\` to check size. Use \`file file\` to check type (avoid binary).
-    *   **PEEK**: Use \`head -n 50 file\` or \`tail -n 20 file\` to verify content without reading the whole file.
-    *   **EXIT STRATEGY**: As soon as you find the relevant file path or line number using grep/find/ls, **STOP** investigating. Call \`finish_selection\` immediately with that file. Do NOT cat the file to verify if you are sure.`;
+		investigationInstruction = `2.  **Investigate (REQUIRED)**: The file list is TRUNCATED. You MUST run a \`run_terminal_command\` to find specific files.
+    *   **POWERFUL SEARCH**: You can use \`|\` (pipes) and \`grep\` / \`rg\` (ripgrep) to filter results.
+    *   **Examples**:
+        *   \`ls -R | grep "auth"\` (Find files with "auth" in name)
+        *   \`find src -name "*.ts" | xargs grep "interface User"\` (Search content)
+        *   \`rg "class User" src\` (Fast content search with ripgrep)
+    *   **CHECK BEFORE READING**: Use \`wc -l file\` to check size.
+    *   **EXIT STRATEGY**: As soon as you find the relevant file path, **STOP** investigating. Call \`finish_selection\`.`;
 	} else {
 		investigationInstruction =
-			"2.  **Investigate (Highly Recommended)**: Unless you are 100% certain of the file path, use `run_terminal_command` to verify. It is better to check than to guess wrong.";
+			"2.  **Investigate (Highly Recommended)**: Use `run_terminal_command` with `ls`, `find`, or `rg` to verify file existence and content before selecting.";
 	}
 
 	const selectionPrompt = `
@@ -694,19 +696,16 @@ ${fileListString}
 			: ""
 	}
 ${investigationInstruction}
-    *   **Loop Prevention**: Do not run the same command twice. If a command returns the same output, stop and proceed to selection.
-    *   **Peek Content**: Use \`head -n 50 src/file.ts\` to verify the header/imports or \`tail -n 20 src/file.ts\` to check the end.
-    *   **View Specific Lines**: If you MUST view specific lines (rare), use \`sed -n '10,20p' src/file.ts\`. **NEVER** use \`cat src/file.ts:10\`.
-2b. **Symbol Lookup (PREFERRED for finding definitions)**: If you see a symbol used (like \`auth.User\`, \`PlanGenerationContext\`, or \`handleLogin\`), use \`lookup_workspace_symbol\` to find its definition. This is more accurate than guessing file paths with grep.
-    *   Example: You see \`sidebarTypes.PlanGenerationContext\` in the code. Run \`lookup_workspace_symbol\` with query "PlanGenerationContext" to find the exact file and line number.
-3.  **Select**: Once you have identified the files, call \`finish_selection\` with the list of file paths.
-    *   **LINE RANGES (ONLY in finish_selection)**: To save tokens, you can specify line ranges in finish_selection: \`filepath:startLine-endLine\`
-    *   Example: \`src/auth.ts:40-80\` returns only lines 40-80. \`src/auth.ts:42\` returns just line 42.
-    *   **CRITICAL WARNING - INVALID SYNTAX**: Line range syntax (e.g. \`:10\`) is **ONLY** allowed inside \`finish_selection\`.
-        *   ❌ **WRONG**: \`cat src/file.ts:10\` (This will fail)
-        *   ❌ **WRONG**: \`grep "foo" src/file.ts:10\` (This will fail)
+    *   **Loop Prevention**: Do not run the same command twice.
+    *   **Peek Content**: Use \`head -n 50 src/file.ts\` or \`tail -n 20 src/file.ts\`.
+    *   **View Specific Lines**: If you MUST view specific lines, use \`sed -n '10,20p' src/file.ts\`.
+2b. **Symbol Lookup (PREFERRED for finding definitions)**: If you see a symbol used (e.g., \`auth.User\`), use \`lookup_workspace_symbol\`.
+3.  **Select**: Call \`finish_selection\` with the list of file paths.
+    *   **LINE RANGES**: \`src/auth.ts:40-80\` (lines 40-80).
+    *   **CRITICAL WARNING**: Line ranges (e.g. \`:10\`) are **ONLY** allowed inside \`finish_selection\`.
+        *   ❌ **WRONG**: \`cat src/file.ts:10\`
         *   ✅ **CORRECT**: \`finish_selection(selectedFiles=["src/file.ts:10"])\`
-4.  **Constraint**: Return ONLY the function call. Do not return markdown text.
+4.  **Constraint**: Return ONLY the function call.
 `.trim();
 
 	console.log(
@@ -722,14 +721,14 @@ ${investigationInstruction}
 					{
 						name: "run_terminal_command",
 						description:
-							"Execute a safe terminal command (ls, grep, find, cat, git grep, sed, head, tail, wc, file) to investigate the codebase. Use this to find files relevant to the user request. Returns stdout/stderr. NOTE: To read specific lines, use `sed -n 'start,endp' file`. DO NOT use `cat file:line` syntax.",
+							"Execute a safe terminal command (ls, grep, find, cat, git, sed, head, tail, wc, file, xargs, rg) to investigate the codebase. Pipes (|) ARE ALLOWED. Use `rg` (ripgrep) for fast searching.",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {
 								command: {
 									type: SchemaType.STRING,
 									description:
-										"The terminal command to execute. Must be one of: ls, grep, find, cat, git grep, sed, head, tail, wc, file. NO chaining allowed (no |, ||, or &&). Run one command at a time.",
+										"The terminal command to execute. Allowed: ls, grep, find, cat, git, sed, head, tail, wc, file, xargs, rg. PIPES (|) ARE SUPPORTED. Example: `find . -name '*.ts' | xargs grep 'foo'`.",
 								},
 							},
 							required: ["command"],
@@ -792,7 +791,7 @@ ${investigationInstruction}
 				},
 			];
 
-			const MAX_TURNS = 15;
+			const MAX_TURNS = 20;
 
 			for (let turn = 0; turn < MAX_TURNS; turn++) {
 				if (cancellationToken?.isCancellationRequested) {
