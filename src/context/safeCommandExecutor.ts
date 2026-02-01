@@ -13,7 +13,6 @@ export class SafeCommandExecutor {
 		"wc",
 		"file",
 		"xargs",
-		// Read-only additions
 		"less",
 		"more",
 		"nl",
@@ -28,13 +27,22 @@ export class SafeCommandExecutor {
 		"date",
 		"sha256sum",
 		"md5sum",
+		"sort",
+		"uniq",
+		"realpath",
+		"readlink",
+		"tr",
+		"awk",
 	]);
+
+	public static getAllowedCommands(): string[] {
+		return Array.from(this.ALLOWED_COMMANDS);
+	}
 
 	private static readonly BLOCKED_FLAGS = new Set([
 		">",
 		">>",
 		"<",
-		//"|", // Pipe is now allowed
 		"&",
 		"&&",
 		";",
@@ -217,6 +225,17 @@ export class SafeCommandExecutor {
 
 			const subCommand = parts.slice(subCommandIndex).join(" ");
 			return this.isSafeSingleCommand(subCommand);
+		}
+
+		// 4. Awk: Block 'system' calls
+		if (baseCommand === "awk") {
+			// Check against the raw command string to catch 'system("...")'.
+			// We check for "system" followed by optional whitespace and an opening parenthesis.
+			// This avoids blocking strings like 'print "system status"'.
+			// Note: In awk, system is a function and requires parentheses: system(cmd).
+			if (/\bsystem\s*\(/.test(command)) {
+				return false;
+			}
 		}
 
 		return true;

@@ -6,6 +6,7 @@ import {
 	FileStructureAnalysis,
 	EnhancedGenerationContext,
 } from "../enhancedCodeGeneration";
+import { SafeCommandExecutor } from "../../context/safeCommandExecutor";
 
 /**
  * Analyzes a file path for framework and structure information.
@@ -154,8 +155,14 @@ export function getEnhancedGenerationSystemInstruction(
 	requirementsList.push(
 		"**Security**: Implement secure coding practices meticulously, identifying and addressing potential vulnerabilities relevant to the language and context.",
 	);
+	const allowedCommands = SafeCommandExecutor.getAllowedCommands().join(", ");
 	requirementsList.push(
-		"**Command Execution Format (RunCommandStep)**: For any `RunCommandStep` action, the `command` property MUST be an object `{ executable: string, args: string[], usesShell?: boolean }`. The `executable` should be the command name (e.g., 'npm', 'git') and `args` an array of its arguments (e.g., ['install', '--save-dev', 'package']). If a command *absolutely requires* `shell: true` (e.g., it uses shell-specific features like pipes, redirects, or environment variable expansion inherently for its functionality, and cannot be expressed directly via `executable` and `args`), you MUST explicitly include `usesShell: true` in the object. This flag triggers critical fallback security checks in `PlanExecutorService`. Always prefer `executable` and `args` without `usesShell: true` for security reasons, unless explicitly necessary.",
+		`**Command Execution Format (RunCommandStep)**: For any \`RunCommandStep\` action, the \`command\` property MUST be an object \`{ executable: string, args: string[], usesShell?: boolean }\`. The \`executable\` should be the command name (e.g., 'npm', 'git') and \`args\` an array of its arguments (e.g., ['install', '--save-dev', 'package']). 
+        
+        **ALLOWED COMMANDS**: You are strictly limited to the following commands for 'executable': [${allowedCommands}]. 
+        **Command Tips**: Use \`sort\` and \`uniq\` to clean up output. Use \`realpath\` to resolve paths.
+        
+        If a command *absolutely requires* \`shell: true\` (e.g., it uses shell-specific features like pipes, redirects, or environment variable expansion inherently for its functionality, and cannot be expressed directly via \`executable\` and \`args\`), you MUST explicitly include \`usesShell: true\` in the object. This flag triggers critical fallback security checks in \`PlanExecutorService\` and should be used sparingly. Always prefer \`executable\` and \`args\` without \`usesShell: true\` for security reasons, unless explicitly necessary.`,
 	);
 
 	return `You are the expert software engineer for me, specializing in ${languageId} development. Your task is to generate production-ready, accurate code. ONLY focus on generating code. EXCLUDE all conversational or meta-commentary.
@@ -244,7 +251,7 @@ export function getEnhancedModificationSystemInstruction(
 		"**Multiple Changes**: If you need to make multiple changes, provide multiple blocks in sequence.",
 	);
 	requirementsList.push(
-		"**Context Match**: The content in the `SEARCH` block must *exactly* match the existing code in the file (including whitespace) to ensure it can be found. Provide enough context lines to make the match unique.",
+		"**Context Match & Uniqueness**: The content in the `SEARCH` block must *exactly* match the existing code (including whitespace). **CRITICAL**: You MUST include enough surrounding context lines to make the match **GLOBALLY UNIQUE** within the file. Never use generic blocks like `try {` or `}` or `if (x) {` alone; always include unique preceding or following lines (like function declarations or specific logic) to guarantee the search block matches ONLY the intended target.",
 	);
 	requirementsList.push(
 		"**Deletions**: To delete code, leave the `REPLACE` section empty (or just containing newline if needed).",

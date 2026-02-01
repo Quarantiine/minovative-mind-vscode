@@ -28,6 +28,7 @@ import { DiagnosticService } from "../utils/diagnosticUtils";
 import { ContextRefresherService } from "../services/contextRefresherService";
 import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
 import { LightweightClassificationService } from "../services/lightweightClassificationService";
+import { SearchReplaceService } from "../services/searchReplaceService";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import * as crypto from "crypto"; // Import crypto for UUID generation
 import { z } from "zod";
@@ -320,6 +321,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
 		this.lightweightClassificationService =
 			new LightweightClassificationService(this.aiRequestService);
+
+		const searchReplaceService = new SearchReplaceService(this.changeLogger);
+
 		this.enhancedCodeGenerator = new EnhancedCodeGenerator(
 			this.aiRequestService,
 			this.postMessageToWebview.bind(this),
@@ -327,6 +331,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			this.codeValidationService,
 			this.contextRefresherService,
 			this.lightweightClassificationService,
+			searchReplaceService,
 		);
 
 		this.revertService = new RevertService(

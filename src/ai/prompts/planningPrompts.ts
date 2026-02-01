@@ -1,5 +1,6 @@
 import * as sidebarTypes from "../../sidebar/common/sidebarTypes";
 import { HistoryEntryPart } from "../../sidebar/common/sidebarTypes";
+import { SafeCommandExecutor } from "../../context/safeCommandExecutor";
 
 export function createInitialPlanningExplanationPrompt(
 	projectContext: string,
@@ -101,11 +102,18 @@ Instructions for Plan Explanation:
 *   Context & Analysis: ${planExplanationInstructions.trim()}
 ${createFileJsonRules.trim()}
 ${newDependencyInstructionsForExplanation.trim()}
-Refer to the "Broader Project Context" which includes detailed symbol information. ${
-		editorContext && diagnosticsString
-			? "For '/fix' requests, specifically detail how your plan addresses all 'Relevant Diagnostics'."
-			: ""
-	}
+Refer to the "Broader Project Context" which includes detailed symbol information.
+
+Command Usage Guidelines:
+- **Stability**: Use \`ls | sort\` or \`find . | sort\` for consistent file ordering to prevent hallucinations.
+- **Noise Reduction**: Use \`grep ... | uniq\` to remove duplicate matches and save context window.
+- **Canonical Paths**: Use \`realpath <path>\` to resolve relative paths (e.g., \`../\`) before performing file modifications, ensuring accuracy.
+- **Dependencies**: Prefer \`npm install <pkg>\` (no shell) over shell scripts for reliability.
+${
+	editorContext && diagnosticsString
+		? "For '/fix' requests, specifically detail how your plan addresses all 'Relevant Diagnostics'."
+		: ""
+}
 *   Completeness & Clarity: Cover all necessary steps. Describe each step briefly (e.g., "Create 'utils.ts'", "Modify 'main.ts' to import utility", "Install 'axios' via npm").
 *   Production Readiness: Generate production-ready code. Prioritize robustness, maintainability, security, cleanliness, efficiency, and industry best practices.
 
@@ -237,6 +245,7 @@ Crucial Rules for \`generateExecutionPlan\` Tool:
 - Avoid over-fragmentation.
 - For \`create_file\` with code files, \`generate_prompt\` is MANDATORY, not optional. Never use \`content\` for code.
 - All generated code/instructions must be production-ready (complete, functional, no placeholders/TODOs). The best code you can give.
+- **Allowed Command List**: For 'run_command' steps, you are strictly limited to the following commands: [${SafeCommandExecutor.getAllowedCommands().join(", ")}]. Ensure any command you use is in this list.
 
 Goal: Ensure all relevant information is passed accurately and comprehensively to the \`generateExecutionPlan\` function. 
 

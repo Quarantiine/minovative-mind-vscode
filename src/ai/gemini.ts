@@ -38,10 +38,10 @@ function _getTruncatedContentsLog(contents: Content[]): string {
 				.map((p) =>
 					"text" in p
 						? (p as { text: string }).text.substring(0, 50) +
-						  ((p as { text: string }).text.length > 50 ? "..." : "")
-						: "[IMAGE]"
+							((p as { text: string }).text.length > 50 ? "..." : "")
+						: "[IMAGE]",
 				)
-				.join(" ")
+				.join(" "),
 		)
 		.join(" | ");
 }
@@ -58,13 +58,13 @@ function _handleGeminiError(
 	error: any,
 	modelName: string,
 	contextString: string,
-	shouldResetClient: boolean
+	shouldResetClient: boolean,
 ): never {
 	geminiLogger.error(
 		modelName,
 		`Raw error during ${contextString}:`,
 		error,
-		error instanceof Error ? error.stack : ""
+		error instanceof Error ? error.stack : "",
 	);
 
 	if (error instanceof Error && error.message === ERROR_OPERATION_CANCELLED) {
@@ -79,7 +79,7 @@ function _handleGeminiError(
 	} else if (lowerErrorMessage.includes("failed to parse stream")) {
 		geminiLogger.error(
 			modelName,
-			`Stream parsing failed. Error: ${error.message}`
+			`Stream parsing failed. Error: ${error.message}`,
 		);
 		throw new Error(ERROR_STREAM_PARSING_FAILED);
 	} else if (
@@ -109,7 +109,7 @@ function _handleGeminiError(
 		throw new Error(
 			`Gemini (${modelName}) error during ${contextString}: ${
 				error.message || String(error)
-			}`
+			}`,
 		);
 	}
 }
@@ -128,15 +128,15 @@ export function initializeGenerativeAI(
 	apiKey: string,
 	modelName: string,
 	tools?: Tool[],
-	systemInstruction?: string
+	systemInstruction?: string,
 ): boolean {
 	geminiLogger.log(
 		modelName,
-		`[gemini.ts] initializeGenerativeAI called with modelName: ${modelName}`
+		`[gemini.ts] initializeGenerativeAI called with modelName: ${modelName}`,
 	);
 	geminiLogger.log(
 		modelName,
-		`Attempting to initialize GoogleGenerativeAI with model: ${modelName}...`
+		`Attempting to initialize GoogleGenerativeAI with model: ${modelName}...`,
 	);
 	try {
 		if (!apiKey) {
@@ -177,7 +177,7 @@ export function initializeGenerativeAI(
 					newToolsHash !== currentToolsHash
 				}, System Instruction changed: ${
 					finalSystemInstruction !== currentSystemInstruction
-				}. New model: ${modelName}`
+				}. New model: ${modelName}`,
 			);
 			generativeAI = new GoogleGenerativeAI(apiKey);
 			model = generativeAI.getGenerativeModel({
@@ -191,16 +191,16 @@ export function initializeGenerativeAI(
 			currentSystemInstruction = finalSystemInstruction;
 			geminiLogger.log(
 				modelName,
-				`[gemini.ts] currentModelName set to: ${currentModelName}`
+				`[gemini.ts] currentModelName set to: ${currentModelName}`,
 			);
 			geminiLogger.log(
 				modelName,
-				"GoogleGenerativeAI initialized successfully."
+				"GoogleGenerativeAI initialized successfully.",
 			);
 		} else {
 			geminiLogger.log(
 				modelName,
-				"Client already initialized with correct settings."
+				"Client already initialized with correct settings.",
 			);
 		}
 		return true;
@@ -209,12 +209,12 @@ export function initializeGenerativeAI(
 			modelName,
 			"Error initializing GoogleGenerativeAI:",
 			error,
-			error instanceof Error ? error.stack : ""
+			error instanceof Error ? error.stack : "",
 		);
 		vscode.window.showErrorMessage(
 			`Failed to initialize Gemini AI (${modelName}): ${
 				error instanceof Error ? error.message : String(error)
-			}`
+			}`,
 		);
 		resetClient();
 		return false;
@@ -239,12 +239,12 @@ export async function* generateContentStream(
 	generationConfig?: GenerationConfig,
 	token?: vscode.CancellationToken,
 	isMergeOperation: boolean = false,
-	systemInstruction?: string
+	systemInstruction?: string,
 ): AsyncIterableIterator<string> {
 	if (token?.isCancellationRequested) {
 		geminiLogger.log(
 			modelName,
-			"Cancellation requested before starting stream generation."
+			"Cancellation requested before starting stream generation.",
 		);
 		throw new Error(ERROR_OPERATION_CANCELLED);
 	}
@@ -253,12 +253,12 @@ export async function* generateContentStream(
 		!initializeGenerativeAI(apiKey, modelName, undefined, systemInstruction)
 	) {
 		throw new Error(
-			`Gemini AI client not initialized. Please check API key and selected model (${modelName}).`
+			`Gemini AI client not initialized. Please check API key and selected model (${modelName}).`,
 		);
 	}
 	if (!model) {
 		throw new Error(
-			`Gemini model (${modelName}) is not available after initialization attempt.`
+			`Gemini model (${modelName}) is not available after initialization attempt.`,
 		);
 	}
 
@@ -276,18 +276,18 @@ export async function* generateContentStream(
 		const truncatedContentsLog = _getTruncatedContentsLog(contents);
 		geminiLogger.log(
 			modelName,
-			`Sending stream request. Contents: "${truncatedContentsLog}"`
+			`Sending stream request. Contents: "${truncatedContentsLog}"`,
 		);
 		geminiLogger.log(
 			modelName,
-			`Using generationConfig: ${JSON.stringify(requestConfig)}`
+			`Using generationConfig: ${JSON.stringify(requestConfig)}`,
 		);
 		if (isMergeOperation) {
 			geminiLogger.log(modelName, `This is a merge operation.`);
 		}
 		geminiLogger.log(
 			modelName,
-			`[gemini.ts] generateContentStream using currentModelName: ${currentModelName}`
+			`[gemini.ts] generateContentStream using currentModelName: ${currentModelName}`,
 		);
 		const result = await model.generateContentStream({
 			contents: contents,
@@ -316,7 +316,7 @@ export async function* generateContentStream(
 		if (finalResponse.promptFeedback?.blockReason) {
 			const { blockReason, safetyRatings } = finalResponse.promptFeedback;
 			const message = `Gemini (${modelName}) request blocked. Reason: ${blockReason}. Ratings: ${JSON.stringify(
-				safetyRatings
+				safetyRatings,
 			)}`;
 			if (!contentYielded) {
 				geminiLogger.error(modelName, message);
@@ -335,12 +335,12 @@ export async function* generateContentStream(
 				finishReason !== "MAX_TOKENS"
 			) {
 				const message = `Gemini (${modelName}) stream finished unexpectedly. Reason: ${finishReason}. Ratings: ${JSON.stringify(
-					safetyRatings
+					safetyRatings,
 				)}`;
 				if (!contentYielded) {
 					geminiLogger.error(modelName, message);
 					throw new Error(
-						`Gemini stream stopped prematurely (reason: ${finishReason}).`
+						`Gemini stream stopped prematurely (reason: ${finishReason}).`,
 					);
 				} else {
 					geminiLogger.warn(modelName, `${message} (partially yielded)`);
@@ -349,7 +349,7 @@ export async function* generateContentStream(
 		} else if (!contentYielded && !finalResponse.promptFeedback?.blockReason) {
 			geminiLogger.warn(
 				modelName,
-				`Stream ended without yielding content or a block reason.`
+				`Stream ended without yielding content or a block reason.`,
 			);
 		}
 	} catch (error: any) {
@@ -372,18 +372,18 @@ export async function generateFunctionCall(
 	modelName: string,
 	contents: Content[],
 	tools: Tool[],
-	functionCallingMode?: FunctionCallingMode // Modified function signature
+	functionCallingMode?: FunctionCallingMode, // Modified function signature
 ): Promise<FunctionCall | null> {
 	geminiLogger.log(modelName, `Attempting to generate function call.`);
 
 	if (!initializeGenerativeAI(apiKey, modelName, tools)) {
 		throw new Error(
-			`Gemini AI client not initialized for function call generation. Please check API key, selected model (${modelName}), and tools.`
+			`Gemini AI client not initialized for function call generation. Please check API key, selected model (${modelName}), and tools.`,
 		);
 	}
 	if (!model) {
 		throw new Error(
-			`Gemini model (${modelName}) is not available after initialization attempt for function call.`
+			`Gemini model (${modelName}) is not available after initialization attempt for function call.`,
 		);
 	}
 
@@ -411,7 +411,7 @@ export async function generateFunctionCall(
 		}
 		geminiLogger.log(
 			modelName,
-			`[gemini.ts] generateFunctionCall using currentModelName: ${currentModelName}`
+			`[gemini.ts] generateFunctionCall using currentModelName: ${currentModelName}`,
 		);
 		const result = await model.generateContent(requestOptions); // Modified call
 		const response = result.response;
@@ -421,8 +421,8 @@ export async function generateFunctionCall(
 			geminiLogger.error(
 				modelName,
 				`Function call request blocked. Reason: ${blockReason}. Ratings: ${JSON.stringify(
-					safetyRatings
-				)}`
+					safetyRatings,
+				)}`,
 			);
 			throw new Error(`Request blocked by Gemini (reason: ${blockReason}).`);
 		}
@@ -434,14 +434,14 @@ export async function generateFunctionCall(
 			geminiLogger.log(
 				modelName,
 				`Successfully received function call:`,
-				functionCall
+				functionCall,
 			);
 			return functionCall;
 		} else {
 			geminiLogger.warn(
 				modelName,
 				`No function call found in the response. Full response:`,
-				response
+				response,
 			);
 			return null;
 		}
@@ -475,33 +475,33 @@ export function resetClient() {
 export async function countGeminiTokens(
 	apiKey: string,
 	modelName: string,
-	contents: Content[]
+	contents: Content[],
 ): Promise<number> {
 	// Ensure the generative AI client and model are initialized for the given key and model name.
 	// This function internally sets the global 'model' variable if needed.
 	if (!initializeGenerativeAI(apiKey, modelName)) {
 		throw new Error(
-			`Gemini AI client not initialized for token counting. Please check API key and selected model (${modelName}).`
+			`Gemini AI client not initialized for token counting. Please check API key and selected model (${modelName}).`,
 		);
 	}
 	if (!model) {
 		// This check is a safeguard, as initializeGenerativeAI should ensure 'model' is set upon success.
 		throw new Error(
-			`Gemini model (${modelName}) is not available after initialization attempt for token counting.`
+			`Gemini model (${modelName}) is not available after initialization attempt for token counting.`,
 		);
 	}
 
 	try {
 		geminiLogger.log(
 			modelName,
-			`[Gemini Token Counter] Requesting token count for model '${modelName}'...`
+			`[Gemini Token Counter] Requesting token count for model '${modelName}'...`,
 		);
 		const { totalTokens } = await model.countTokens({
 			contents: contents,
 		});
 		geminiLogger.log(
 			modelName,
-			`[Gemini Token Counter] Successfully counted ${totalTokens} tokens for model '${modelName}'.`
+			`[Gemini Token Counter] Successfully counted ${totalTokens} tokens for model '${modelName}'.`,
 		);
 		return totalTokens;
 	} catch (error) {

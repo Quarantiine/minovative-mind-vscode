@@ -18,6 +18,7 @@ import {
 	getLanguageId,
 } from "../utils/codeAnalysisUtils";
 import { LightweightClassificationService } from "../services/lightweightClassificationService";
+import { SearchReplaceService } from "../services/searchReplaceService";
 import { formatSuccessfulChangesForPrompt } from "../workflow/changeHistoryFormatter";
 import {
 	getEnhancedGenerationSystemInstruction,
@@ -50,6 +51,7 @@ export class EnhancedCodeGenerator {
 		private codeValidationService: CodeValidationService,
 		private contextRefresherService: ContextRefresherService,
 		private lightweightClassificationService: LightweightClassificationService,
+		private searchReplaceService: SearchReplaceService,
 	) {}
 
 	/**
@@ -341,10 +343,34 @@ export class EnhancedCodeGenerator {
 			const cleanedExtractedContent = cleanCodeOutput(extractedContent);
 
 			if (
-				cleanedExtractedContent.trim().length < 5 ||
-				(await this.lightweightClassificationService.checkIsError(
+				await this.lightweightClassificationService.checkIsError(
 					cleanedExtractedContent,
-				)) ||
+				)
+			) {
+				return {
+					isValid: false,
+					finalContent: cleanedExtractedContent,
+					issues: [
+						{
+							type: "other",
+							message:
+								"AI output was identified as an error or refusal to generate content.",
+							line: 1,
+							severity: "error",
+							code: "AI_REFUSAL_OR_ERROR",
+							source: "EnhancedCodeGenerator",
+						},
+					],
+					suggestions: [
+						"The AI might have hit a safety filter or failed to understand the request.",
+						"Try rephrasing your prompt or providing more specific context.",
+					],
+					actualPath: finalPath,
+				};
+			}
+
+			if (
+				cleanedExtractedContent.trim().length < 5 ||
 				cleanedExtractedContent.trim() === "/"
 			) {
 				return {
@@ -428,42 +454,81 @@ export class EnhancedCodeGenerator {
 			systemInstruction, // Pass systemInstruction
 		);
 
-		const modifiedContent = cleanCodeOutput(rawContent);
+		const cleanedContent = cleanCodeOutput(rawContent);
 
 		if (
-			modifiedContent.trim().length < 5 ||
-			(await this.lightweightClassificationService.checkIsError(
-				modifiedContent,
-			)) ||
-			modifiedContent.trim() === "/"
+			await this.lightweightClassificationService.checkIsError(cleanedContent)
 		) {
 			return {
-				content: modifiedContent, // Ensure modifiedContent is returned for debugging
+				content: cleanedContent,
 				validation: {
 					isValid: false,
-					finalContent: modifiedContent, // Return modifiedContent for debugging
+					finalContent: cleanedContent,
 					issues: [
 						{
 							type: "other",
-							message: `AI generated invalid or unexpectedly short content. Expected full file content.`,
+							message:
+								"AI output was identified as an error or refusal to modify content.",
 							line: 1,
 							severity: "error",
-							code: "AI_EMPTY_OR_MALFORMED_OUTPUT",
+							code: "AI_REFUSAL_OR_ERROR",
 							source: "EnhancedCodeGenerator",
 						},
 					],
 					suggestions: [
-						"Refine your prompt. The AI might be confused by the request or existing file context, especially when modifying a core validation file.",
-						"Ensure the AI is instructed to provide the full modified file content, not just a snippet or placeholder.",
+						"The AI might have hit a safety filter or failed to understand the request.",
+						"Try rephrasing your prompt or providing more specific context.",
 					],
 				},
 			};
 		}
 
+		let finalModifiedContent: string;
+		const blocks = this.searchReplaceService.parseBlocks(rawContent);
+
+		if (blocks.length > 0) {
+			try {
+				finalModifiedContent = this.searchReplaceService.applyBlocks(
+					currentContent,
+					blocks,
+				);
+			} catch (error: any) {
+				console.error(
+					`[EnhancedCodeGenerator] Failed to apply Search/Replace blocks: ${error.message}`,
+				);
+				throw new Error(`Failed to apply code changes: ${error.message}`);
+			}
+		} else {
+			if (cleanedContent.trim().length < 5 || cleanedContent.trim() === "/") {
+				return {
+					content: cleanedContent,
+					validation: {
+						isValid: false,
+						finalContent: cleanedContent,
+						issues: [
+							{
+								type: "other",
+								message: `AI generated invalid or unexpectedly short content. Expected full file content.`,
+								line: 1,
+								severity: "error",
+								code: "AI_EMPTY_OR_MALFORMED_OUTPUT",
+								source: "EnhancedCodeGenerator",
+							},
+						],
+						suggestions: [
+							"Refine your prompt. The AI might be confused by the request or existing file context.",
+							"Ensure the AI is instructed to provide the full modified file content, not just a snippet or placeholder.",
+						],
+					},
+				};
+			}
+			finalModifiedContent = cleanedContent;
+		}
+
 		const validation = await this._validateAndRefineModification(
 			filePath,
 			currentContent,
-			modifiedContent,
+			finalModifiedContent,
 			contextWithAnalysis,
 			modelName,
 			streamId,
@@ -487,7 +552,6 @@ export class EnhancedCodeGenerator {
 		token?: vscode.CancellationToken,
 		onCodeChunkCallback?: (chunk: string) => Promise<void> | void,
 	): Promise<CodeValidationResult> {
-		// Removed conditional logic for AI refinement based on diff analysis.
 		return this.codeValidationService.validateCode(filePath, modifiedContent);
 	}
 

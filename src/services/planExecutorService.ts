@@ -26,7 +26,6 @@ import { executeCommand, CommandResult } from "../utils/commandExecution";
 import * as sidebarConstants from "../sidebar/common/sidebarConstants";
 import { DiagnosticService } from "../utils/diagnosticUtils";
 import {
-	selectRelevantFilesAI,
 	SelectRelevantFilesAIOptions,
 	FileSelection,
 } from "../context/smartContextSelector";
@@ -884,38 +883,9 @@ export class PlanExecutorService {
 		let desiredContent: string | undefined = step.step.content;
 
 		if (step.step.generate_prompt) {
-			// Dynamic Context Selection (Context Agent)
-			const allScannedFiles =
-				await this.provider.contextService.scanWorkspaceFiles();
-			const selectionOptions: SelectRelevantFilesAIOptions = {
-				userRequest: `Context for creating file ${step.step.path}: ${step.step.generate_prompt}. This file does not exist yet. Please find OTHER relevant files in the codebase that this new file might depend on, such as utility functions, types, interfaces, or similar existing implementations to use as a reference.`,
-				chatHistory: [], // Minimal history for this specific sub-task
-				allScannedFiles: allScannedFiles,
-				projectRoot: rootUri,
-				activeEditorContext: context.editorContext,
-				aiRequestService: this.provider.aiRequestService,
-				modelName: this.provider.settingsManager.getSelectedModelName(),
-				postMessageToWebview: this.postMessageToWebview,
-				addContextAgentLogToHistory: (log) => {
-					/* Optional: propagate logs to main chat? */
-				},
-				cancellationToken: combinedToken,
-				selectionOptions: {
-					alwaysRunInvestigation: true, // Force investigation to find specific snippets if needed
-					useCache: false, // Request fresh context for this step
-				},
-			};
-
-			const selectedFiles = await selectRelevantFilesAI(selectionOptions);
-			const dynamicRelevantSnippets = await this._formatRelevantFilesForPrompt(
-				selectedFiles,
-				rootUri,
-				combinedToken,
-			);
-
 			const generationContext = {
 				projectContext: context.projectContext,
-				relevantSnippets: dynamicRelevantSnippets || relevantSnippets, // Use dynamic snippets if found, else fall back? Or combine? favoring dynamic for now.
+				relevantSnippets: relevantSnippets,
 				editorContext: context.editorContext,
 				activeSymbolInfo: undefined,
 			};
@@ -1118,44 +1088,7 @@ export class PlanExecutorService {
 			activeSymbolInfo: undefined,
 		};
 
-		// Dynamic Context Selection (Context Agent)
-		try {
-			const allScannedFiles =
-				await this.provider.contextService.scanWorkspaceFiles();
-			const selectionOptions: SelectRelevantFilesAIOptions = {
-				userRequest: `Context for modifying file ${step.step.path}: ${step.step.modification_prompt}. Use 'lookup_workspace_symbol' or 'run_terminal_command' to find definitions of any symbols (classes, functions, types) mentioned in the prompt and used in the code you are modifying, and find OTHER relevant files in the codebase that this new file might depend on, such as utility functions, types, interfaces, or similar existing implementations to use as a reference, so we have their full context.`,
-				chatHistory: [],
-				allScannedFiles: allScannedFiles,
-				projectRoot: rootUri,
-				activeEditorContext: context.editorContext,
-				aiRequestService: this.provider.aiRequestService,
-				modelName: this.provider.settingsManager.getSelectedModelName(),
-				postMessageToWebview: this.postMessageToWebview,
-				addContextAgentLogToHistory: (log) => {
-					/* Optional: propagate logs to main chat? */
-				},
-				cancellationToken: combinedToken,
-				selectionOptions: {
-					alwaysRunInvestigation: true,
-					useCache: false,
-				},
-			};
-
-			const selectedFiles = await selectRelevantFilesAI(selectionOptions);
-			const dynamicRelevantSnippets = await this._formatRelevantFilesForPrompt(
-				selectedFiles,
-				rootUri,
-				combinedToken,
-			);
-
-			if (dynamicRelevantSnippets) {
-				modificationContext.relevantSnippets = dynamicRelevantSnippets;
-			}
-		} catch (e: any) {
-			console.warn(
-				`[PlanExecutor] Failed to fetch dynamic context for step: ${e.message}. Using default.`,
-			);
-		}
+		// Dynamic Context Selection (Context Agent) removed
 
 		let modifiedResult: { content: string } | undefined;
 		let attempt = 0;

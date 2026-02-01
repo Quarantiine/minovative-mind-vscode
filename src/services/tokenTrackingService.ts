@@ -180,9 +180,6 @@ export class TokenTrackingService {
 	 * Get current token statistics
 	 */
 	public getTokenStatistics(): TokenStatistics {
-		console.log(
-			`[TokenTrackingService] getTokenStatistics: tokenUsageHistory.length = ${this.tokenUsageHistory.length}`,
-		);
 		if (this.tokenUsageHistory.length === 0) {
 			return {
 				totalInputTokens: 0,
@@ -263,11 +260,6 @@ export class TokenTrackingService {
 			existing.totalTokens += usage.totalTokens;
 			byModel.set(usage.modelName, existing);
 		}
-		console.log(
-			`[TokenTrackingService] getTokenStatistics: byModel.size = ${
-				byModel.size
-			}, byModel contents = ${JSON.stringify(Array.from(byModel.entries()))}`,
-		);
 
 		// Calculate model usage percentages
 		const modelUsagePercentages = new Map<string, number>();
@@ -287,11 +279,6 @@ export class TokenTrackingService {
 				modelUsagePercentages.set(modelName, 0);
 			}
 		}
-		console.log(
-			`[TokenTrackingService] getTokenStatistics: grandTotalModelTokens = ${grandTotalModelTokens}, modelUsagePercentages contents = ${JSON.stringify(
-				Array.from(modelUsagePercentages.entries()),
-			)}`,
-		);
 
 		return {
 			totalInputTokens,

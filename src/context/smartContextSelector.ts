@@ -807,7 +807,7 @@ ${investigationInstruction}
 						modelName,
 						currentHistory,
 						tools,
-						FunctionCallingMode.AUTO,
+						FunctionCallingMode.ANY,
 						cancellationToken,
 						"context_agent_turn",
 					);

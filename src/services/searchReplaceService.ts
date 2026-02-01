@@ -1,4 +1,4 @@
-import * as vscode from "vscode";
+import { ProjectChangeLogger } from "../workflow/ProjectChangeLogger";
 
 export interface SearchReplaceBlock {
 	search: string;
@@ -6,6 +6,8 @@ export interface SearchReplaceBlock {
 }
 
 export class SearchReplaceService {
+	constructor(private changeLogger?: ProjectChangeLogger) {}
+
 	/**
 	 * Parses the LLM output to extract search and replace blocks.
 	 * Expected format:
@@ -17,8 +19,9 @@ export class SearchReplaceService {
 	 */
 	public parseBlocks(llmOutput: string): SearchReplaceBlock[] {
 		const blocks: SearchReplaceBlock[] = [];
+		// Relaxed regex to be more permissive with whitespace and newlines
 		const regex =
-			/<<<<<<< SEARCH\n([\s\S]*?)\n=======\n([\s\S]*?)\n>>>>>>> REPLACE/g;
+			/<<<<<<<\s*SEARCH\s*\n([\s\S]*?)\n=======\s*\n([\s\S]*?)\n>>>>>>>\s*REPLACE/g;
 		let match;
 
 		while ((match = regex.exec(llmOutput)) !== null) {
@@ -29,6 +32,16 @@ export class SearchReplaceService {
 		}
 
 		return blocks;
+	}
+
+	/**
+	 * Validates if the output contains any potential marker artifacts that were not parsed.
+	 * Returns true if the output seems to contain potential unparsed markers.
+	 */
+	public hasUnparsedMarkers(llmOutput: string): boolean {
+		// stricter check for markers that might have been missed by the main regex
+		// checking for the presence of the start marker keyword
+		return llmOutput.includes("<<<<<<< SEARCH");
 	}
 
 	/**
@@ -63,9 +76,11 @@ export class SearchReplaceService {
 				const firstIndex = newContent.indexOf(block.search);
 				const secondIndex = newContent.indexOf(block.search, firstIndex + 1);
 				if (secondIndex !== -1) {
-					throw new Error(
-						`Ambiguous match for SEARCH block: found multiple occurrences.\nBlock:\n${block.search}`,
-					);
+					const errorMsg = `Ambiguous match for SEARCH block (Exact Match): found multiple occurrences.\nBlock:\n${block.search}`;
+					if (this.changeLogger) {
+						console.error(`[SearchReplaceService] ${errorMsg}`);
+					}
+					throw new Error(errorMsg);
 				}
 				newContent = newContent.replace(block.search, block.replace);
 				continue;
@@ -76,13 +91,25 @@ export class SearchReplaceService {
 			const lines = newContent.split("\n");
 			const searchLines = block.search.split("\n");
 
-			const matchIndex = this.findFuzzyMatch(lines, searchLines);
+			const matchIndices = this.findFuzzyMatch(lines, searchLines);
 
-			if (matchIndex === -1) {
-				throw new Error(
-					`SEARCH block not found in file.\nBlock:\n${block.search}`,
-				);
+			if (matchIndices.length === 0) {
+				const errorMsg = `SEARCH block not found in file using fuzzy matching.\nBlock:\n${block.search}`;
+				if (this.changeLogger) {
+					console.error(`[SearchReplaceService] ${errorMsg}`);
+				}
+				throw new Error(errorMsg);
 			}
+
+			if (matchIndices.length > 1) {
+				const errorMsg = `Ambiguous match for SEARCH block (Fuzzy Match): found ${matchIndices.length} potential locations.\nBlock:\n${block.search}`;
+				if (this.changeLogger) {
+					console.error(`[SearchReplaceService] ${errorMsg}`);
+				}
+				throw new Error(errorMsg);
+			}
+
+			const matchIndex = matchIndices[0];
 
 			// Replace lines
 			// We need to reconstruct the content with the replacement
@@ -109,12 +136,10 @@ export class SearchReplaceService {
 		return newContent;
 	}
 
-	private findFuzzyMatch(fileLines: string[], searchLines: string[]): number {
+	private findFuzzyMatch(fileLines: string[], searchLines: string[]): number[] {
 		// Simple sliding window
-		// Returns the start index in fileLines
-
-		// Filter out empty search lines at start/end to avoid trivial mismatches?
-		// Actually, usually strict is better, but maybe trim lines.
+		// Returns all start indices in fileLines where a match occurs
+		const matches: number[] = [];
 
 		for (let i = 0; i <= fileLines.length - searchLines.length; i++) {
 			let match = true;
@@ -125,11 +150,9 @@ export class SearchReplaceService {
 				}
 			}
 			if (match) {
-				// Check if it's unique? For now just return first.
-				// Ideally we should check for uniqueness too.
-				return i;
+				matches.push(i);
 			}
 		}
-		return -1;
+		return matches;
 	}
 }

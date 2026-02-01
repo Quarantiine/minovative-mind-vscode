@@ -76,8 +76,8 @@ export async function applyAITextEdits(
 		} else {
 			// Insertion or Replacement
 			const text = edit.newText;
-			const chunkSize = 15; // char chunk size
-			const delay = 15; // ms delay
+			const chunkSize = 20; // char chunk size
+			const delay = 0; // ms delay
 
 			let insertPos = edit.range.start;
 
@@ -132,6 +132,6 @@ export async function applyAITextEdits(
 		setTimeout(() => {
 			editor.setDecorations(flashDecorationType, []);
 			flashDecorationType.dispose();
-		}, 20000);
+		}, 30000);
 	}
 }
