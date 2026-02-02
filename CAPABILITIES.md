@@ -5,8 +5,8 @@ Minovative Mind is a powerful AI-augmented Visual Studio Code extension that int
 ## 🚀 Core Functionalities at a Glance
 
 - **Intelligent AI Chat Interface**: Multimodal interaction, context-aware Q&A, and rich file interactions.
-- **Autonomous AI Workflows**: AI-driven planning, execution of multi-step tasks, and intelligent code modification.
-- **Project Context & Intelligence**: Deep codebase analysis, dependency graphing, semantic relevance scoring, and efficient context management.
+- **Autonomous AI Workflows**: AI-driven planning, execution of multi-step tasks, intelligent code modification, and **Autonomous Self-Correction**.
+- **Project Context & Intelligence**: Deep codebase analysis, dependency graphing, semantic relevance scoring, **Progressive Discovery** for large projects, and **Intent-Aware Context** classification.
 - **Reliability, Control & Performance**: Centralized concurrency, secure filesystem operations, reversible changes, and optimized resource handling.
 - **Flexible Customization**: API key management, model selection, and granular context filtering.
 
@@ -50,6 +50,7 @@ Minovative Mind can autonomously plan and execute complex development tasks, sig
 - **Intelligent Command Escalation**: Commands like `/fix` or general code edits can automatically escalate to a full plan execution when task complexity warrants it.
 - **Dynamic Context Refinement**: Unlike static plans, the AI re-evaluates project context _before every single step_. It investigates the codebase and reads only the specific lines of code needed for that step (e.g., "read lines 50-100 of auth.ts"), ensuring maximum accuracy and minimal token usage.
 - **Confirmation & Monitoring**: You'll be prompted for confirmation before a plan executes, and you can monitor its progress, with options to cancel specific ongoing tasks.
+- **Autonomous Self-Correction**: Automatically detects and repairs issues introduced during code generation or modification. It monitors diagnostics, identifies errors, and proactively generates repair plans without manual intervention.
 
 ### 2.2 Intelligent Code Modification
 
@@ -97,8 +98,9 @@ Minovative Mind builds a profound understanding of your project using comprehens
 
 ### 3.4 Agentic Context Investigation
 
-- **Active Codebase Exploration**: The Context Agent proactively "looks around" your codebase using high-performance, cost-effective models (**Gemini Flash Lite**) and safe terminal commands (`ls`, `grep`, `find`, `cat`) to discover relevant files that static analysis might miss.
-- **Progressive Discovery**: For large repositories, the agent starts with a highly efficient, truncated view of the project structure and discovers files on-demand, reducing initial context token usage by up to 90%.
+- **Active Codebase Exploration**: The Context Agent proactively "looks around" your codebase using high-performance, cost-effective models (**Gemini Flash Lite**) and safe terminal commands (`ls`, `grep`, `find`, `cat`, `sed`, `head`, `tail`, `wc`, `file`) to discover relevant files that static analysis might miss.
+- **Progressive Discovery**: For large repositories, the agent starts with a highly efficient, truncated view of the project structure and discovers files on-demand using **Progressive Discovery**, reducing initial context token usage by up to 90%.
+- **Intent-Aware Context**: Automatically classifies the user's intent (e.g., bug fixing vs. general query) to prioritize the most relevant diagnostic or symbol information for the context.
 - **AI-Driven Error Investigation**: Automatically detects when you're asking about errors or bugs using intelligent intent classification and proactively investigates error messages, stack traces, and relevant code paths before generating a response.
 - **Safe Execution Environment**: All investigation commands are executed in a secure, read-only sandbox that prevents modification or external network access.
 - **Transparent Operation**: You see exactly what the agent is doing—every command run and its output is logged transparently in the chat interface.

@@ -13,7 +13,7 @@ A deeper analysis of the file structure, class responsibilities, and how differe
 ### Context Management (Project Understanding)
 
 - **Responsibility**: Gathers, processes, and synthesizes all relevant contextual data from the user's project and external sources to provide AI models with a deep and accurate understanding of the codebase and task at hand.
-- **Uses AI**: Yes (for smart context selection and sequential context processing/summarization, utilizing **Gemini Flash Lite** for the active investigation loops)
+- **Uses AI**: Yes (for smart context selection and sequential context processing/summarization, utilizing **Gemini Flash Lite** for the active investigation loops and **Progressive Discovery** for large projects)
 
 #### 1. Workspace File Scanning
 
@@ -73,11 +73,11 @@ This system ensures that diagnostic information, particularly 'Information' and 
 - **Responsibility**: Enables the AI to actively explore and investigate the codebase using safe terminal commands during the context gathering phase, rather than relying solely on static file lists and summaries.
 - **Key Features**:
   - **Reasoning Loop**: The `selectRelevantFilesAI` function in `smartContextSelector.ts` implements a multi-turn agentic loop. The AI (utilizing **Gemini Flash Lite**) is given a `run_terminal_command` tool and can iteratively run commands, observe outputs, and refine its understanding before making a final file selection with `finish_selection`.
-  - **Safe Command Execution**: The `SafeCommandExecutor` class (`src/context/safeCommandExecutor.ts`) enforces strict security by allowlisting only read-only commands (`ls`, `grep`, `find`, `cat`, `git grep`) and blocking dangerous operations like chaining (`&&`, `|`) or redirection.
+  - **Safe Command Execution**: The `SafeCommandExecutor` class (`src/context/safeCommandExecutor.ts`) enforces strict security by allowlisting only read-only commands (`ls`, `grep`, `find`, `cat`, `git grep`, `sed`, `head`, `tail`, `wc`, `file`) and blocking dangerous operations like chaining (`&&`, `|`) or redirection.
   - **Error-Aware Investigation**: When the user's request contains error-related keywords ("error", "bug", "fix"), the AI is prompted to prioritize investigation commands and actively search for relevant code paths using diagnostics and stack traces.
   - **Transparent Logging**: Every command executed by the Context Agent and its output is logged to the chat interface, providing full transparency to the user.
-  - **Progressive Context Discovery**: For larger projects (>10 files), the agent receives a truncated "Optimized View" of the project structure (top-level folders only) and is explicitly instructed to use tools to discover files. This mimics a human developer's exploration process and significantly reduces token usage.
-- **Key Files**: `src/context/smartContextSelector.ts`, `src/context/safeCommandExecutor.ts`
+  - **Progressive Context Discovery**: For larger projects (>10 files), the agent receives a truncated "Optimized View" of the project structure (top-level folders only) and is explicitly instructed to use tools to discover files. This **Progressive Discovery** strategy mimics a human developer's exploration process and significantly reduces token usage by up to 90% for large repositories.
+- **Key Files**: `src/context/smartContextSelector.ts`, `src/context/safeCommandExecutor.ts`, `src/services/lightweightClassificationService.ts`
 
 #### 5. URL Context Retrieval
 
@@ -97,8 +97,8 @@ This system ensures that diagnostic information, particularly 'Information' and 
 - **Enhanced `initializeGenerativeAI` Logic**: Leverages `systemInstruction` (`MINO_SYSTEM_INSTRUCTION`) for consistent AI persona and tracks `currentToolsHash` for optimization.
 - **Robust Streaming (`generateContentStream`)**: Provides `AsyncIterableIterator` for real-time responses, integrates `CancellationToken` support, and includes comprehensive error handling.
 - **Function Call Generation (`generateFunctionCall`)**: Enables the AI to generate structured function calls based on `tools`, supporting `FunctionCallingMode` for fine-grained control.
-- **API Key Management**: The `ApiKeyManager` class is now responsible for managing API key storage, retrieval, and the selection of the currently active key. It utilizes `vscode.SecretStorage` for securely storing multiple API keys in a JSON format. The `initializeGenerativeAI` function in `gemini.ts` obtains the currently active API key from `ApiKeyManager` before initializing the Gemini client.
-- **Key Files**: `src/ai/gemini.ts`, `src/ai/prompts/systemInstructions.ts`
+- **Lightweight Classification Service**: Performs rapid, cost-effective checks for rewrite intent and error messages using the **Flash Lite** model. This reduces reliance on slower, context-heavy operations during initial generation checks.
+- **Key Files**: `src/ai/gemini.ts`, `src/ai/prompts/systemInstructions.ts`, `src/services/lightweightClassificationService.ts`
 
 #### 2. AI Request Orchestration & Robustness
 
@@ -126,7 +126,7 @@ This system ensures that diagnostic information, particularly 'Information' and 
   - **Task-Specific Prompt Generation**: `src/ai/enhancedCodeGeneration.ts` (for code generation/modification), `src/services/sequentialFileProcessor.ts` (for file summarization).
   - **Workflow Planning Prompts**: `src/services/planService.ts` (e.g., `createInitialPlanningExplanationPrompt`, `createPlanningPrompt`).
   - **AI Request Interface**: `src/services/aiRequestService.ts` (primary interface for sending prepared prompt content as `HistoryEntryPart` arrays).
-- **Key Files**: `src/ai/prompts/`, `src/ai/enhancedCodeGeneration.ts`, `src/services/sequentialFileProcessor.ts`, `src/services/planService.ts`, `src/services/aiRequestService.ts`
+- **Key Files**: `src/ai/prompts/`, `src/ai/enhancedCodeGeneration.ts`, `src/services/sequentialFileProcessor.ts`, `src/services/planService.ts`, `src/services/aiRequestService.ts`, `src/services/lightweightClassificationService.ts`
 
 #### 5. AI Code Quality Assurance
 
@@ -211,9 +211,11 @@ The assembled payload (both the current turn and the previous history) must be t
 - **Model Usage Distinction**: Dynamically retrieves model names, using `DEFAULT_FLASH_LITE_MODEL` for initial textual plans and optimized models for function calling.
 - **Enhanced Execution Modularity (PlanExecutorService)**: This service optimizes execution ordering and resource management. Terminal cleanup (`_disposeExecutionTerminals`) is now guaranteed by being called in a `finally` block.
 - **Dynamic Context Refinement**: For each execution step (`create_file`, `modify_file`), the service now invokes the **Context Agent** (`selectRelevantFilesAI`) to dynamically discover and select relevant files based on the specific step instruction.
-- **Partial File Intelligence**: The system supports reading only relevant **line ranges** (e.g., `interface definition`) instead of full files.
-- **Search & Replace Application**: `PlanExecutorService` integrates with `SearchReplaceService` to intercept AI modification outputs. If Search/Replace blocks are detected, it applies them using fuzzy matching; otherwise, it falls back to full file rewrites for backward compatibility.
-- **Key Files**: `src/services/planService.ts` (`PlanService` class), `src/ai/workflowPlanner.ts`, `src/services/aiRequestService.ts`, `src/ai/enhancedCodeGeneration.ts`, `src/utils/commandExecution.ts`, `src/workflow/ProjectChangeLogger.ts`, `src/services/RevertService.ts`, `src/services/planExecutorService.ts`
+- **Self-Correction Workflow**: Implemented a dedicated cycle to automatically detect and repair issues in recently modified files. This includes collecting diagnostics from affected files, preparing a correction strategy with the AI, and generating a new structured plan for repair.
+- **Diagnostic Feedback Loop**: Utilizes `warmUpDiagnostics` to programmatically trigger language server scans on modified files and wait for stability. The resulting diagnostics are then fed back into the AI to verify the success of the changes or drive self-correction.
+- **Search & Replace Application**: `PlanExecutorService` integrates with `SearchReplaceService` to intercept AI modification outputs. If Search/Replace blocks (`<<<<<<< SEARCH ... >>>>>>> REPLACE`) are detected, it applies them using fuzzy matching; otherwise, it falls back to full file rewrites for backward compatibility.
+- **Partial File Intelligence**: The system supports reading only relevant **line ranges** (e.g., `interface definition`) or symbols instead of full files.
+- **Key Files**: `src/services/planService.ts` (`PlanService` class), `src/ai/workflowPlanner.ts`, `src/services/aiRequestService.ts`, `src/ai/enhancedCodeGeneration.ts`, `src/utils/commandExecution.ts`, `src/workflow/ProjectChangeLogger.ts`, `src/services/RevertService.ts`, `src/services/planExecutorService.ts`, `src/services/searchReplaceService.ts`
 
 #### 3. Project Change Logging
 

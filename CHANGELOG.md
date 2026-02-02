@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.49.0] - February 1, 2026
+
+### Autonomous Self-Correction and Diagnostic Feedback
+
+Introduced a structured self-correction workflow and a diagnostic feedback loop to enhance the reliability of AI-driven plans and code generation.
+
+- **Structured Self-Correction**: Implemented a dedicated agentic cycle to automatically detect, investigate, and repair issues introduced during plan execution.
+- **Diagnostic Feedback Loop**: Integrated `warmUpDiagnostics` to programmatically trigger language server scans after modifications, feeding the results back into the AI for verification and repair.
+- **Search/Replace Integration**: Migrated code modification flows to use surgical Search/Replace blocks (`<<<<<<< SEARCH ... >>>>>>> REPLACE`) for faster, more token-efficient, and less error-prone updates.
+- **Enhanced Context Tools**: Whitelisted `sed`, `head`, `tail`, `wc`, and `file` for the Context Agent, enabling high-performance file inspection without reading full contents.
+- **Improved Token Statistics**: Updated the sidebar to display failed request counts and model-specific usage percentages for better transparency.
+
 ## [2.48.0] - January 30, 2026
 
 ### Context Optimization and Progressive Discovery
