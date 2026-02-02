@@ -802,6 +802,24 @@ export function initializeMessageBusHandler(
 				break;
 			}
 
+			case "triggerStructuredPlanFromCorrection": {
+				console.log("[Webview] Received triggerStructuredPlanFromCorrection.");
+				hideAllConfirmationAndReviewUIs(elements);
+				updateStatus(
+					elements,
+					"Converting strategy to executable plan...",
+					false,
+					true,
+				);
+				setLoadingState(true, elements);
+				postMessageToExtension({
+					type: "executeStructuredCorrectionPlan",
+					context: message.context,
+					summaryOfLastChanges: message.summaryOfLastChanges,
+				});
+				break;
+			}
+
 			case "commitReview": {
 				console.log("Received commitReview message:", message.value);
 				if (

@@ -79,6 +79,25 @@ export class SafeCommandExecutor {
 							return;
 						}
 
+						// Handle exit code 1 for grep/diff/git -- these usually mean "no matches" or "found differences"
+						// rather than a system error. We should return the stdout (or empty string) so the agent
+						// knows it ran successfully but found nothing/something different.
+						if (error.code === 1) {
+							// Check if command is one where code 1 is valid
+							// matches: grep, egrep, fgrep, diff, git grep (part of git)
+							// We check for word boundaries to avoid matching "agrep" if we didn't mean to,
+							// though "agrep" also probably follows this.
+							// Simple heuristic: if command *contains* "grep" or "diff" as a whole word.
+							if (
+								/\bgrep\b/.test(command) ||
+								/\bdiff\b/.test(command) ||
+								/\bcmp\b/.test(command)
+							) {
+								resolve(stdout || "");
+								return;
+							}
+						}
+
 						reject(new Error(stderr || error.message));
 						return;
 					}

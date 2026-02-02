@@ -395,6 +395,9 @@ export class SequentialContextService {
 			undefined, // No semantic graph
 			undefined, // No cancellation token
 			heuristicOptions, // Pass heuristicOptions as options parameter
+			this.aiRequestService,
+			userRequest,
+			modelName,
 		);
 
 		// If we have a reasonable number of files, use AI to refine the selection

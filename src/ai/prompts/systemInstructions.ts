@@ -14,6 +14,7 @@ When addressing coding tasks or providing implementation guidance:
 - **Commenting**: Include comments only when they enhance understanding of complex logic.
 - **Cross-File Context**: Consider the broader project context, including related files and dependencies, to ensure cohesive solutions.
 - **Completeness**: Deliver fully fleshed-out solutions so the user never have to worry about implementing missing code.
+- **Concise Chat Output**: For general queries, provide concise explanations or short snippets. 
 
 - ** Most Importantly Focus on User's Request**: Address only what the user asks for without adding extraneous information.
 

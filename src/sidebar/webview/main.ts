@@ -54,7 +54,7 @@ function toggleTokenUsageDisplay(elements: RequiredDomElements): void {
  */
 export function syncHeuristicContextState(
 	isEnabled: boolean,
-	elements: RequiredDomElements
+	elements: RequiredDomElements,
 ): void {
 	// 1. Update app state
 	appState.isHeuristicContextEnabled = isEnabled;
@@ -82,12 +82,12 @@ export function syncHeuristicContextState(
  */
 export function handleOptimizationSettingsUpdate(
 	message: { value: { heuristicSelectionEnabled: boolean } },
-	elements: RequiredDomElements
+	elements: RequiredDomElements,
 ): void {
 	if (typeof message.value.heuristicSelectionEnabled === "boolean") {
 		syncHeuristicContextState(
 			message.value.heuristicSelectionEnabled,
-			elements
+			elements,
 		);
 	}
 }
@@ -120,10 +120,10 @@ function toggleHeuristicContextDisplay(elements: RequiredDomElements): void {
  */
 function setLoadingState(
 	loading: boolean,
-	elements: RequiredDomElements
+	elements: RequiredDomElements,
 ): void {
 	console.log(
-		`[setLoadingState] Call: loading=${loading}, current isLoading=${appState.isLoading}, current isApiKeySet=${appState.isApiKeySet}, current isCommandSuggestionsVisible=${appState.isCommandSuggestionsVisible}`
+		`[setLoadingState] Call: loading=${loading}, current isLoading=${appState.isLoading}, current isApiKeySet=${appState.isApiKeySet}, current isCommandSuggestionsVisible=${appState.isCommandSuggestionsVisible}`,
 	);
 	appState.isLoading = loading;
 	const loadingMsg = elements.chatContainer.querySelector(".loading-message");
@@ -167,7 +167,7 @@ function setLoadingState(
 	const canToggleHeuristicButton = !isBlockedByOperation;
 
 	console.log(
-		`[setLoadingState] Final computed canInteractWithMainChatControls=${canInteractWithMainChatControls}, canSendCurrentInput=${canSendCurrentInput}, canInteractWithChatHistoryButtons=${canInteractWithChatHistoryButtons}`
+		`[setLoadingState] Final computed canInteractWithMainChatControls=${canInteractWithMainChatControls}, canSendCurrentInput=${canSendCurrentInput}, canInteractWithChatHistoryButtons=${canInteractWithChatHistoryButtons}`,
 	);
 
 	// Apply disabled states to main chat interface elements
@@ -183,11 +183,11 @@ function setLoadingState(
 	const isHeuristicEnabled = appState.isHeuristicContextEnabled;
 	elements.heuristicContextToggle.classList.toggle(
 		"active",
-		isHeuristicEnabled
+		isHeuristicEnabled,
 	);
 	elements.heuristicContextToggle.classList.toggle(
 		"inactive",
-		!isHeuristicEnabled
+		!isHeuristicEnabled,
 	);
 
 	// Apply disabled states to API key management controls
@@ -265,13 +265,13 @@ function setLoadingState(
 			: "none";
 
 	console.log(
-		`[setLoadingState] Status: loading=${loading}, planConfVis=${planConfirmationVisible}, planParseErrVis=${planParseErrorVisible}, commitRevVis=${commitReviewVisible}`
+		`[setLoadingState] Status: loading=${loading}, planConfVis=${planConfirmationVisible}, planParseErrVis=${planParseErrorVisible}, commitRevVis=${commitReviewVisible}`,
 	);
 	console.log(
-		`[setLoadingState] Chat: childCount=${elements.chatContainer.childElementCount}, hasMessages=${hasMessages}`
+		`[setLoadingState] Chat: childCount=${elements.chatContainer.childElementCount}, hasMessages=${hasMessages}`,
 	);
 	console.log(
-		`[setLoadingState] Buttons: saveDisabled=${elements.saveChatButton.disabled}, clearDisabled=${elements.clearChatButton.disabled}`
+		`[setLoadingState] Buttons: saveDisabled=${elements.saveChatButton.disabled}, clearDisabled=${elements.clearChatButton.disabled}`,
 	);
 
 	// Disable message action buttons if loading
@@ -297,55 +297,64 @@ function setLoadingState(
 		elements.revertChangesButton.style.display = "none";
 	}
 
-	// Hide confirmation/error/review UIs if a new loading operation starts
-	if (loading && planConfirmationVisible && !appState.isAwaitingUserReview) {
-		if (elements.planConfirmationContainer) {
-			elements.planConfirmationContainer.style.display = "none";
+	// Hide confirmation/error/review UIs if a new loading operation starts.
+	// We check for 'loading' being true to ensure that any pending user-review state
+	// is cleared when a new operation (including self-correction) begins.
+	if (loading) {
+		// If a new loading operation starts, ensure we are no longer in an awaiting review state
+		if (appState.isAwaitingUserReview) {
+			appState.isAwaitingUserReview = false;
 		}
-		appState.pendingPlanData = null; // Clear pending plan data if a new request starts
-		updateStatus(
-			elements,
-			"New request initiated, pending plan confirmation cancelled.",
-			false
-		);
-	}
 
-	if (loading && planParseErrorVisible && !appState.isAwaitingUserReview) {
-		elements.planParseErrorContainer.style.display = "none";
-		if (elements.planParseErrorDisplay) {
-			elements.planParseErrorDisplay.textContent = "";
+		if (planConfirmationVisible) {
+			if (elements.planConfirmationContainer) {
+				elements.planConfirmationContainer.style.display = "none";
+			}
+			appState.pendingPlanData = null;
+			updateStatus(
+				elements,
+				"New request initiated, pending plan confirmation cancelled.",
+				false,
+				false,
+			);
 		}
-		if (elements.failedJsonDisplay) {
-			elements.failedJsonDisplay.textContent = "";
+
+		if (planParseErrorVisible) {
+			elements.planParseErrorContainer.style.display = "none";
+			if (elements.planParseErrorDisplay)
+				elements.planParseErrorDisplay.textContent = "";
+			if (elements.failedJsonDisplay)
+				elements.failedJsonDisplay.textContent = "";
+			updateStatus(
+				elements,
+				"New request initiated, parse error UI hidden.",
+				false,
+				false,
+			);
 		}
-		updateStatus(
-			elements,
-			"New request initiated, parse error UI hidden.",
-			false
-		);
-	}
-	if (loading && commitReviewVisible && !appState.isAwaitingUserReview) {
-		elements.commitReviewContainer.style.display = "none";
-		updateStatus(
-			elements,
-			"New request initiated, commit review UI hidden.",
-			false
-		);
-	}
-	// Add conditional block to hide clear chat confirmation UI
-	if (
-		loading &&
-		chatClearConfirmationVisible &&
-		!appState.isAwaitingUserReview
-	) {
-		if (elements.chatClearConfirmationContainer) {
-			elements.chatClearConfirmationContainer.style.display = "none";
+
+		if (commitReviewVisible) {
+			elements.commitReviewContainer.style.display = "none";
+			updateStatus(
+				elements,
+				"New request initiated, commit review UI hidden.",
+				false,
+				false,
+			);
 		}
-		updateStatus(
-			elements,
-			"New request initiated, clear chat confirmation UI hidden.",
-			false
-		);
+
+		// Hide clear chat confirmation UI if visible during a new loading start
+		if (chatClearConfirmationVisible) {
+			if (elements.chatClearConfirmationContainer) {
+				elements.chatClearConfirmationContainer.style.display = "none";
+			}
+			updateStatus(
+				elements,
+				"New request initiated, clear chat confirmation UI hidden.",
+				false,
+				false,
+			);
+		}
 	}
 
 	// Update empty chat placeholder visibility only when not loading
@@ -366,7 +375,7 @@ function setLoadingState(
 export function handleAiResponseEndUI(
 	message: any,
 	elements: RequiredDomElements,
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	// a. Call finalizeStreamingMessage unconditionally
 	finalizeStreamingMessage(elements);
@@ -374,7 +383,7 @@ export function handleAiResponseEndUI(
 	// b. Check if the message relates to the active operation
 	if (message.operationId === appState.currentActiveOperationId) {
 		console.log(
-			`[handleAiResponseEndUI] Matching operation ID (${message.operationId}) found. Restoring UI.`
+			`[handleAiResponseEndUI] Matching operation ID (${message.operationId}) found. Restoring UI.`,
 		);
 
 		// c. If they match: restore UI state
@@ -389,13 +398,13 @@ export function handleAiResponseEndUI(
 			reenableAllMessageActionButtons(elements);
 		}
 
-		updateStatus(elements, statusText, !isSuccess);
+		updateStatus(elements, statusText, !isSuccess, false);
 		appState.currentActiveOperationId = null;
 		setLoadingState(false, elements);
 	} else {
 		// d. If they mismatch: log and skip UI action
 		console.log(
-			`[handleAiResponseEndUI] Operation ID mismatch. Skipped UI restoration. Message ID: ${message.operationId}, Active ID: ${appState.currentActiveOperationId}`
+			`[handleAiResponseEndUI] Operation ID mismatch. Skipped UI restoration. Message ID: ${message.operationId}, Active ID: ${appState.currentActiveOperationId}`,
 		);
 	}
 }
@@ -408,7 +417,7 @@ function initializeWebview(): void {
 	const elements = initializeDomElements();
 	if (!elements) {
 		console.error(
-			"Critical DOM elements not found. Exiting webview initialization."
+			"Critical DOM elements not found. Exiting webview initialization.",
 		);
 		// Error message to the user is handled within initializeDomElements.
 		return;
@@ -474,7 +483,7 @@ function initializeWebview(): void {
 		elements,
 		postMessageToExtension,
 		updateStatus,
-		setLoadingState
+		setLoadingState,
 	);
 	// Add call to createClearChatConfirmationUI
 	createClearChatConfirmationUI(elements, postMessageToExtension);

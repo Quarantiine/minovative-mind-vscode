@@ -9,7 +9,7 @@ import { ProjectChangeLogger } from "../../workflow/ProjectChangeLogger";
 import { generateFileChangeSummary } from "../../utils/diffingUtils";
 import { FileChangeEntry } from "../../types/workflow";
 import { ExtensionToWebviewMessages } from "../../sidebar/common/sidebarTypes";
-import { DEFAULT_FLASH_MODEL } from "../common/sidebarConstants";
+import { DEFAULT_FLASH_LITE_MODEL } from "../common/sidebarConstants";
 import { getLanguageId } from "../../utils/codeAnalysisUtils";
 import {
 	EnhancedGenerationContext,
@@ -882,7 +882,7 @@ Return the new plan as a JSON array of PlanStep objects. If no further action is
 
 		const modelName: string = vscode.workspace
 			.getConfiguration("minovativeMind")
-			.get("modelName", DEFAULT_FLASH_MODEL);
+			.get("modelName", DEFAULT_FLASH_LITE_MODEL); // Use the default model for sequential processing
 
 		const modifiedFiles = new Set<string>();
 
@@ -1058,7 +1058,7 @@ Return the new plan as a JSON array of PlanStep objects. If no further action is
 
 		const modelName: string = vscode.workspace
 			.getConfiguration("minovativeMind")
-			.get("modelName", DEFAULT_FLASH_MODEL);
+			.get("modelName", DEFAULT_FLASH_LITE_MODEL); // Use the default model for sequential processing
 
 		try {
 			switch (step.action) {

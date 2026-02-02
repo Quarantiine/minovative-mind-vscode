@@ -132,6 +132,14 @@ const commitReviewSchema = z.object({
 	}),
 }); // Based on usage
 
+const executeStructuredCorrectionPlanSchema = z.object({
+	type: z.literal("executeStructuredCorrectionPlan"),
+	value: z.object({
+		context: z.any(), // Matches PlanGenerationContext structure
+		summaryOfLastChanges: z.string(),
+	}),
+});
+
 const requestWorkspaceFilesSchema = z.object({
 	type: z.literal("requestWorkspaceFiles"),
 });
@@ -211,6 +219,7 @@ export const allMessageSchemas = z.discriminatedUnion("type", [
 	aiResponseEndSchema,
 	structuredPlanParseFailedSchema,
 	commitReviewSchema,
+	executeStructuredCorrectionPlanSchema,
 	operationCancelledConfirmationSchema, // Integrated new schema here
 	requestWorkspaceFilesSchema, // Added here, before the final schema
 	newFeatureRequestSchema,

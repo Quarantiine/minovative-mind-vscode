@@ -111,6 +111,11 @@ export class PlanExecutorService {
 		this.provider.currentExecutionOutcome = undefined;
 		this.provider.activeChildProcesses = [];
 
+		// Capture the operation ID at the start of execution.
+		// We use this to ensure we don't accidentally close a NEW operation (like a self-correction)
+		// if one started while we were finishing up or erroring out.
+		const originalOperationId = this.provider.currentActiveChatOperationId;
+
 		const rootUri = this.workspaceRootUri;
 
 		this.postMessageToWebview({
@@ -157,7 +162,7 @@ export class PlanExecutorService {
 								? (planContext.originalUserRequest ?? "")
 								: planContext.editorContext!.instruction;
 
-						await this._executePlanSteps(
+						const affectedUris = await this._executePlanSteps(
 							orderedSteps, // Pass all steps
 							rootUri,
 							planContext,
@@ -165,6 +170,18 @@ export class PlanExecutorService {
 							progress,
 							originalRootInstruction,
 						);
+
+						// Diagnostic Warm-up: Programmatically touch modified files and wait for LS
+						if (
+							affectedUris.size > 0 &&
+							!combinedToken.isCancellationRequested
+						) {
+							this.postMessageToWebview({
+								type: "statusUpdate",
+								value: `Finalizing: Waiting for diagnostics to stabilize...`,
+							});
+							await this._warmUpDiagnostics(affectedUris, combinedToken);
+						}
 
 						if (!combinedToken.isCancellationRequested) {
 							this.provider.currentExecutionOutcome = "success";
@@ -225,9 +242,23 @@ export class PlanExecutorService {
 			this.provider.currentPlanSteps = [];
 			this.provider.currentPlanStepIndex = -1;
 
-			await this.provider.endUserOperation(outcome);
+			// Check if the current operation ID matches the one we started with.
+			// If it has changed (e.g., because self-correction started and set a new ID),
+			// we must NOT clobber the state or call endUserOperation, as that would
+			// incorrectly reset the UI while the correction is running.
+			const isOperationSuperseded =
+				this.provider.currentActiveChatOperationId !== originalOperationId;
+
+			if (!isOperationSuperseded) {
+				await this.provider.endUserOperation(outcome);
+			} else {
+				console.log(
+					`[PlanExecutorService] Skipping endUserOperation because operation ID changed (Original: ${originalOperationId}, Current: ${this.provider.currentActiveChatOperationId}). Assumption: Self-correction triggered.`,
+				);
+			}
 
 			let planSummary: string;
+
 			const baseDescription = plan.planDescription || "AI Plan Execution";
 			if (outcome === "success") {
 				planSummary = baseDescription;
@@ -968,6 +999,7 @@ export class PlanExecutorService {
 					combinedToken,
 				);
 				const newContentAfterApply = editor.document.getText();
+				await editor.document.save();
 
 				const { formattedDiff, summary } = await generateFileChangeSummary(
 					existingContent,
@@ -1015,9 +1047,6 @@ export class PlanExecutorService {
 					Buffer.from(cleanedDesiredContent),
 				);
 
-				const document = await vscode.workspace.openTextDocument(fileUri);
-				await vscode.window.showTextDocument(document);
-
 				const { formattedDiff, summary } = await generateFileChangeSummary(
 					"",
 					cleanedDesiredContent,
@@ -1031,7 +1060,6 @@ export class PlanExecutorService {
 					)}\``,
 				);
 
-				// 3. In the new file creation path (the `catch` block), update the `chatMessageText` string to use the format: `Step ${currentStepNumber}/${totalSteps}: Created file: \`${path.basename(step.step.path)}\`\n\n${summary}`.
 				const chatMessageText = `Step ${currentStepNumber}/${totalSteps}: Created file: \`${path.basename(
 					step.step.path,
 				)}\`\n\n${summary}`;
@@ -1180,6 +1208,7 @@ export class PlanExecutorService {
 				combinedToken,
 			);
 			const newContentAfterApply = editor.document.getText();
+			await editor.document.save();
 
 			const { formattedDiff, summary } = await generateFileChangeSummary(
 				originalContent,
@@ -1395,5 +1424,54 @@ export class PlanExecutorService {
 			return `${arg.substring(0, 97)}...`;
 		}
 		return arg;
+	}
+
+	/**
+	 * Programmatically opens documents and waits for language server diagnostics to stabilize.
+	 */
+	private async _warmUpDiagnostics(
+		uris: Set<vscode.Uri>,
+		token: vscode.CancellationToken,
+	): Promise<void> {
+		if (uris.size === 0) {
+			return;
+		}
+
+		console.log(
+			`[PlanExecutorService] Warming up diagnostics for ${uris.size} files...`,
+		);
+
+		// 1. Open documents to trigger language server scanning and show them in the viewport
+		for (const uri of uris) {
+			if (token.isCancellationRequested) {
+				break;
+			}
+			try {
+				const doc = await vscode.workspace.openTextDocument(uri);
+				await vscode.window.showTextDocument(doc, {
+					preview: true,
+					preserveFocus: true,
+				});
+			} catch (err: any) {
+				console.warn(
+					`[PlanExecutorService] Diagnostic warm-up: Failed to open/show ${uri.fsPath}: ${err.message}`,
+				);
+			}
+		}
+
+		// 2. Wait for diagnostics to stabilize
+		// We use a simple sequential wait to avoid overwhelming the LS, or we could use Promise.all
+		for (const uri of uris) {
+			if (token.isCancellationRequested) {
+				break;
+			}
+			try {
+				await DiagnosticService.waitForDiagnosticsToStabilize(uri, token);
+			} catch (err: any) {
+				console.warn(
+					`[PlanExecutorService] Diagnostic warm-up: Stability wait failed for ${uri.fsPath}: ${err.message}`,
+				);
+			}
+		}
 	}
 }

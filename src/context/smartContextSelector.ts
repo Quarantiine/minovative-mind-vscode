@@ -1041,7 +1041,7 @@ ${investigationInstruction}
 				postMessageToWebview({
 					type: "contextAgentLog",
 					value: {
-						text: `[Context Agent] Using internal request service for legacy selection fallback.`,
+						text: `[Context Agent] Summarizing changes...`,
 					},
 				});
 			}

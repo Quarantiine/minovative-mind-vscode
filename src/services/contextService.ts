@@ -69,7 +69,9 @@ interface ContextBuildOptions {
 	skipLargeFiles?: boolean;
 	maxFileSize?: number;
 	forceAISelectionRecalculation?: boolean;
-	operationId?: string; // Add operationId to ContextBuildOptions
+	operationId?: string;
+	changedUris?: vscode.Uri[];
+	correctionMode?: boolean;
 }
 
 export interface ActiveSymbolDetailedInfo {
@@ -487,16 +489,24 @@ export class ContextService {
 			}
 
 			const isAISelctionRequired =
-				this.settingsManager.getSetting<boolean>(
+				(this.settingsManager.getSetting<boolean>(
 					"smartContext.enabled",
 					true,
-				) && !!queryForContextCheck;
+				) &&
+					!!queryForContextCheck) ||
+				options?.correctionMode === true;
 
-			const heuristicSelectionEnabled =
+			const heuristicSelectionEnabledFromSettings =
 				this.settingsManager.getOptimizationSettings()
 					.heuristicSelectionEnabled;
-			const shouldRunHeuristics =
-				isAISelctionRequired && heuristicSelectionEnabled;
+
+			// We should run the full heuristic pre-selection if enabled and NOT in correction mode.
+			// In correction mode, we skip basic heuristics to be faster, BUT we still want
+			// the Agentic AI Selection to run (which is gated by isAISelctionRequired).
+			const shouldRunHeuristicPreSelection =
+				isAISelctionRequired &&
+				heuristicSelectionEnabledFromSettings &&
+				options?.correctionMode !== true;
 			// --- End Flag Calculation ---
 
 			// Optimized workspace scanning with performance monitoring
@@ -562,7 +572,7 @@ export class ContextService {
 			}
 
 			// 2. Hard gate for disabled heuristics after scan (Instruction 2)
-			if (!heuristicSelectionEnabled) {
+			if (!heuristicSelectionEnabledFromSettings) {
 				this.postMessageToWebview({
 					type: "statusUpdate",
 					value:
@@ -594,7 +604,7 @@ export class ContextService {
 			}
 
 			// 2. Gate the entire Dependency Graph building block
-			if (shouldRunHeuristics) {
+			if (shouldRunHeuristicPreSelection) {
 				const dependencyStartTime = Date.now();
 				this.postMessageToWebview({
 					type: "statusUpdate",
@@ -641,7 +651,7 @@ export class ContextService {
 			const documentSymbolsMap = new Map<string, vscode.DocumentSymbol[]>();
 
 			// 2. Gate the symbol processing loop
-			if (shouldRunHeuristics) {
+			if (shouldRunHeuristicPreSelection) {
 				const maxFilesForSymbolProcessing = Math.min(
 					allScannedFiles.length,
 					PERFORMANCE_THRESHOLDS.MAX_FILES_FOR_SYMBOL_PROCESSING,
@@ -740,7 +750,7 @@ export class ContextService {
 			// This block is added after fileDependencies is built.
 			let activeSymbolDetailedInfo: ActiveSymbolDetailedInfo | undefined;
 			if (
-				shouldRunHeuristics &&
+				shouldRunHeuristicPreSelection &&
 				editorContext?.documentUri &&
 				editorContext?.selection
 			) {
@@ -917,7 +927,11 @@ export class ContextService {
 				}
 			}
 
-			let filesForContextBuilding = allScannedFiles;
+			let filesForContextBuilding = options?.correctionMode
+				? editorContext?.documentUri
+					? [editorContext.documentUri]
+					: []
+				: allScannedFiles;
 			let heuristicSelectedFiles: vscode.Uri[] = []; // Declare heuristicSelectedFiles
 
 			if (cancellationToken?.isCancellationRequested) {
@@ -925,36 +939,40 @@ export class ContextService {
 			}
 
 			// Populate heuristicSelectedFiles by awaiting a call to getHeuristicRelevantFiles
-			try {
-				heuristicSelectedFiles = await getHeuristicRelevantFiles(
-					allScannedFiles,
-					rootFolder.uri,
-					editorContext,
-					fileDependencies,
-					this._convertDependencyMapToStringMap(reverseFileDependencies),
-					activeSymbolDetailedInfo,
-					undefined, // semanticGraph
-					cancellationToken,
-					this.settingsManager.getOptimizationSettings(),
-				);
+			if (shouldRunHeuristicPreSelection) {
+				try {
+					heuristicSelectedFiles = await getHeuristicRelevantFiles(
+						allScannedFiles,
+						rootFolder.uri,
+						editorContext,
+						fileDependencies,
+						this._convertDependencyMapToStringMap(reverseFileDependencies),
+						activeSymbolDetailedInfo,
+						undefined, // semanticGraph
+						cancellationToken,
+						this.settingsManager.getOptimizationSettings(),
+						this.aiRequestService,
+						userRequest || editorContext?.instruction,
+						DEFAULT_FLASH_LITE_MODEL,
+					);
 
-				if (heuristicSelectedFiles.length > 0) {
+					if (heuristicSelectedFiles.length > 0) {
+						this.postMessageToWebview({
+							type: "statusUpdate",
+							value: `Identified ${heuristicSelectedFiles.length} heuristically relevant file(s).`,
+						});
+					}
+				} catch (heuristicError: any) {
+					console.error(
+						`[ContextService] Error during heuristic file selection: ${heuristicError.message}`,
+					);
 					this.postMessageToWebview({
 						type: "statusUpdate",
-						value: `Identified ${heuristicSelectedFiles.length} heuristically relevant file(s).`,
+						value: `Warning: Heuristic file selection failed. Reason: ${heuristicError.message}`,
+						isError: true,
 					});
+					// Continue without heuristic files if an error occurs
 				}
-			} catch (heuristicError: any) {
-				console.error(
-					`[ContextService] Error during heuristic file selection: ${heuristicError.message}`,
-				);
-				this.postMessageToWebview({
-					type: "statusUpdate",
-					value: `Warning: Heuristic file selection failed. Reason: ${heuristicError.message}`,
-					isError: true,
-				});
-				// Continue without heuristic files if an error occurs
-				heuristicSelectedFiles = [];
 			}
 
 			// Summary generation logic with optimization
@@ -1065,181 +1083,182 @@ export class ContextService {
 
 			// 3. Restructure the final file selection block
 			if (isAISelctionRequired) {
-				// Since !heuristicSelectionEnabled is gated above, if isAISelctionRequired is true, shouldRunHeuristics must also be true.
-				if (shouldRunHeuristics) {
-					// Case 1: Run the existing AI selection logic (Heuristics enabled)
-					this.postMessageToWebview({
-						type: "statusUpdate",
-						value: "Identifying relevant files",
-						showLoadingDots: true,
-					});
+				// Case 1: Run the AI selection logic (Context Agent)
+				this.postMessageToWebview({
+					type: "statusUpdate",
+					value: "Identifying relevant files",
+					showLoadingDots: true,
+				});
 
-					try {
-						const selectionOptions: SelectRelevantFilesAIOptions = {
-							userRequest: currentQueryForSelection!,
-							chatHistory: this.chatHistoryManager.getChatHistory(),
-							allScannedFiles,
-							projectRoot: rootFolder.uri,
-							activeEditorContext: editorContext,
-							diagnostics: effectiveDiagnosticsString,
-							activeEditorSymbols: editorContext?.documentUri
-								? documentSymbolsMap.get(
-										path
-											.relative(
-												rootFolder.uri.fsPath,
-												editorContext.documentUri.fsPath,
-											)
-											.replace(/\\/g, "/"),
-									)
-								: undefined,
-							// Modified to adapt prompt from string to HistoryEntryPart[]
-							aiModelCall: async (
-								prompt: string,
-								modelName: string,
-								history: HistoryEntry[] | undefined,
-								requestType: string,
-								generationConfig: GenerationConfig | undefined,
-								streamCallbacks:
-									| {
-											onChunk: (chunk: string) => Promise<void> | void;
-											onComplete?: () => void;
-									  }
-									| undefined,
-								token: vscode.CancellationToken | undefined,
-							) => {
-								const messages: HistoryEntryPart[] = [{ text: prompt }];
-								return this.aiRequestService.generateWithRetry(
-									messages,
-									modelName,
-									history,
-									requestType,
-									generationConfig,
-									streamCallbacks,
-									token,
-								);
-							},
-							modelName: DEFAULT_FLASH_LITE_MODEL, // Use the default model for selection
-							cancellationToken,
-							fileDependencies:
-								this._convertDependencyMapToStringMap(fileDependencies),
-							reverseDependencies: this._convertDependencyMapToStringMap(
-								reverseFileDependencies,
-							),
-							preSelectedHeuristicFiles: heuristicSelectedFiles, // Pass heuristicSelectedFiles
-							fileSummaries: fileSummariesForAI, // Pass the generated file summaries
-							selectionOptions: {
-								useCache: shouldUseAISelectionCache, // Use the dynamically determined cache option
-								cacheTimeout: 5 * 60 * 1000, // 5 minutes
-								maxPromptLength: 50000,
-								enableStreaming: false,
-								fallbackToHeuristics: true,
-								alwaysRunInvestigation:
-									this.settingsManager.getOptimizationSettings()
-										.alwaysRunInvestigation,
-							},
-							aiRequestService: this.aiRequestService, // Correctly passing aiRequestService
-							postMessageToWebview: this.postMessageToWebview, // Correctly passing postMessageToWebview
-							addContextAgentLogToHistory: (logText: string) => {
-								// Correctly passing log handler
-								this.chatHistoryManager.addHistoryEntry(
-									"model",
-									logText,
-									undefined, // diffContent
-									undefined, // relevantFiles
-									undefined, // isRelevantFilesExpanded
-									false, // isPlanExplanation
-									false, // isPlanStepUpdate
-									true, // isContextAgentLog
-								);
-							},
-						};
-						if (cancellationToken?.isCancellationRequested) {
-							throw new vscode.CancellationError();
-						}
+				try {
+					const selectionOptions: SelectRelevantFilesAIOptions = {
+						userRequest: currentQueryForSelection!,
+						chatHistory: this.chatHistoryManager.getChatHistory(),
+						allScannedFiles,
+						projectRoot: rootFolder.uri,
+						activeEditorContext: editorContext,
+						diagnostics: effectiveDiagnosticsString,
+						activeEditorSymbols: editorContext?.documentUri
+							? documentSymbolsMap.get(
+									path
+										.relative(
+											rootFolder.uri.fsPath,
+											editorContext.documentUri.fsPath,
+										)
+										.replace(/\\/g, "/"),
+								)
+							: undefined,
+						// Modified to adapt prompt from string to HistoryEntryPart[]
+						aiModelCall: async (
+							prompt: string,
+							modelName: string,
+							history: HistoryEntry[] | undefined,
+							requestType: string,
+							generationConfig: GenerationConfig | undefined,
+							streamCallbacks:
+								| {
+										onChunk: (chunk: string) => Promise<void> | void;
+										onComplete?: () => void;
+								  }
+								| undefined,
+							token: vscode.CancellationToken | undefined,
+						) => {
+							const messages: HistoryEntryPart[] = [{ text: prompt }];
+							return this.aiRequestService.generateWithRetry(
+								messages,
+								modelName,
+								history,
+								requestType,
+								generationConfig,
+								streamCallbacks,
+								token,
+							);
+						},
+						modelName: DEFAULT_FLASH_LITE_MODEL, // Use the default model for selection
+						cancellationToken,
+						fileDependencies:
+							this._convertDependencyMapToStringMap(fileDependencies),
+						reverseDependencies: this._convertDependencyMapToStringMap(
+							reverseFileDependencies,
+						),
+						preSelectedHeuristicFiles: heuristicSelectedFiles, // Pass heuristicSelectedFiles
+						fileSummaries: fileSummariesForAI, // Pass the generated file summaries
+						selectionOptions: {
+							useCache: shouldUseAISelectionCache, // Use the dynamically determined cache option
+							cacheTimeout: 5 * 60 * 1000, // 5 minutes
+							maxPromptLength: 50000,
+							enableStreaming: false,
+							fallbackToHeuristics: options?.correctionMode ? false : true,
+							alwaysRunInvestigation:
+								this.settingsManager.getOptimizationSettings()
+									.alwaysRunInvestigation,
+						},
+						aiRequestService: this.aiRequestService, // Correctly passing aiRequestService
+						postMessageToWebview: this.postMessageToWebview, // Correctly passing postMessageToWebview
+						addContextAgentLogToHistory: (logText: string) => {
+							// Correctly passing log handler
+							this.chatHistoryManager.addHistoryEntry(
+								"model",
+								logText,
+								undefined, // diffContent
+								undefined, // relevantFiles
+								undefined, // isRelevantFilesExpanded
+								false, // isPlanExplanation
+								false, // isPlanStepUpdate
+								true, // isContextAgentLog
+							);
+						},
+					};
+					if (cancellationToken?.isCancellationRequested) {
+						throw new vscode.CancellationError();
+					}
 
-						const selectedFileSelections =
-							await selectRelevantFilesAI(selectionOptions);
-						const selectedFiles = selectedFileSelections.map((s) => s.uri);
+					const selectedFileSelections =
+						await selectRelevantFilesAI(selectionOptions);
+					const selectedFiles = selectedFileSelections.map((s) => s.uri);
 
-						if (selectedFiles.length > 0) {
-							filesForContextBuilding = selectedFiles;
-							this.postMessageToWebview({
-								type: "statusUpdate",
-								value: `Found relevant file(s) for context`, // Updated message
-							});
-						} else {
-							// AI returned no relevant files or an empty selection.
-							let fallbackFiles: vscode.Uri[] = [];
-							if (editorContext?.documentUri) {
-								// Priority 1: Active file
-								fallbackFiles = [editorContext.documentUri];
-								this.postMessageToWebview({
-									type: "statusUpdate",
-									value: `AI selection yielded no relevant files. Falling back to the active file.`,
-								});
-							} else if (allScannedFiles.length > 0) {
-								fallbackFiles = allScannedFiles.slice(
-									0,
-									Math.min(allScannedFiles.length, 1), // Fallback to the first scanned file
-								);
-								this.postMessageToWebview({
-									type: "statusUpdate",
-									value: `AI selection yielded no relevant files. Falling back to the first scanned file.`,
-								});
-							} else {
-								// No files available at all
-								fallbackFiles = [];
-								this.postMessageToWebview({
-									type: "statusUpdate",
-									value: `AI selection yielded no relevant files and no files were scanned.`,
-								});
-							}
-							filesForContextBuilding = fallbackFiles; // Assign fallback files
-						}
-					} catch (error: any) {
-						console.error(
-							`[ContextService] Error during smart file selection: ${error.message}`,
-						);
+					if (selectedFiles.length > 0) {
+						filesForContextBuilding = selectedFiles;
 						this.postMessageToWebview({
 							type: "statusUpdate",
-							value: `Smart context selection failed due to an error. Falling back to limited context.`,
-							isError: true,
+							value: `Found relevant file(s) for context`, // Updated message
 						});
-
+					} else {
+						// AI returned no relevant files or an empty selection.
 						let fallbackFiles: vscode.Uri[] = [];
 						if (editorContext?.documentUri) {
 							// Priority 1: Active file
 							fallbackFiles = [editorContext.documentUri];
 							this.postMessageToWebview({
 								type: "statusUpdate",
-								value: `Falling back to the active file.`,
+								value: `AI selection yielded no relevant files. Falling back to the active file.`,
 							});
 						} else if (allScannedFiles.length > 0) {
-							// Priority 2: Small subset of scanned files (e.g., first 10)
 							fallbackFiles = allScannedFiles.slice(
 								0,
-								Math.min(allScannedFiles.length, 10),
+								Math.min(allScannedFiles.length, 1), // Fallback to the first scanned file
 							);
 							this.postMessageToWebview({
 								type: "statusUpdate",
-								value: `Falling back to a subset of scanned files (${fallbackFiles.length}).`,
+								value: `AI selection yielded no relevant files. Falling back to the first scanned file.`,
 							});
 						} else {
 							// No files available at all
 							fallbackFiles = [];
 							this.postMessageToWebview({
 								type: "statusUpdate",
-								value: `No files available for fallback.`,
+								value: `AI selection yielded no relevant files and no files were scanned.`,
 							});
 						}
-						filesForContextBuilding = fallbackFiles; // Assign fallback files
-					} finally {
-						// Ensure log loading state is cleared
+						filesForContextBuilding = options?.correctionMode
+							? []
+							: fallbackFiles; // Assign fallback files
+					}
+				} catch (error: any) {
+					console.error(
+						`[ContextService] Error during smart file selection: ${error.message}`,
+					);
+					this.postMessageToWebview({
+						type: "statusUpdate",
+						value: `Smart context selection failed due to an error. Falling back to limited context.`,
+						isError: true,
+					});
+
+					let fallbackFiles: vscode.Uri[] = [];
+					if (editorContext?.documentUri) {
+						// Priority 1: Active file
+						fallbackFiles = [editorContext.documentUri];
 						this.postMessageToWebview({
-							type: "setContextAgentLoading",
-							value: false,
+							type: "statusUpdate",
+							value: `Falling back to the active file.`,
+						});
+					} else if (allScannedFiles.length > 0) {
+						// Priority 2: Small subset of scanned files (e.g., first 10)
+						fallbackFiles = allScannedFiles.slice(
+							0,
+							Math.min(allScannedFiles.length, 10),
+						);
+						this.postMessageToWebview({
+							type: "statusUpdate",
+							value: `Falling back to a subset of scanned files (${fallbackFiles.length}).`,
+						});
+					} else {
+						// No files available at all
+						fallbackFiles = [];
+						this.postMessageToWebview({
+							type: "statusUpdate",
+							value: `No files available for fallback.`,
 						});
 					}
+					filesForContextBuilding = options?.correctionMode
+						? []
+						: fallbackFiles; // Assign fallback files
+				} finally {
+					// Ensure log loading state is cleared
+					this.postMessageToWebview({
+						type: "setContextAgentLoading",
+						value: false,
+					});
 				}
 			}
 			// If isAISelctionRequired is false, filesForContextBuilding remains allScannedFiles (the default set).
@@ -1420,7 +1439,7 @@ export class ContextService {
 					enableDetailedAnalysis: options?.enableDetailedAnalysis ?? true,
 					includeDependencies: options?.includeDependencies ?? true,
 					complexityThreshold: options?.complexityThreshold ?? "medium",
-					modelName: DEFAULT_FLASH_MODEL, // Use the default model for sequential processing
+					modelName: DEFAULT_FLASH_LITE_MODEL, // Use the default model for sequential processing
 					onProgress: options?.onProgress,
 					onFileProcessed: options?.onFileProcessed,
 				},

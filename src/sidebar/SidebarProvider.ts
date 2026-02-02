@@ -72,6 +72,7 @@ const MESSAGE_THROTTLING_CONFIG = {
 		"restorePendingCommitReview",
 		"resetCodeStreamingArea",
 		"updateCancellationState",
+		"triggerStructuredPlanFromCorrection",
 	] as const,
 	THROTTLED_TYPES: [
 		"updateRelevantFilesDisplay", // Toggling relevant files display
@@ -440,6 +441,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		});
 
 		webviewView.webview.onDidReceiveMessage(async (data) => {
+			// Intercept specific plan correction and execution messages
+			if (data.type === "executeStructuredCorrectionPlan") {
+				await this.planService.generateStructuredPlanFromCorrectionAndExecute(
+					data.context,
+					data.summaryOfLastChanges,
+				);
+				return;
+			}
+
+			if (data.type === "triggerSelfCorrectionWorkflow") {
+				await this.triggerSelfCorrectionWorkflow();
+				return;
+			}
+
 			// Delegating to external message handler for separation of concerns
 			await handleWebviewMessage(data, this);
 		});
@@ -1067,6 +1082,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	}
 
 	/**
+	 * Triggers the self-correction workflow, typically called via a VS Code command or webview message.
+	 */
+	public async triggerSelfCorrectionWorkflow(): Promise<void> {
+		await this.planService.triggerSelfCorrectionWorkflow();
+	}
+
+	/**
 	 * Finalizes the context loading state, cleaning up the cancellation token and notifying the webview.
 	 */
 	public finalizeContextLoadingState(): void {
@@ -1194,6 +1216,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	}
 
 	/**
+	 * Checks specifically for Error-level diagnostics across the workspace.
+	 */
+	private _checkDiagnosticsForErrors(): boolean {
+		const allDiagnostics = vscode.languages.getDiagnostics();
+		return allDiagnostics.some(([uri, diagnostics]) =>
+			diagnostics.some((d) => d.severity === vscode.DiagnosticSeverity.Error),
+		);
+	}
+
+	/**
 	 * Handles notifications and UI updates upon the completion of a plan execution (success, failure, or cancellation).
 	 * If the sidebar is not visible, it shows a VS Code native notification.
 	 * @param outcome The final outcome of the plan execution.
@@ -1203,6 +1235,50 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	): Promise<void> {
 		let message: string;
 		let isError: boolean;
+
+		const diagnosticsErrorsExist = this._checkDiagnosticsForErrors();
+
+		// NEW TRIGGER: Successful execution but with detected errors -> Self Correction
+		if (outcome === "success" && diagnosticsErrorsExist) {
+			console.log(
+				"[SidebarProvider] Plan success with diagnostics errors. Triggering self-correction.",
+			);
+
+			const planSummary = this.lastPlanGenerationContext?.textualPlanExplanation
+				? `Original Attempt: ${this.lastPlanGenerationContext.textualPlanExplanation}`
+				: "Successful Plan Execution (Triggered Self-Correction)";
+
+			try {
+				await this.changeLogger.saveChangesAsLastCompletedPlan(planSummary);
+			} catch (err) {
+				console.error(
+					"[SidebarProvider] Failed to checkpoint changes before self-correction:",
+					err,
+				);
+			}
+
+			this.postMessageToWebview({
+				type: "planExecutionFinished",
+				hasRevertibleChanges: true,
+			});
+
+			this.postMessageToWebview({
+				type: "statusUpdate",
+				value:
+					"Plan succeeded but diagnostics indicate errors. Initiating self-correction...",
+				isError: true,
+			});
+
+			this.currentExecutionOutcome = undefined;
+			await this.setPlanExecutionActive(false);
+
+			// Cancel the current token explicitly so that startUserOperation (called inside triggerSelfCorrectionWorkflow)
+			// doesn't block due to concurrency checks.
+			this.activeOperationCancellationTokenSource?.cancel();
+
+			await this.planService.triggerSelfCorrectionWorkflow();
+			return;
+		}
 
 		switch (outcome) {
 			case "success":
@@ -1233,32 +1309,34 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 				});
 			}
 		} else {
-			let notificationFunction: (
-				message: string,
-				...items: string[]
-			) => Thenable<string | undefined>;
+			let result: string | undefined;
 
 			switch (outcome) {
 				case "success":
-					notificationFunction = showInfoNotification;
+					result = await showInfoNotification(
+						message,
+						"Open Sidebar",
+						"Cancel Plan",
+					);
 					break;
 				case "cancelled":
-					notificationFunction = showWarningNotification;
+					result = await showWarningNotification(
+						message,
+						"Open Sidebar",
+						"Cancel Plan",
+					);
 					break;
 				case "failed":
-					this.postMessageToWebview({
-						type: "statusUpdate",
-						value: message,
-						isError: true,
-					});
-					return;
+					result = await showErrorNotification(
+						new Error(message),
+						message,
+						"Plan Failed: ",
+						this.workspaceRootUri,
+						"Open Sidebar",
+						"Cancel Plan",
+					);
+					break;
 			}
-
-			const result = await notificationFunction(
-				message,
-				"Open Sidebar",
-				"Cancel Plan",
-			);
 
 			if (result === "Open Sidebar") {
 				vscode.commands.executeCommand("minovative-mind.activitybar.focus");

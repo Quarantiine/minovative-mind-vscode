@@ -21,4 +21,14 @@ export interface ContextBuildOptions {
 	 * for content inclusion in the generated project context.
 	 */
 	historicallyRelevantFiles?: vscode.Uri[];
+
+	/**
+	 * List of files that have been changed in the current session.
+	 */
+	changedUris?: vscode.Uri[];
+
+	/**
+	 * Unique identifier for the current operation.
+	 */
+	operationId?: string;
 }

@@ -19,9 +19,9 @@ export class SearchReplaceService {
 	 */
 	public parseBlocks(llmOutput: string): SearchReplaceBlock[] {
 		const blocks: SearchReplaceBlock[] = [];
-		// Relaxed regex to be more permissive with whitespace and newlines
+		// Relaxed regex to be more permissive with whitespace, newlines, and trailing text on marker lines
 		const regex =
-			/<<<<<<<\s*SEARCH\s*\n([\s\S]*?)\n=======\s*\n([\s\S]*?)\n>>>>>>>\s*REPLACE/g;
+			/<<<<<<<\s*SEARCH(?:[^\n]*)\n([\s\S]*?)\n=======(?:[^\n]*)\n([\s\S]*?)\n>>>>>>>\s*REPLACE/g;
 		let match;
 
 		while ((match = regex.exec(llmOutput)) !== null) {

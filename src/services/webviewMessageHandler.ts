@@ -57,6 +57,7 @@ export async function handleWebviewMessage(
 		"cancelCommit", // Follow-up to commit generation
 		"openExternalLink",
 		"confirmPlanExecution", // Allowed as a follow-up action to a pending plan
+		"executeStructuredCorrectionPlan", // Allowed as a follow-up action to a pending correction plan
 		"retryStructuredPlanGeneration", // Allowed as a follow-up action to a failed/declined plan
 		"openFile", // Allowed as a direct user interaction
 		"toggleRelevantFilesDisplay", // Allowed as a UI interaction
@@ -159,6 +160,16 @@ export async function handleWebviewMessage(
 					});
 					await provider.endUserOperation("failed", errorMessage); // Signal failure and re-enable inputs
 				}
+				break;
+			}
+
+			case "executeStructuredCorrectionPlan": {
+				const { context, summaryOfLastChanges } = validatedData.value;
+				await provider.startUserOperation("planExecution");
+				await provider.planService.generateStructuredPlanFromCorrectionAndExecute(
+					context,
+					summaryOfLastChanges,
+				);
 				break;
 			}
 

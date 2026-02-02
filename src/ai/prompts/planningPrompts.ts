@@ -106,6 +106,7 @@ Refer to the "Broader Project Context" which includes detailed symbol informatio
 
 Command Usage Guidelines:
 - **Stability**: Use \`ls | sort\` or \`find . | sort\` for consistent file ordering to prevent hallucinations.
+- **Robust Searching**: Use \`find . -iname "*pattern*"\` for case-insensitive file searching. \`find\` is case-sensitive by default, so \`*Service.ts\` will miss \`planService.ts\` if using \`*service.ts\`.
 - **Noise Reduction**: Use \`grep ... | uniq\` to remove duplicate matches and save context window.
 - **Canonical Paths**: Use \`realpath <path>\` to resolve relative paths (e.g., \`../\`) before performing file modifications, ensuring accuracy.
 - **Dependencies**: Prefer \`npm install <pkg>\` (no shell) over shell scripts for reliability.
@@ -246,6 +247,7 @@ Crucial Rules for \`generateExecutionPlan\` Tool:
 - For \`create_file\` with code files, \`generate_prompt\` is MANDATORY, not optional. Never use \`content\` for code.
 - All generated code/instructions must be production-ready (complete, functional, no placeholders/TODOs). The best code you can give.
 - **Allowed Command List**: For 'run_command' steps, you are strictly limited to the following commands: [${SafeCommandExecutor.getAllowedCommands().join(", ")}]. Ensure any command you use is in this list.
+- **Robustness**: Use \`find . -iname ...\` for searches to avoid case-sensitivity issues (e.g., \`find src -name "*service.ts"\` will fail to find \`planService.ts\` on many systems).
 
 Goal: Ensure all relevant information is passed accurately and comprehensively to the \`generateExecutionPlan\` function. 
 
@@ -262,6 +264,146 @@ ${projectContext}
 
 ${chatHistoryForPrompt ? `\n${chatHistoryForPrompt}` : ""}
 ${recentChangesForPrompt ? `\n${recentChangesForPrompt}` : ""}
+${urlContextString ? `\nURL Context:\n${urlContextString}` : ""}
+`;
+}
+
+/**
+ * Creates a prompt for the AI to analyze the context of a failed execution or a needed fix
+ * and propose a high-level textual correction strategy.
+ */
+export function createCorrectionPlanningPrompt(
+	contextString: string,
+	editorContext:
+		| sidebarTypes.PlanGenerationContext["editorContext"]
+		| undefined,
+	chatHistory: sidebarTypes.HistoryEntry[],
+	summaryOfLastChanges: string,
+): string {
+	const chatHistoryForPrompt =
+		chatHistory && chatHistory.length > 0
+			? `Chat History (for context):\n${chatHistory
+					.map(
+						(entry) =>
+							`Role: ${entry.role}\nContent:\n${entry.parts
+								.filter(
+									(p): p is HistoryEntryPart & { text: string } => "text" in p,
+								)
+								.map((p) => p.text)
+								.join("\n")}`,
+					)
+					.join("\n---\n")}`
+			: "";
+
+	let editorInfo = "";
+	if (editorContext) {
+		editorInfo = `
+Target File: ${editorContext.filePath}
+Language: ${editorContext.languageId}
+Instruction: ${editorContext.instruction}
+Selected Code:
+\`\`\`${editorContext.languageId}
+${editorContext.selectedText}
+\`\`\`
+Diagnostics: ${editorContext.diagnosticsString || "None"}
+`;
+	}
+
+	return `You are an expert software engineer. A previous attempt to fulfill a request has resulted in errors or incomplete implementation. Your task is to analyze the provided context (focused on recently changed files) and the summary of previous changes/errors to propose a fix strategy.
+
+Instructions:
+1. Review the "Summary of Recent Changes/Errors" to understand what went wrong or what remains.
+2. Analyze the "Current Project Context" (focusing on recently changed files) and any "Target File" info.
+3. Propose a clear, high-level, step-by-step textual strategy (using Markdown) to fix the issues and complete the task.
+4. Focus solely on problem-solving. No code or JSON output yet.
+
+Summary of Recent Changes/Errors:
+${summaryOfLastChanges}
+
+${editorInfo}
+${chatHistoryForPrompt ? `\n${chatHistoryForPrompt}\n` : ""}
+
+Current Project Context:
+${contextString}
+
+--- Correction Strategy (Text with Markdown) ---
+`;
+}
+
+/**
+ * Creates a prompt for calling the `generateExecutionPlan` tool to execute a correction strategy.
+ */
+export function createCorrectionExecutionPrompt(
+	projectContext: string,
+	editorContext:
+		| sidebarTypes.PlanGenerationContext["editorContext"]
+		| undefined,
+	chatHistory: sidebarTypes.HistoryEntry[],
+	textualPlanExplanation: string,
+	summaryOfLastChanges: string,
+	urlContextString?: string,
+): string {
+	const chatHistoryForPrompt =
+		chatHistory && chatHistory.length > 0
+			? `Chat History:\n${chatHistory
+					.map(
+						(entry) =>
+							`Role: ${entry.role}\nContent:\n${entry.parts
+								.filter(
+									(p): p is HistoryEntryPart & { text: string } => "text" in p,
+								)
+								.map((p) => p.text)
+								.join("\n")}`,
+					)
+					.join("\n---\n")}`
+			: "";
+
+	let mainUserRequestDescription =
+		"Correction and completion of previous task.";
+	if (editorContext) {
+		mainUserRequestDescription = `Request: Fix/Correct code (Instruction: "${editorContext.instruction}").
+File: ${editorContext.filePath}
+Language: ${editorContext.languageId}
+Selected Code:
+\`\`\`${editorContext.languageId}
+${editorContext.selectedText}
+\`\`\`
+Diagnostics: ${editorContext.diagnosticsString || "None"}`;
+	}
+
+	return `You are an expert software engineer AI. Generate a structured execution plan to fix specific issues identified in the textual strategy while considering the recent changes by calling the \`generateExecutionPlan\` function.
+
+Goal: Implement the "Correction Strategy" while carefully considering the "Summary of Recent Changes/Errors" to avoid repeating mistakes.
+
+Instructions for Function Call:
+- You MUST call the \`generateExecutionPlan\` tool.
+- \`plan\`: Use the "Correction Strategy" provided below.
+- \`user_request\`: ${mainUserRequestDescription}
+- \`project_context\`: Entire broader project context.
+- \`chat_history\`: Entire recent chat history.
+- \`recent_changes\`: Use the "Summary of Recent Changes/Errors" below.
+- \`url_context_string\`: Any provided URL context.
+
+Crucial Rules for \`generateExecutionPlan\` Tool:
+- **Holistic File Analysis**: Before generating any plan steps, FIRST analyze all required modifications for EACH file targeted.
+- **Enforce One \`ModifyFileStep\` Per File**: Consolidate all changes for a single file into exactly ONE step.
+- \`create_file\`: You MUST use \`generate_prompt\` for ALL code files.
+- **MANDATORY STREAMING RULE**: Using \`generate_prompt\` for code files is NON-NEGOTIABLE.
+- All generated code/instructions must be production-ready (complete, functional, no placeholders/TODOs).
+- **Allowed Command List**: For 'run_command' steps, you are strictly limited to the following commands: [${SafeCommandExecutor.getAllowedCommands().join(
+		", ",
+	)}].
+
+Summary of Recent Changes/Errors:
+${summaryOfLastChanges}
+
+Correction Strategy:
+${textualPlanExplanation}
+
+Broader Project Context:
+${projectContext}
+
+${chatHistoryForPrompt ? `\n${chatHistoryForPrompt}` : ""}
 ${urlContextString ? `\nURL Context:\n${urlContextString}` : ""}
 `;
 }

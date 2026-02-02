@@ -17,10 +17,17 @@ import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
 import {
 	createInitialPlanningExplanationPrompt,
 	createPlanningPromptForFunctionCall,
+	createCorrectionPlanningPrompt,
+	createCorrectionExecutionPrompt,
 } from "../ai/prompts/planningPrompts";
 import { repairJsonEscapeSequences } from "../utils/jsonUtils";
 import { PlanExecutorService } from "./planExecutorService";
 import { generateExecutionPlanTool } from "../ai/prompts/planFunctions";
+import { ActiveSymbolDetailedInfo } from "./contextService";
+import {
+	DiagnosticService,
+	FormatDiagnosticsOptions,
+} from "../utils/diagnosticUtils";
 
 export class PlanService {
 	private readonly MAX_PLAN_PARSE_RETRIES: number;
@@ -51,6 +58,15 @@ export class PlanService {
 			this.urlContextService,
 			enhancedCodeGenerator,
 			this.MAX_TRANSIENT_STEP_RETRIES,
+		);
+	}
+
+	private _extractUrisFromChangeSets(changes: FileChangeEntry[]): vscode.Uri[] {
+		if (!this.workspaceRootUri) {
+			return [];
+		}
+		return changes.map((c) =>
+			vscode.Uri.joinPath(this.workspaceRootUri!, c.filePath),
 		);
 	}
 
@@ -88,6 +104,189 @@ export class PlanService {
 			type: "chat",
 			userRequest,
 		});
+	}
+
+	public async triggerSelfCorrectionWorkflow(): Promise<void> {
+		const token = this.provider.activeOperationCancellationTokenSource?.token;
+		if (!token) {
+			return;
+		}
+
+		const recentChanges = this.provider.changeLogger.getChangeLog();
+		const changedUris = this._extractUrisFromChangeSets(recentChanges);
+		const formattedRecentChanges =
+			this._formatRecentChangesForPrompt(recentChanges);
+
+		const modelName = this.provider.settingsManager.getSelectedModelName();
+		const apiKey = this.provider.apiKeyManager.getActiveApiKey();
+
+		await this.provider.startUserOperation("self-correction");
+
+		vscode.window.showInformationMessage(
+			"Initiating automatic self-correction cycle based on recent changes.",
+			{ modal: false },
+		);
+
+		const operationId =
+			this.provider.currentActiveChatOperationId ?? "unknown-operation";
+
+		// IMPORTANT: Fetch the NEW token after starting the operation.
+		// The 'token' variable defined at the start of the method refers to the OLD operation's token,
+		// which was just cancelled in SidebarProvider to allow this new operation to start.
+		// Using the old token would cause immediate cancellation validation failure.
+		const freshToken =
+			this.provider.activeOperationCancellationTokenSource?.token;
+
+		if (!freshToken) {
+			return;
+		}
+
+		try {
+			// Collect diagnostics for changed files to inform the Context Agent
+			let diagnosticsString = "";
+			const workspaceFolders = vscode.workspace.workspaceFolders;
+			if (workspaceFolders && workspaceFolders.length > 0) {
+				const rootUri = workspaceFolders[0].uri;
+				const optimizationSettings =
+					this.provider.settingsManager.getOptimizationSettings();
+
+				for (const uri of changedUris) {
+					try {
+						const fileContentBytes = await vscode.workspace.fs.readFile(uri);
+						const fileContent = Buffer.from(fileContentBytes).toString("utf8");
+
+						const options: FormatDiagnosticsOptions = {
+							fileContent,
+							enableEnhancedDiagnosticContext:
+								optimizationSettings.enableEnhancedDiagnosticContext,
+							includeSeverities: [
+								vscode.DiagnosticSeverity.Error,
+								vscode.DiagnosticSeverity.Warning,
+							],
+							requestType: "full",
+							token: freshToken,
+						};
+
+						const formatted =
+							await DiagnosticService.formatContextualDiagnostics(
+								uri,
+								rootUri,
+								options,
+							);
+
+						if (formatted) {
+							diagnosticsString += `\n--- Diagnostics for ${path.relative(rootUri.fsPath, uri.fsPath)} ---\n${formatted}\n`;
+						}
+					} catch (readError) {
+						console.warn(
+							`[PlanService] Failed to read file for diagnostics at ${uri.fsPath}:`,
+							readError,
+						);
+					}
+				}
+			}
+
+			const { contextString, relevantFiles, activeSymbolDetailedInfo } =
+				await this._prepareContextAndStreaming(
+					freshToken,
+					modelName,
+					operationId as string,
+					"Applying self-correction based on recent changes.",
+					undefined,
+					diagnosticsString || undefined,
+					{ changedUris, operationId, correctionMode: true },
+				);
+
+			const correctionPrompt = createCorrectionPlanningPrompt(
+				contextString,
+				undefined,
+				[...this.provider.chatHistoryManager.getChatHistory()],
+				formattedRecentChanges,
+			);
+
+			let accumulatedText = "";
+			const textualResponse =
+				await this.provider.aiRequestService.generateWithRetry(
+					[{ text: correctionPrompt }],
+					modelName,
+					undefined,
+					"self-correction strategy",
+					undefined,
+					{
+						onChunk: (chunk: string) => {
+							accumulatedText += chunk;
+							if (this.provider.currentAiStreamingState) {
+								this.provider.updatePersistedAiStreamingState({
+									...this.provider.currentAiStreamingState,
+									content:
+										this.provider.currentAiStreamingState.content + chunk,
+								});
+							}
+							this.provider.postMessageToWebview({
+								type: "aiResponseChunk",
+								value: chunk,
+								operationId: operationId as string,
+							});
+						},
+					},
+					freshToken,
+				);
+
+			if (freshToken.isCancellationRequested) {
+				throw new Error(ERROR_OPERATION_CANCELLED);
+			}
+
+			const planContext: sidebarTypes.PlanGenerationContext = {
+				type: "chat",
+				projectContext: contextString,
+				relevantFiles,
+				initialApiKey: apiKey || "",
+				modelName,
+				chatHistory: [...this.provider.chatHistoryManager.getChatHistory()],
+				textualPlanExplanation: textualResponse,
+				workspaceRootUri: this.workspaceRootUri!,
+			};
+
+			this.provider.pendingPlanGenerationContext = planContext;
+
+			this.provider.postMessageToWebview({
+				type: "aiResponseEnd",
+				success: true,
+				operationId: operationId as string,
+				error: null,
+			});
+
+			await this.generateStructuredPlanFromCorrectionAndExecute(
+				planContext,
+				formattedRecentChanges,
+			);
+		} catch (error: any) {
+			const isCancellation = error.message === ERROR_OPERATION_CANCELLED;
+			this.provider.postMessageToWebview({
+				type: "aiResponseEnd",
+				success: false,
+				operationId: operationId as string,
+				error: isCancellation
+					? "Correction planning cancelled."
+					: formatUserFacingErrorMessage(
+							error,
+							"An error occurred during self-correction planning.",
+							"Error: ",
+							this.workspaceRootUri,
+						),
+			});
+			await this.provider.endUserOperation(
+				isCancellation ? "cancelled" : "failed",
+			);
+		} finally {
+			if (this.provider.currentAiStreamingState) {
+				await this.provider.updatePersistedAiStreamingState({
+					...this.provider.currentAiStreamingState,
+					isComplete: true,
+				});
+			}
+			this.provider.clearActiveOperationState();
+		}
 	}
 
 	public async initiatePlanFromEditorAction(
@@ -198,26 +397,18 @@ export class PlanService {
 			changeLogger.clear();
 			this.provider.pendingPlanGenerationContext = null;
 
-			const buildContextResult =
-				await this.provider.contextService.buildProjectContext(
+			const { contextString, relevantFiles, activeSymbolDetailedInfo } =
+				await this._prepareContextAndStreaming(
 					token,
+					modelName,
+					operationId as string,
 					config.type === "chat"
 						? config.userRequest!
 						: config.editorContext!.instruction,
 					config.editorContext,
 					config.diagnosticsString,
 					undefined,
-					false,
-					false,
 				);
-
-			const { contextString, relevantFiles } = buildContextResult;
-
-			this._initializeStreamingState(
-				modelName,
-				relevantFiles,
-				operationId as string,
-			);
 
 			if (contextString.startsWith("[Error")) {
 				throw new Error(contextString);
@@ -306,7 +497,7 @@ export class PlanService {
 				editorContext: config.editorContext,
 				projectContext: contextString,
 				relevantFiles,
-				activeSymbolDetailedInfo: buildContextResult.activeSymbolDetailedInfo,
+				activeSymbolDetailedInfo: activeSymbolDetailedInfo,
 				diagnosticsString: config.diagnosticsString,
 				initialApiKey: apiKey,
 				modelName,
@@ -478,6 +669,155 @@ export class PlanService {
 			type: "updateStreamingRelevantFiles",
 			value: relevantFiles ?? [],
 		});
+	}
+
+	public async generateStructuredPlanFromCorrectionAndExecute(
+		planContext: sidebarTypes.PlanGenerationContext,
+		summaryOfLastChanges: string,
+	): Promise<void> {
+		const token = this.provider.activeOperationCancellationTokenSource?.token;
+		if (!token) {
+			await this.provider.endUserOperation("failed");
+			return;
+		}
+
+		let executablePlan: ExecutionPlan | null = null;
+		let lastError: Error | null = null;
+
+		try {
+			await this.provider.setPlanExecutionActive(true);
+
+			this.provider.postMessageToWebview({
+				type: "updateLoadingState",
+				value: true,
+			});
+
+			const operationId = this.provider.currentActiveChatOperationId;
+
+			const urlContexts =
+				await this.urlContextService.processMessageForUrlContext(
+					planContext.originalUserRequest || "",
+					operationId as string,
+				);
+			const urlContextString =
+				this.urlContextService.formatUrlContexts(urlContexts);
+
+			const prompt = createCorrectionExecutionPrompt(
+				planContext.projectContext,
+				planContext.editorContext,
+				planContext.chatHistory || [],
+				planContext.textualPlanExplanation,
+				summaryOfLastChanges,
+				urlContextString,
+			);
+
+			for (let attempt = 1; attempt <= this.MAX_PLAN_PARSE_RETRIES; attempt++) {
+				this.provider.postMessageToWebview({
+					type: "statusUpdate",
+					value: `Generating correction plan - ${attempt}/${this.MAX_PLAN_PARSE_RETRIES} `,
+					isError: false,
+				});
+
+				try {
+					const functionCall: FunctionCall | null =
+						await this.provider.aiRequestService.generateFunctionCall(
+							planContext.initialApiKey,
+							planContext.modelName,
+							[{ role: "user", parts: [{ text: prompt }] }],
+							[{ functionDeclarations: [generateExecutionPlanTool] }],
+							FunctionCallingMode.ANY,
+							token,
+							"correction plan generation",
+						);
+
+					if (token.isCancellationRequested) {
+						throw new Error(ERROR_OPERATION_CANCELLED);
+					}
+					if (!functionCall) {
+						throw new Error("AI failed to generate a valid function call.");
+					}
+
+					const { plan, error } = await this.parseAndValidatePlanWithFix(
+						JSON.stringify(functionCall.args),
+						planContext.workspaceRootUri,
+					);
+
+					if (error) {
+						lastError = new Error(`Validation failed: ${error}`);
+						if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
+							continue;
+						} else {
+							throw lastError;
+						}
+					}
+
+					if (!plan || plan.steps.length === 0) {
+						lastError = new Error("Generated plan is empty.");
+						if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
+							continue;
+						} else {
+							throw lastError;
+						}
+					}
+
+					executablePlan = plan;
+					break;
+				} catch (error: any) {
+					if (error.message === ERROR_OPERATION_CANCELLED) {
+						throw error;
+					}
+					lastError = error;
+					if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
+						await this._delay(15000 + attempt * 2000, token);
+						continue;
+					} else {
+						throw lastError;
+					}
+				}
+			}
+
+			if (!executablePlan) {
+				throw (
+					lastError ||
+					new Error("Failed to generate a valid structured correction plan.")
+				);
+			}
+
+			await this.planExecutorService.executePlan(
+				executablePlan,
+				planContext,
+				token,
+			);
+		} catch (error: any) {
+			const isCancellation = error.message === ERROR_OPERATION_CANCELLED;
+
+			this.provider.postMessageToWebview({
+				type: "updateLoadingState",
+				value: false,
+			});
+
+			if (isCancellation) {
+				this.provider.postMessageToWebview({
+					type: "statusUpdate",
+					value: "Correction plan generation cancelled.",
+				});
+				await this.provider.endUserOperation("cancelled");
+			} else {
+				this.provider.postMessageToWebview({
+					type: "statusUpdate",
+					value: formatUserFacingErrorMessage(
+						error,
+						"An error occurred during correction plan generation.",
+						"Error: ",
+						planContext.workspaceRootUri,
+					),
+					isError: true,
+				});
+				await this.provider.endUserOperation("failed");
+			}
+		} finally {
+			await this.provider.setPlanExecutionActive(false);
+		}
 	}
 
 	public async generateStructuredPlanAndExecute(
@@ -704,5 +1044,45 @@ export class PlanService {
 			)
 			.join("\n");
 		return formattedString + "--- End Recent Project Changes ---\n";
+	}
+
+	/**
+	 * Combined helper to build project context and initialize streaming state.
+	 */
+	private async _prepareContextAndStreaming(
+		token: vscode.CancellationToken,
+		modelName: string,
+		operationId: string,
+		instruction: string,
+		editorContext?: sidebarTypes.EditorContext,
+		diagnosticsString?: string,
+		options?: any,
+	): Promise<{
+		contextString: string;
+		relevantFiles: string[];
+		activeSymbolDetailedInfo?: ActiveSymbolDetailedInfo;
+	}> {
+		const buildContextResult =
+			await this.provider.contextService.buildProjectContext(
+				token,
+				instruction,
+				editorContext,
+				diagnosticsString,
+				options,
+				false,
+				false,
+			);
+
+		this._initializeStreamingState(
+			modelName,
+			buildContextResult.relevantFiles,
+			operationId,
+		);
+
+		return {
+			contextString: buildContextResult.contextString,
+			relevantFiles: buildContextResult.relevantFiles,
+			activeSymbolDetailedInfo: buildContextResult.activeSymbolDetailedInfo,
+		};
 	}
 }

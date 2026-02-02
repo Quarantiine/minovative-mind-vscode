@@ -98,6 +98,12 @@ export interface CancelContextAgentMessage {
 	type: "cancelContextAgent";
 }
 
+export interface ExecuteStructuredCorrectionPlanMessage {
+	type: "executeStructuredCorrectionPlan";
+	context: PlanGenerationContext;
+	summaryOfLastChanges: string;
+}
+
 export interface CopyContextMessagePayload {
 	messageIndex: number;
 	contentToCopy: string;
@@ -117,6 +123,7 @@ export type WebviewToExtensionMessages =
 	| RequestWorkspaceFilesMessage
 	| RebuildProjectContextMessage
 	| CancelContextAgentMessage
+	| ExecuteStructuredCorrectionPlanMessage
 	| { type: "copyContextMessage"; payload: CopyContextMessagePayload };
 
 // Extension to Webview for signaling plan timeline initialization
@@ -356,6 +363,12 @@ export interface SetContextAgentLoadingMessage {
 	value: boolean;
 }
 
+export interface TriggerStructuredPlanFromCorrectionMessage {
+	type: "triggerStructuredPlanFromCorrection";
+	context: PlanGenerationContext;
+	summaryOfLastChanges: string;
+}
+
 /**
  * Message sent from the extension to the webview to indicate the webview is ready
  * and can now receive state updates or initial data.
@@ -450,7 +463,8 @@ export type ExtensionToWebviewMessages =
 	| PlanTimelineProgressMessage
 	| AiRetryNotificationMessage
 	| ContextAgentLogMessage
-	| SetContextAgentLoadingMessage;
+	| SetContextAgentLoadingMessage
+	| TriggerStructuredPlanFromCorrectionMessage;
 
 export interface PlanGenerationContext {
 	type: "chat" | "editor";

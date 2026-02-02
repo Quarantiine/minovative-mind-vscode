@@ -160,7 +160,7 @@ export function getEnhancedGenerationSystemInstruction(
 		`**Command Execution Format (RunCommandStep)**: For any \`RunCommandStep\` action, the \`command\` property MUST be an object \`{ executable: string, args: string[], usesShell?: boolean }\`. The \`executable\` should be the command name (e.g., 'npm', 'git') and \`args\` an array of its arguments (e.g., ['install', '--save-dev', 'package']). 
         
         **ALLOWED COMMANDS**: You are strictly limited to the following commands for 'executable': [${allowedCommands}]. 
-        **Command Tips**: Use \`sort\` and \`uniq\` to clean up output. Use \`realpath\` to resolve paths.
+        **Command Tips**: Use \`sort\` and \`uniq\` to clean up output. Use \`realpath\` to resolve paths. Use \`find . -iname ...\` for case-insensitive searches to prevent missed files due to casing mismatches.
         
         If a command *absolutely requires* \`shell: true\` (e.g., it uses shell-specific features like pipes, redirects, or environment variable expansion inherently for its functionality, and cannot be expressed directly via \`executable\` and \`args\`), you MUST explicitly include \`usesShell: true\` in the object. This flag triggers critical fallback security checks in \`PlanExecutorService\` and should be used sparingly. Always prefer \`executable\` and \`args\` without \`usesShell: true\` for security reasons, unless explicitly necessary.`,
 	);
