@@ -1354,6 +1354,11 @@ export class ContextService {
 				// Prepend the detected project type information
 				finalContextString = `${preamble}\n\nProject Context:\n${finalContextString}`;
 			}
+
+			// CHANGE: Append diagnostics to the final context so the AI can see them
+			if (effectiveDiagnosticsString) {
+				finalContextString += `\n\n${effectiveDiagnosticsString}`;
+			}
 			// --- End new logic ---
 
 			const contextBuildTime = Date.now() - contextBuildStartTime;

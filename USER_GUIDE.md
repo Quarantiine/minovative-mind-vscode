@@ -61,6 +61,7 @@ If you are a developer looking to build from source or contribute, please refer 
 - **Contextual Awareness**: The AI intelligently uses context from your current file, selected code snippets, and the broader workspace. You'll often see relevant files listed within AI chat responses.
 - **Interpreting AI Responses**: AI responses are rendered with code snippets, markdown, and diffs for clarity. You can easily copy code blocks or use the \"Apply to Editor\" functionality to integrate changes directly.
 - **Message Interaction**: Refine AI context or regenerate responses by editing your previous messages.
+- **Context Summarization**: For long conversations, the AI automatically summarizes previous discussions to maintain a clear focus on the current task.
 - **Token Usage**: A display feature shows current token usage, including request counts and failed requests, optimized for scannability.
 
 ### 4.2 Code Explanation
@@ -79,7 +80,7 @@ If you are a developer looking to build from source or contribute, please refer 
   - **Smart Context**: The AI will automatically find and read relevant code snippets for each step of the plan, ensuring it has the full picture before writing code.
   - Plans can be cancelled if needed during execution.
 - **Reverting Changes**: The "Revert Changes" button, at the top right, allows you to undo AI-driven workflow actions if necessary.
-- **Autonomous Self-Correction**: For long-running plans, the AI now automatically monitors for errors or missing functionality using a diagnostic feedback loop. If an issue is detected, it will initiate an automatic "Self-Correction" cycle to repair the code without requiring a new manual request.
+- **Autonomous Self-Correction**: For long-running plans, the AI now automatically monitors for errors or missing functionality using a diagnostic feedback loop. If an issue is detected, it captures the **specific error message** and initiates an automatic "Self-Correction" cycle to repair the code without requiring a new manual request.
 
 ### 4.4 Git Commit Generation
 
@@ -89,6 +90,7 @@ If you are a developer looking to build from source or contribute, please refer 
 ### 4.5 Code Streaming & Modification
 
 - **Live Generation**: Code generated for `create_file` and `modify_file` steps streams directly into the editor, providing immediate visual feedback.
+- **Smart Visual Flash**: Newly added or modified code is highlighted with a full-width green flash effect. This highlight tracks with your code as you edit around it and intelligently removes itself only when you modify or delete the flashed lines.
 - **Applying Changes**: AI modifications are applied to your editor, often involving diff analysis and intelligent application of changes.
 
 - **Active Exploration**: For complex queries, the **Context Agent** will automatically spring into action. It "investigates" your codebase by running safe terminal commands (`ls`, `grep`, `find`, `sed`, `head`) to find relevant files that static analysis might miss.

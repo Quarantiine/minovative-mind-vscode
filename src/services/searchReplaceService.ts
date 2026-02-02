@@ -9,39 +9,55 @@ export class SearchReplaceService {
 	constructor(private changeLogger?: ProjectChangeLogger) {}
 
 	/**
-	 * Parses the LLM output to extract search and replace blocks.
+	 * Parses the raw AI output to extract search/replace blocks.
 	 * Expected format:
 	 * <<<<<<< SEARCH
-	 * ... content to find ...
+	 * ... content to search ...
 	 * =======
-	 * ... content to replace with ...
+	 * ... content to replace ...
 	 * >>>>>>> REPLACE
 	 */
-	public parseBlocks(llmOutput: string): SearchReplaceBlock[] {
+	public parseBlocks(rawOutput: string): SearchReplaceBlock[] {
 		const blocks: SearchReplaceBlock[] = [];
-		// Relaxed regex to be more permissive with whitespace, newlines, and trailing text on marker lines
-		const regex =
-			/<<<<<<<\s*SEARCH(?:[^\n]*)\n([\s\S]*?)\n=======(?:[^\n]*)\n([\s\S]*?)\n>>>>>>>\s*REPLACE/g;
-		let match;
+		const lines = rawOutput.split(/\r?\n/);
+		let currentSearch: string[] | null = null;
+		let currentReplace: string[] | null = null;
+		let state: "NONE" | "SEARCH" | "REPLACE" = "NONE";
 
-		while ((match = regex.exec(llmOutput)) !== null) {
-			blocks.push({
-				search: match[1],
-				replace: match[2],
-			});
+		for (const line of lines) {
+			if (line.trim() === "<<<<<<< SEARCH") {
+				if (state !== "NONE") {
+					// recursive or broken block, ignore or reset?
+					// Let's reset for robustness
+				}
+				state = "SEARCH";
+				currentSearch = [];
+				currentReplace = null;
+			} else if (line.trim() === "=======") {
+				if (state === "SEARCH") {
+					state = "REPLACE";
+					currentReplace = [];
+				}
+			} else if (line.trim() === ">>>>>>> REPLACE") {
+				if (state === "REPLACE" && currentSearch && currentReplace) {
+					blocks.push({
+						search: currentSearch.join("\n"),
+						replace: currentReplace.join("\n"),
+					});
+				}
+				state = "NONE";
+				currentSearch = null;
+				currentReplace = null;
+			} else {
+				if (state === "SEARCH") {
+					currentSearch?.push(line);
+				} else if (state === "REPLACE") {
+					currentReplace?.push(line);
+				}
+			}
 		}
 
 		return blocks;
-	}
-
-	/**
-	 * Validates if the output contains any potential marker artifacts that were not parsed.
-	 * Returns true if the output seems to contain potential unparsed markers.
-	 */
-	public hasUnparsedMarkers(llmOutput: string): boolean {
-		// stricter check for markers that might have been missed by the main regex
-		// checking for the presence of the start marker keyword
-		return llmOutput.includes("<<<<<<< SEARCH");
 	}
 
 	/**

@@ -147,4 +147,6 @@ export interface WebviewAppState {
 	currentActiveOperationId: string | null;
 	isHeuristicContextEnabled: boolean;
 	isContextAgentLoading: boolean;
+	isJsonGenerationLoading: boolean;
+	currentJsonLoadingElement: HTMLDivElement | null;
 }

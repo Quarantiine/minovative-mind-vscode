@@ -112,6 +112,57 @@ function toggleHeuristicContextDisplay(elements: RequiredDomElements): void {
 }
 
 /**
+ * Updates the state of JSON generation loading and provides visual feedback.
+ *
+ * @param isLoading - Whether JSON generation is currently in progress.
+ * @param elements - DOM elements.
+ */
+export function setJsonLoadingState(
+	isLoading: boolean,
+	elements: RequiredDomElements,
+): void {
+	appState.isJsonGenerationLoading = isLoading;
+
+	if (isLoading) {
+		// Create and append a dedicated loading message in the chat history
+		const loadingDiv = document.createElement("div");
+		loadingDiv.className = "ai-message loading-message json-processing-message";
+		loadingDiv.id = "json-processing-loading-indicator";
+		loadingDiv.innerHTML = `🤖 Processing output into structured JSON <span class="loading-text"><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>`;
+		elements.chatContainer.appendChild(loadingDiv);
+
+		// Store reference for cleanup
+		appState.currentJsonLoadingElement = loadingDiv;
+
+		updateStatus(
+			elements,
+			"Processing output into structured JSON",
+			false,
+			true,
+		);
+	} else {
+		// Cleanup the loading element from chat history
+		const currentLoadingElement = appState.currentJsonLoadingElement;
+		if (currentLoadingElement && currentLoadingElement.parentNode) {
+			currentLoadingElement.remove();
+		}
+		appState.currentJsonLoadingElement = null;
+
+		// Only clear status if it matches our specific processing message
+		if (
+			elements.statusArea.textContent?.includes(
+				"Processing output into structured JSON",
+			)
+		) {
+			elements.statusArea.textContent = "";
+		}
+	}
+
+	// Trigger UI refresh to update button states based on new isJsonGenerationLoading
+	setLoadingState(appState.isLoading, elements);
+}
+
+/**
  * Updates the loading state of the webview UI, controlling the visibility and
  * disabled status of various elements based on the current application state.
  *
@@ -147,7 +198,8 @@ function setLoadingState(
 		loading ||
 		appState.isAwaitingUserReview ||
 		appState.isCancellationInProgress ||
-		appState.isPlanExecutionInProgress;
+		appState.isPlanExecutionInProgress ||
+		appState.isJsonGenerationLoading;
 
 	// Introduce new constants for granular control
 	const canInteractWithMainChatControls =
@@ -281,7 +333,9 @@ function setLoadingState(
 
 	// Control visibility of the cancel generation button
 	if (
-		(loading || appState.isPlanExecutionInProgress) &&
+		(loading ||
+			appState.isPlanExecutionInProgress ||
+			appState.isJsonGenerationLoading) &&
 		!appState.isCancellationInProgress &&
 		!appState.isAwaitingUserReview
 	) {
@@ -402,6 +456,7 @@ export function handleAiResponseEndUI(
 
 		updateStatus(elements, statusText, !isSuccess, false);
 		appState.currentActiveOperationId = null;
+		setJsonLoadingState(false, elements);
 		setLoadingState(false, elements);
 	} else {
 		// d. If they mismatch: log and skip UI action

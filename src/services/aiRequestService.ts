@@ -5,6 +5,7 @@ import {
 	FunctionCall,
 	Tool,
 	FunctionCallingMode,
+	SchemaType,
 } from "@google/generative-ai";
 import { ApiKeyManager } from "../sidebar/managers/apiKeyManager";
 import { HistoryEntry, HistoryEntryPart } from "../sidebar/common/sidebarTypes";
@@ -23,12 +24,137 @@ import {
 } from "../utils/parallelProcessor";
 import { TokenTrackingService } from "./tokenTrackingService";
 
+export type SearchReplaceBlockToolOutput = {
+	blocks: Array<{
+		search: string;
+		replace: string;
+	}>;
+};
+
+export const SEARCH_REPLACE_EXTRACTION_TOOL: Tool = {
+	functionDeclarations: [
+		{
+			name: "extractSearchReplaceBlocks",
+			description:
+				"Extracts intended code changes from raw text output using the <<<<< SEARCH / ======= / >>>>> REPLACE marker format. Returns an array of objects, each containing 'search' (the text to find) and 'replace' (the text to substitute).",
+			parameters: {
+				type: SchemaType.OBJECT,
+				properties: {
+					blocks: {
+						type: SchemaType.ARRAY,
+						description:
+							"An array containing all identified search and replace pairs.",
+						items: {
+							type: SchemaType.OBJECT,
+							properties: {
+								search: {
+									type: SchemaType.STRING,
+									description:
+										"The exact segment of code identified for search.",
+								},
+								replace: {
+									type: SchemaType.STRING,
+									description:
+										"The exact code segment intended as the replacement.",
+								},
+							},
+							required: ["search", "replace"],
+						},
+					},
+				},
+				required: ["blocks"],
+			},
+		},
+	],
+};
+
 export class AIRequestService {
 	constructor(
 		private apiKeyManager: ApiKeyManager,
 		private postMessageToWebview: (message: any) => void,
 		private tokenTrackingService: TokenTrackingService, // Made tokenTrackingService a required dependency
 	) {}
+
+	/**
+	 * Extracts structured search/replace blocks from raw LLM text output using Function Calling/Tool Use.
+	 * This is intended to replace brittle regex parsing of text output.
+	 */
+	public async extractSearchReplaceBlocksViaTool(
+		rawTextOutput: string,
+		modelName: string,
+		token?: vscode.CancellationToken,
+	): Promise<SearchReplaceBlockToolOutput> {
+		const apiKey = this.apiKeyManager.getActiveApiKey();
+		if (!apiKey) {
+			throw new Error("No API Key available for structured extraction.");
+		}
+
+		const contents: Content[] = [
+			{
+				role: "user",
+				parts: [
+					{
+						text: `Analyze the following raw output text and extract all requested search and replace code segments using the provided tool definition. If no markers are found, return an empty array for the blocks list. Ensure that 'search' and 'replace' content derived from the markers are accurately captured and trimmed.
+
+Raw Output Text:
+"""
+${rawTextOutput}
+"""`,
+					},
+				],
+			},
+		];
+
+		const result = await this.raceWithCancellation(
+			gemini.generateFunctionCall(
+				apiKey,
+				modelName,
+				contents,
+				[SEARCH_REPLACE_EXTRACTION_TOOL],
+				FunctionCallingMode.ANY,
+			),
+			token,
+		);
+
+		if (!result) {
+			// Model decided not to call the function (returned null/text response instead of tool call)
+			return { blocks: [] };
+		}
+
+		if (result.name !== "extractSearchReplaceBlocks") {
+			throw new Error(
+				`AI returned an unexpected function name: ${result.name}`,
+			);
+		}
+
+		// The arguments are returned as a JSON string that needs parsing
+		const argsJson = result.args as unknown as string; // Cast to unknown then string because library types might be fuzzy or generic
+		// Actually, Gemini API types often return args as object already if parsed by library, or string if raw.
+		// Let's assume the library returns it as object based on FunctionCall type definition which usually has args: object.
+		// Wait, the Google Generative AI SDK `FunctionCall` interface has `args: object`.
+		// So we can cast it directly or validate it.
+		// Let's safe cast.
+
+		const structuredOutput =
+			result.args as unknown as SearchReplaceBlockToolOutput;
+
+		if (!Array.isArray(structuredOutput.blocks)) {
+			// Fallback: sometimes args might be a string JSON if something weird happens, but standard SDK parses it.
+			// If it's not an array, maybe it failed to parse?
+			// Let's assume SDK works as typed.
+			throw new Error(
+				"Function call arguments did not return a valid blocks array.",
+			);
+		}
+
+		// Defensively trim results captured by the tool
+		const sanitizedblocks = structuredOutput.blocks.map((block) => ({
+			search: block.search.trim(),
+			replace: block.replace.trim(),
+		}));
+
+		return { blocks: sanitizedblocks };
+	}
 
 	/**
 	 * Helper method to race a promise against a cancellation token.

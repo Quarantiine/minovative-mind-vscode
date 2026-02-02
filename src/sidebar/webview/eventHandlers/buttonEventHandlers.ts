@@ -35,7 +35,7 @@ import { getFileNameFromPath } from "../utils/pathHelpers";
  */
 export function initializeButtonEventListeners(
 	elements: RequiredDomElements,
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	const {
 		sendButton,
@@ -176,7 +176,7 @@ export function initializeButtonEventListeners(
 				appState.allWorkspaceFiles,
 				"file",
 				elements,
-				setLoadingState
+				setLoadingState,
 			);
 		}
 	});
@@ -189,7 +189,7 @@ export function initializeButtonEventListeners(
 			updateStatus(
 				elements,
 				"No token statistics available to copy yet.",
-				true
+				true,
 			);
 			return;
 		}
@@ -211,7 +211,7 @@ export function initializeButtonEventListeners(
 			statsString += `\nModel Usage Percentages:\n`;
 			for (const [modelName, percentage] of stats.modelUsagePercentages) {
 				statsString += `- ${modelName} (with Thinking Mode): ${percentage.toFixed(
-					2
+					2,
 				)}%\n`;
 			}
 		} else {
@@ -265,7 +265,7 @@ export function initializeButtonEventListeners(
 		// Prevent duplicate cancellation requests
 		if (appState.isCancellationInProgress) {
 			console.warn(
-				"Cancellation already in progress, ignoring duplicate request"
+				"Cancellation already in progress, ignoring duplicate request",
 			);
 			return;
 		}
@@ -294,7 +294,7 @@ export function initializeButtonEventListeners(
 		// Prevent duplicate cancellation requests
 		if (appState.isCancellationInProgress) {
 			console.warn(
-				"Cancellation already in progress, ignoring duplicate request"
+				"Cancellation already in progress, ignoring duplicate request",
 			);
 			return;
 		}
@@ -313,7 +313,7 @@ export function initializeButtonEventListeners(
 	// Attach Image Button
 	attachImageButton.addEventListener("click", () => {
 		console.log(
-			"Attach Image button clicked, programmatically clicking hidden input."
+			"Attach Image button clicked, programmatically clicking hidden input.",
 		);
 		elements.imageUploadInput.click();
 	});
@@ -332,31 +332,31 @@ export function initializeButtonEventListeners(
 	chatContainer.addEventListener("click", async (event) => {
 		const target = event.target as HTMLElement;
 		const copyButton = target.closest(
-			".copy-button"
+			".copy-button",
 		) as HTMLButtonElement | null;
 		const deleteButton = target.closest(
-			".delete-button"
+			".delete-button",
 		) as HTMLButtonElement | null;
 		const fileItem = target.closest(
-			".context-file-item[data-filepath]"
+			".context-file-item[data-filepath]",
 		) as HTMLLIElement | null;
 		const generatePlanButton = target.closest(
-			".generate-plan-button"
+			".generate-plan-button",
 		) as HTMLButtonElement | null;
 
 		// Check for code copy button
 		const codeCopyButton = target.closest(
-			".code-copy-button"
+			".code-copy-button",
 		) as HTMLButtonElement | null;
 
 		// Check for copy context button
 		const copyContextButton = target.closest(
-			".copy-context-button"
+			".copy-context-button",
 		) as HTMLButtonElement | null;
 
 		if (generatePlanButton && !generatePlanButton.disabled) {
 			const messageElement = generatePlanButton.closest(
-				".message"
+				".message",
 			) as HTMLElement;
 			const messageIndexStr = messageElement?.dataset.messageIndex;
 
@@ -378,17 +378,17 @@ export function initializeButtonEventListeners(
 					updateStatus(
 						elements,
 						"Error: Invalid message index for plan generation.",
-						true
+						true,
 					);
 				}
 			} else {
 				console.error(
-					"data-message-index not found on parent message of generate-plan-button."
+					"data-message-index not found on parent message of generate-plan-button.",
 				);
 				updateStatus(
 					elements,
 					"Error: Missing message index for plan generation.",
-					true
+					true,
 				);
 			}
 			return; // Crucially return to prevent falling through to other button handlers
@@ -411,16 +411,16 @@ export function initializeButtonEventListeners(
 			copyContextButton.disabled = true; // Disable button immediately
 
 			const messageElement = copyContextButton.closest(
-				".message"
+				".message",
 			) as HTMLElement;
 			if (!messageElement) {
 				console.error(
-					"Copy context button clicked, but parent message element not found."
+					"Copy context button clicked, but parent message element not found.",
 				);
 				updateStatus(
 					elements,
 					"Error: Could not find message context to copy.",
-					true
+					true,
 				);
 				copyContextButton.disabled = false;
 				return;
@@ -432,12 +432,12 @@ export function initializeButtonEventListeners(
 			if (isNaN(parsedIndex)) {
 				console.error(
 					"Invalid data-message-index for copy context button:",
-					messageIndexStr
+					messageIndexStr,
 				);
 				updateStatus(
 					elements,
 					"Error: Invalid message index for copying context.",
-					true
+					true,
 				);
 				copyContextButton.disabled = false;
 				return;
@@ -509,19 +509,19 @@ export function initializeButtonEventListeners(
 						}, 1000);
 					} else {
 						console.warn(
-							"Could not find code element within pre.hljs for copy button."
+							"Could not find code element within pre.hljs for copy button.",
 						);
 						updateStatus(elements, "Error: Could not find code to copy.", true);
 						codeCopyButton.disabled = false; // Add: Re-enable button on error
 					}
 				} else {
 					console.warn(
-						"Could not find parent pre.hljs element for code copy button."
+						"Could not find parent pre.hljs element for code copy button.",
 					);
 					updateStatus(
 						elements,
 						"Error: Could not find code block for copy.",
-						true
+						true,
 					);
 					codeCopyButton.disabled = false; // Add: Re-enable button on error
 				}
@@ -541,7 +541,7 @@ export function initializeButtonEventListeners(
 			const messageElement = copyButton.closest(".message");
 			if (messageElement) {
 				const textElement = messageElement.querySelector(
-					".message-text-content"
+					".message-text-content",
 				) as HTMLSpanElement | null;
 
 				if (textElement) {
@@ -559,8 +559,8 @@ export function initializeButtonEventListeners(
 						// Add newlines before block-level elements for better copy-paste
 						Array.from(
 							tempDiv.querySelectorAll(
-								"p, pre, ul, ol, li, div, br, h1, h2, h3, h4, h5, h6, blockquote, table, tr"
-							)
+								"p, pre, ul, ol, li, div, br, h1, h2, h3, h4, h5, h6, blockquote, table, tr",
+							),
 						).forEach((el) => {
 							if (el.tagName === "BR") {
 								el.replaceWith("\n");
@@ -624,12 +624,12 @@ export function initializeButtonEventListeners(
 				}
 			} else {
 				console.warn(
-					"Copy button clicked, but parent message element not found."
+					"Copy button clicked, but parent message element not found.",
 				);
 			}
 		} else if (deleteButton && !deleteButton.disabled) {
 			const messageElementToDelete = deleteButton.closest(
-				".message"
+				".message",
 			) as HTMLElement;
 
 			if (
@@ -646,21 +646,22 @@ export function initializeButtonEventListeners(
 							type: "deleteSpecificMessage",
 							messageIndex: messageIndex,
 						});
+
 						updateStatus(elements, "Requesting message deletion...");
 					} else {
 						console.warn(
 							"Delete button clicked, but data-message-index is invalid:",
-							messageIndexStr
+							messageIndexStr,
 						);
 					}
 				} else {
 					console.warn(
-						"Delete button clicked, but data-message-index is missing on message element."
+						"Delete button clicked, but data-message-index is missing on message element.",
 					);
 				}
 			} else {
 				console.warn(
-					"Delete button clicked, but target is not a history-backed message."
+					"Delete button clicked, but target is not a history-backed message.",
 				);
 			}
 		}

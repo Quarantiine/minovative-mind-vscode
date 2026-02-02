@@ -484,7 +484,14 @@ export class EnhancedCodeGenerator {
 		}
 
 		let finalModifiedContent: string;
-		const blocks = this.searchReplaceService.parseBlocks(rawContent);
+		// Replaced regex parsing with AI tool extraction
+		const extractionResult =
+			await this.aiRequestService.extractSearchReplaceBlocksViaTool(
+				rawContent,
+				modelName,
+				token,
+			);
+		const blocks = extractionResult.blocks;
 
 		if (blocks.length > 0) {
 			try {

@@ -112,7 +112,18 @@ export class PlanService {
 			return;
 		}
 
-		const recentChanges = this.provider.changeLogger.getChangeLog();
+		let recentChanges = this.provider.changeLogger.getChangeLog();
+		if (recentChanges.length === 0) {
+			const lastPlanChanges =
+				this.provider.changeLogger.getLastCompletedPlanChanges();
+			if (lastPlanChanges && lastPlanChanges.length > 0) {
+				recentChanges = lastPlanChanges;
+				console.log(
+					"[PlanService] Active change log empty. Using changes from last completed plan for self-correction.",
+				);
+			}
+		}
+
 		const changedUris = this._extractUrisFromChangeSets(recentChanges);
 		const formattedRecentChanges =
 			this._formatRecentChangesForPrompt(recentChanges);
@@ -245,6 +256,7 @@ export class PlanService {
 				chatHistory: [...this.provider.chatHistoryManager.getChatHistory()],
 				textualPlanExplanation: textualResponse,
 				workspaceRootUri: this.workspaceRootUri!,
+				isCorrectionMode: true,
 			};
 
 			this.provider.pendingPlanGenerationContext = planContext;
@@ -719,6 +731,10 @@ export class PlanService {
 				});
 
 				try {
+					this.postMessageToWebview({
+						type: "updateJsonLoadingState",
+						value: true,
+					});
 					const functionCall: FunctionCall | null =
 						await this.provider.aiRequestService.generateFunctionCall(
 							planContext.initialApiKey,
@@ -742,6 +758,11 @@ export class PlanService {
 						planContext.workspaceRootUri,
 					);
 
+					this.postMessageToWebview({
+						type: "updateJsonLoadingState",
+						value: false,
+					});
+
 					if (error) {
 						lastError = new Error(`Validation failed: ${error}`);
 						if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
@@ -763,6 +784,10 @@ export class PlanService {
 					executablePlan = plan;
 					break;
 				} catch (error: any) {
+					this.postMessageToWebview({
+						type: "updateJsonLoadingState",
+						value: false,
+					});
 					if (error.message === ERROR_OPERATION_CANCELLED) {
 						throw error;
 					}
@@ -880,6 +905,10 @@ export class PlanService {
 				});
 
 				try {
+					this.postMessageToWebview({
+						type: "updateJsonLoadingState",
+						value: true,
+					});
 					const functionCall: FunctionCall | null =
 						await this.provider.aiRequestService.generateFunctionCall(
 							planContext.initialApiKey,
@@ -904,6 +933,11 @@ export class PlanService {
 						JSON.stringify(functionCall.args),
 						planContext.workspaceRootUri,
 					);
+
+					this.postMessageToWebview({
+						type: "updateJsonLoadingState",
+						value: false,
+					});
 
 					if (error) {
 						lastError = new Error(
@@ -930,6 +964,10 @@ export class PlanService {
 					executablePlan = plan;
 					break;
 				} catch (error: any) {
+					this.postMessageToWebview({
+						type: "updateJsonLoadingState",
+						value: false,
+					});
 					if (error.message === ERROR_OPERATION_CANCELLED) {
 						throw error;
 					}

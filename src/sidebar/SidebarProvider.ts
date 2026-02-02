@@ -63,6 +63,7 @@ const MESSAGE_THROTTLING_CONFIG = {
 		"restorePendingPlanConfirmation", // Restores UI for pending plan review
 		"updateModelList", // Model selection changes (infrequent)
 		"updateLoadingState",
+		"updateJsonLoadingState",
 		"apiKeyStatus",
 		"updateOptimizationSettings",
 		"structuredPlanParseFailed",

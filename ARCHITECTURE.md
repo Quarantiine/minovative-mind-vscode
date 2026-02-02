@@ -154,12 +154,13 @@ The primary responsibility for storing, loading, and managing the raw conversati
 Before a new query is sent, **`src/services/chatService.ts`** takes the stored history and enriches it with real-time context and system instructions.
 
 - **Relevant File Analysis (`_analyzeRecentHistory`):** This method examines the most recent model responses within the history. It extracts the list of files the AI previously cited as relevant and creates a `focusReminder`. This reminder is prepended to the current user prompt to guide the AI to maintain focus on the established scope (e.g., "Maintain this context unless the new prompt explicitly directs otherwise.").
+- **Contextual History Summarization:** For extended conversations, the service utilizes `lightweightPrompts.generateContextualHistorySummary` to condense the chat history into a focused summary. This ensures the AI retains critical context while significantly reducing token usage and distraction from outdated turn details.
 - **Project and URL Context Injection:** The service actively builds a detailed `projectContext` (including surrounding code, symbols, and workspace structure) and checks for any URLs in the user's input.
 - **Payload Construction:** The final input for the _current_ turn is a complete turn sequence, generated from three groups of `HistoryEntryPart` arrays which constitute the final user request payload:
   1. Focus Reminder (if present).
-  2. **Combined System Instruction:** A single part containing the System Prompt (`AI_CHAT_PROMPT`), Project Context string, and URL Context string.
+  2. **Combined System Instruction:** A single part containing the System Prompt (`AI_CHAT_PROMPT`), Project Context string, URL Context string, and the **History Summary** (if generated).
   3. The user's new input parts (text and/or images).
-     The entire previous conversation history (`chatHistoryManager.getChatHistory()`) is passed separately to the AI request layer.
+     If a summary is used, the raw linear history is omitted to prioritize the focused summary.
 
 #### 3. AI API Transformation
 
@@ -183,8 +184,8 @@ The assembled payload (both the current turn and the previous history) must be t
 - **Code Utility Integration**: Employs `src/utils/codeUtils.ts` for tasks like stripping markdown fences (`cleanCodeOutput`) and applying precise text edits (`applyAITextEdits`).
 - **AI Interaction**: Manages core interaction with the AI model for initial generation and multi-step refinement.
 - **Advanced Configuration Support**: Accepts an optional `GenerationConfig` object to fine-tune AI model behavior (e.g., temperature, stop sequences) for specific generation tasks.
-- **Efficient Partial Updates**: Utilizes `SearchReplaceService` to parse and apply surgical "Search and Replace" code blocks (`<<<<<<< SEARCH ... >>>>>>> REPLACE`) from the AI, enabling high-speed, token-efficient modifications without rewriting full files.
-- **Key Files**: `src/ai/enhancedCodeGeneration.ts` (`EnhancedCodeGenerator` class), `src/services/searchReplaceService.ts`, `src/services/codeValidationService.ts`, `src/utils/codeAnalysisUtils.ts`, `src/utils/codeUtils.ts`
+- **Efficient Partial Updates (Function Calling)**: Utilizes `AIRequestService`'s `extractSearchReplaceBlocksViaTool` to robustly extract "Search and Replace" code blocks (`<<<<<<< SEARCH ... >>>>>>> REPLACE`) using **Function Calling (Tool Use)**. This replaces brittle regex parsing with structured, deterministic AI extraction (`SEARCH_REPLACE_EXTRACTION_TOOL`), ensuring accurate text delimiters and reducing parsing errors.
+- **Key Files**: `src/ai/enhancedCodeGeneration.ts` (`EnhancedCodeGenerator` class), `src/services/aiRequestService.ts`, `src/services/searchReplaceService.ts`, `src/services/codeValidationService.ts`, `src/utils/codeAnalysisUtils.ts`, `src/utils/codeUtils.ts`
 
 ### Plan & Workflow Management
 
@@ -211,7 +212,7 @@ The assembled payload (both the current turn and the previous history) must be t
 - **Model Usage Distinction**: Dynamically retrieves model names, using `DEFAULT_FLASH_LITE_MODEL` for initial textual plans and optimized models for function calling.
 - **Enhanced Execution Modularity (PlanExecutorService)**: This service optimizes execution ordering and resource management. Terminal cleanup (`_disposeExecutionTerminals`) is now guaranteed by being called in a `finally` block.
 - **Dynamic Context Refinement**: For each execution step (`create_file`, `modify_file`), the service now invokes the **Context Agent** (`selectRelevantFilesAI`) to dynamically discover and select relevant files based on the specific step instruction.
-- **Self-Correction Workflow**: Implemented a dedicated cycle to automatically detect and repair issues in recently modified files. This includes collecting diagnostics from affected files, preparing a correction strategy with the AI, and generating a new structured plan for repair.
+- **Self-Correction Workflow**: Implemented a dedicated cycle to automatically detect and repair issues in recently modified files. This includes collecting **precise error status text and diagnostics** from affected files, preparing a correction strategy with the AI using this specific error context, and generating a new structured plan for repair.
 - **Diagnostic Feedback Loop**: Utilizes `warmUpDiagnostics` to programmatically trigger language server scans on modified files and wait for stability. The resulting diagnostics are then fed back into the AI to verify the success of the changes or drive self-correction.
 - **Search & Replace Application**: `PlanExecutorService` integrates with `SearchReplaceService` to intercept AI modification outputs. If Search/Replace blocks (`<<<<<<< SEARCH ... >>>>>>> REPLACE`) are detected, it applies them using fuzzy matching; otherwise, it falls back to full file rewrites for backward compatibility.
 - **Partial File Intelligence**: The system supports reading only relevant **line ranges** (e.g., `interface definition`) or symbols instead of full files.

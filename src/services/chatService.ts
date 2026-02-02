@@ -4,6 +4,7 @@ import {
 	ERROR_OPERATION_CANCELLED,
 	initializeGenerativeAI,
 } from "../ai/gemini";
+import * as lightweightPrompts from "../ai/prompts/lightweightPrompts";
 import { GenerationConfig } from "@google/generative-ai";
 import { UrlContextService } from "./urlContextService";
 import { HistoryEntry, HistoryEntryPart } from "../sidebar/common/sidebarTypes";
@@ -164,6 +165,38 @@ export class ChatService {
 			const urlContextString =
 				this.urlContextService.formatUrlContexts(urlContexts);
 
+			// --- NEW: Contextual History Summarization ---
+			let historySummaryContent: string | undefined = undefined;
+			const historyForSummarization =
+				this.provider.chatHistoryManager.getChatHistory();
+
+			if (historyForSummarization.length > 0) {
+				this.provider.postMessageToWebview({
+					type: "statusUpdate",
+					value: "Summarizing chat history",
+					showLoadingDots: true,
+				});
+				try {
+					historySummaryContent =
+						await lightweightPrompts.generateContextualHistorySummary(
+							historyForSummarization,
+							userMessageTextForContext,
+							this.provider.aiRequestService,
+							token,
+						);
+					this.provider.postMessageToWebview({
+						type: "statusUpdate",
+						value: "Chat history summarized.",
+					});
+				} catch (summaryError: any) {
+					console.warn(
+						`[ChatService] Failed to generate history summary. Continuing without focused summary. Error: \${summaryError.message}`,
+					);
+					historySummaryContent = `[WARNING: Could not generate focused history summary due to error: \${summaryError.message}]`;
+				}
+			}
+			// ---------------------------------------------
+
 			if (urlContexts.length > 0) {
 				console.log(
 					`[ChatService] Processed ${urlContexts.length} URLs for context`,
@@ -199,9 +232,14 @@ export class ChatService {
 				},
 			});
 
-			const systemInstruction = `${AI_CHAT_PROMPT} \n\nProject Context:\n${
+			let systemInstruction = `${AI_CHAT_PROMPT} \n\nProject Context:\n${
 				projectContext.contextString
 			}${urlContextString ? `\n\n${urlContextString}` : ""}`;
+
+			// Prepend History Summary if available
+			if (historySummaryContent) {
+				systemInstruction = `**CONVERSATIONAL HISTORY SUMMARY (Use this as primary memory)**:\n${historySummaryContent}\n\n${systemInstruction}`;
+			}
 
 			const focusReminderPart: HistoryEntryPart[] = [];
 			if (focusReminder) {
@@ -221,11 +259,15 @@ export class ChatService {
 				generationConfig = {};
 			}
 
+			const historyToPass = historySummaryContent
+				? []
+				: this.provider.chatHistoryManager.getChatHistory();
+
 			finalAiResponseText =
 				await this.provider.aiRequestService.generateWithRetry(
 					fullUserTurnContents,
 					modelName,
-					this.provider.chatHistoryManager.getChatHistory(),
+					historyToPass,
 					"chat",
 					generationConfig,
 					{

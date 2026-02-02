@@ -984,6 +984,40 @@ export class PlanExecutorService {
 				await vscode.workspace.fs.readFile(fileUri),
 			).toString("utf-8");
 
+			if (step.step.generate_prompt) {
+				// Runtime Guard: Check for errors before overwriting
+				// Ensure diagnostics are fresh
+				await DiagnosticService.waitForDiagnosticsToStabilize(
+					fileUri,
+					combinedToken,
+				);
+				const diagnostics = DiagnosticService.getDiagnosticsForUri(fileUri);
+				const hasErrors = diagnostics.some(
+					(d) => d.severity === vscode.DiagnosticSeverity.Error,
+				);
+
+				if (context.isCorrectionMode) {
+					if (!hasErrors) {
+						console.log(
+							`[Runtime Guard] Skipping overwrite for ${path.basename(
+								step.step.path,
+							)}: No visible error diagnostics found.`,
+						);
+						const skipMessage = `Step ${currentStepNumber}/${totalSteps}: Skipped overwrite for \`${path.basename(
+							step.step.path,
+						)}\` (No visible errors detected).`;
+						this._postChatUpdateForPlanExecution({
+							type: "appendRealtimeModelMessage",
+							value: {
+								text: skipMessage,
+							},
+							diffContent: undefined,
+						});
+						return;
+					}
+				}
+			}
+
 			if (existingContent === cleanedDesiredContent) {
 				console.log(
 					`Minovative Mind: [Step ${currentStepNumber}/${totalSteps}] File \`${path.basename(
@@ -1119,6 +1153,38 @@ export class PlanExecutorService {
 		};
 
 		// Dynamic Context Selection (Context Agent) removed
+
+		// Runtime Guard: Check for errors before modifying
+		// Ensure diagnostics are fresh
+		await DiagnosticService.waitForDiagnosticsToStabilize(
+			fileUri,
+			combinedToken,
+		);
+		const diagnostics = DiagnosticService.getDiagnosticsForUri(fileUri);
+		const hasErrors = diagnostics.some(
+			(d) => d.severity === vscode.DiagnosticSeverity.Error,
+		);
+
+		if (context.isCorrectionMode) {
+			if (!hasErrors) {
+				console.log(
+					`[Runtime Guard] Skipping modification for ${path.basename(
+						step.step.path,
+					)}: No visible error diagnostics found.`,
+				);
+				const skipMessage = `Step ${currentStepNumber}/${totalSteps}: Skipped modification for \`${path.basename(
+					step.step.path,
+				)}\` (No visible errors detected).`;
+				this._postChatUpdateForPlanExecution({
+					type: "appendRealtimeModelMessage",
+					value: {
+						text: skipMessage,
+					},
+					diffContent: undefined,
+				});
+				return;
+			}
+		}
 
 		let modifiedResult: { content: string } | undefined;
 		let attempt = 0;

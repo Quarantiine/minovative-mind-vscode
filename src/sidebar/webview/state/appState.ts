@@ -15,6 +15,11 @@ export const appState: WebviewAppState = {
 	currentAiMessageContentElement: null,
 
 	/**
+	 * Reference to the DOM element containing the JSON generation loading indicator.
+	 */
+	currentJsonLoadingElement: null,
+
+	/**
 	 * Timer ID for the retry countdown.
 	 */
 	retryTimer: null as ReturnType<typeof setTimeout> | null,
@@ -203,5 +208,14 @@ export const appState: WebviewAppState = {
 	 * The most recently received and formatted token usage statistics.
 	 */
 	lastFormattedTokenStats: null,
+
+	/**
+	 * Flag indicating if a context-aware agent operation is currently loading.
+	 */
 	isContextAgentLoading: false,
+
+	/**
+	 * Flag indicating if a JSON generation request is currently in progress.
+	 */
+	isJsonGenerationLoading: false,
 };

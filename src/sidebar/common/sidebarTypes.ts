@@ -464,7 +464,8 @@ export type ExtensionToWebviewMessages =
 	| AiRetryNotificationMessage
 	| ContextAgentLogMessage
 	| SetContextAgentLoadingMessage
-	| TriggerStructuredPlanFromCorrectionMessage;
+	| TriggerStructuredPlanFromCorrectionMessage
+	| { type: "updateJsonLoadingState"; value: boolean };
 
 export interface PlanGenerationContext {
 	type: "chat" | "editor";
@@ -480,6 +481,7 @@ export interface PlanGenerationContext {
 	relevantFiles?: string[];
 	isMergeOperation?: boolean;
 	activeSymbolDetailedInfo?: ActiveSymbolDetailedInfo;
+	isCorrectionMode?: boolean;
 }
 
 export interface PlanGenerationResult {

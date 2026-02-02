@@ -72,13 +72,11 @@ export function updateEmptyChatPlaceholderVisibility(
 ): void {
 	console.log("[DEBUG] updateEmptyChatPlaceholderVisibility called.");
 
-	const actualMessages = Array.from(elements.chatContainer.children).filter(
-		(child) =>
-			child.classList.contains("message") &&
-			!child.classList.contains("loading-message")
-	);
+	const hasContent =
+		elements.chatContainer.childElementCount > 0 ||
+		appState.isJsonGenerationLoading;
 
-	if (actualMessages.length > 0) {
+	if (hasContent) {
 		elements.emptyChatPlaceholder.style.display = "none";
 		elements.chatContainer.style.display = "flex";
 	} else {
@@ -86,7 +84,7 @@ export function updateEmptyChatPlaceholderVisibility(
 		elements.chatContainer.style.display = "none";
 	}
 	console.log(
-		`[DEBUG] actualMessages.length: ${actualMessages.length}, emptyChatPlaceholder.style.display: ${elements.emptyChatPlaceholder.style.display}`
+		`[DEBUG] hasContent: ${hasContent}, emptyChatPlaceholder.style.display: ${elements.emptyChatPlaceholder.style.display}`
 	);
 }
 
@@ -154,6 +152,15 @@ export function resetUIStateAfterCancellation(
 		lingeringMessageElement.remove();
 	}
 	appState.currentAiMessageContentElement = null;
+
+	// Explicitly reset JSON generation loading state and cleanup DOM element if it exists
+	appState.isJsonGenerationLoading = false;
+	const jsonLoadingElement = appState.currentJsonLoadingElement;
+	if (jsonLoadingElement && jsonLoadingElement.parentElement) {
+		jsonLoadingElement.remove();
+	}
+	appState.currentJsonLoadingElement = null;
+
 	appState.currentAccumulatedText = "";
 	appState.typingBuffer = "";
 	appState.isCommitActionInProgress = false; // Reset commit flag
