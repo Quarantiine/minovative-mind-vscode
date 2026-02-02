@@ -300,7 +300,9 @@ async function _aiHeuristicScoring(
 	token?: vscode.CancellationToken,
 ): Promise<Map<string, number>> {
 	const scores = new Map<string, number>();
-	if (allScannedFiles.length === 0) return scores;
+	if (allScannedFiles.length === 0) {
+		return scores;
+	}
 
 	// Prepare file list for ranking
 	const relativePaths = allScannedFiles.map((f) =>
@@ -310,7 +312,9 @@ async function _aiHeuristicScoring(
 	// Batch paths to avoid prompt overflow, although for Flash Lite we can handle many
 	const BATCH_SIZE = 100;
 	for (let i = 0; i < relativePaths.length; i += BATCH_SIZE) {
-		if (token?.isCancellationRequested) break;
+		if (token?.isCancellationRequested) {
+			break;
+		}
 
 		const batch = relativePaths.slice(i, i + BATCH_SIZE);
 		const prompt = `

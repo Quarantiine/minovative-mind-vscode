@@ -321,10 +321,12 @@ function setLoadingState(
 
 		if (planParseErrorVisible) {
 			elements.planParseErrorContainer.style.display = "none";
-			if (elements.planParseErrorDisplay)
+			if (elements.planParseErrorDisplay) {
 				elements.planParseErrorDisplay.textContent = "";
-			if (elements.failedJsonDisplay)
+			}
+			if (elements.failedJsonDisplay) {
 				elements.failedJsonDisplay.textContent = "";
+			}
 			updateStatus(
 				elements,
 				"New request initiated, parse error UI hidden.",

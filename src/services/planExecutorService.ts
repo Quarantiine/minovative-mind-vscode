@@ -714,7 +714,9 @@ export class PlanExecutorService {
 									}
 									if (symbol.children) {
 										const found = findSymbol(symbol.children, name);
-										if (found) return found;
+										if (found) {
+											return found;
+										}
 									}
 								}
 								return undefined;

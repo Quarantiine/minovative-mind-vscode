@@ -62,7 +62,9 @@ export async function applyAITextEdits(
 	});
 
 	for (const edit of sortedEdits) {
-		if (token.isCancellationRequested) return;
+		if (token.isCancellationRequested) {
+			return;
+		}
 
 		const isInsertion = edit.range.isEmpty && edit.newText.length > 0;
 		const isReplacement = !edit.range.isEmpty && edit.newText.length > 0;
@@ -92,7 +94,9 @@ export async function applyAITextEdits(
 			// Stream the insertion
 			let currentOffset = 0;
 			while (currentOffset < text.length) {
-				if (token.isCancellationRequested) break;
+				if (token.isCancellationRequested) {
+					break;
+				}
 
 				const chunk = text.slice(currentOffset, currentOffset + chunkSize);
 				await editor.edit((builder) => {

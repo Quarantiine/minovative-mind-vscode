@@ -1,6 +1,6 @@
 # Terms of Use for Minovative Mind VS Code Extension
 
-## Last Updated: September 15, 2025
+## Last Updated: February 1, 2026
 
 ## 1. Introduction and Acceptance of Terms
 
@@ -37,6 +37,14 @@ You agree to use the Minovative Mind extension in compliance with all applicable
 
 The Minovative Mind extension primarily operates on your local machine and processes your workspace data locally. You are responsible for the security of your local development environment, including your VS Code installation, project files, and network connections. We are not responsible for any security breaches or data loss originating from your local environment.
 
+### 3.5 Autonomous AI Risks
+
+Minovative Mind includes "Autonomous" and "Self-Correction" features that can create, modify, or delete files without per-action confirmation when these modes are active. By using these features, you acknowledge and agree that:
+
+- **No Manual Confirmation**: The AI may make multiple changes in rapid succession without waiting for your distinct approval for each step.
+- **Version Control Requirement**: You are solely responsible for ensuring your project is under version control (e.g., Git) and that you have a clean working state _before_ initiating any autonomous workflow.
+- **Data Safety**: Ward Innovations DBA is not liable for any data loss, file corruption, or "regressions" (breaking of previously working code) resulting from the AI's autonomous actions.
+
 ## 4. Intellectual Property Rights
 
 ### 4.1 Extension’s Intellectual Property
@@ -65,7 +73,13 @@ WITHOUT LIMITING THE FOREGOING, Ward Innovations DBA DOES NOT WARRANT THAT:
 - THE EXTENSION WILL MEET YOUR SPECIFIC REQUIREMENTS OR EXPECTATIONS.
 - THE EXTENSION’S OPERATION WILL BE UNINTERRUPTED, SECURE, OR ERROR-FREE.
 - ANY AI-GENERATED OUTPUT WILL BE ACCURATE, COMPLETE, RELIABLE, OR FREE FROM HARMFUL CONTENT.
+- ANY AI-GENERATED OUTPUT WILL BE ACCURATE, COMPLETE, RELIABLE, OR FREE FROM HARMFUL CONTENT.
 - ANY DEFECTS OR ERRORS IN THE EXTENSION WILL BE CORRECTED.
+
+**Specific AI Risks**:
+
+- **Hallucinations**: The AI may occasionally "hallucinate" code imports, function names, or libraries that do not exist. You are responsible for verifying all dependencies.
+- **Regressions**: In the process of "Self-Correction," the AI may inadvertently break existing functionality while attempting to fix a specific error.
 
 You assume all risks associated with your use of the extension, including the risks of data loss, system damage, AI-generated errors, and any harm resulting from your reliance on AI output.
 
@@ -76,6 +90,8 @@ IN NO EVENT SHALL Ward Innovations DBA OR ITS CREATOR, DANIEL WARD, BE LIABLE FO
 ## 8. Third-Party Services (Google Gemini API)
 
 The Minovative Mind extension relies on the Google Gemini API as a third-party service for its core AI functionality. Your interaction with the Google Gemini API is subject to Google’s own terms of service, privacy policy, and any other applicable agreements you have with Google. Ward Innovations DBA is not responsible for the availability, functionality, data handling, or security practices of the Google Gemini API or any other third-party services. You acknowledge and agree that Ward Innovations DBA has no control over, and assumes no responsibility for, the content, privacy policies, or practices of any third-party websites or services.
+
+**Service Availability**: AI workflows, especially multi-step autonomous plans, may fail or be interrupted if the third-party API service experiences downtime, rate limiting, or other availability issues. Ward Innovations DBA is not liable for incomplete work or interruptions caused by third-party service failures.
 
 ## 9. Modifications to the Terms of Use
 

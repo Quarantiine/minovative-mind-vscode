@@ -804,7 +804,9 @@ export class PlanExecutionService {
 		const failedStepsSummary = initialPlan
 			.map((step, index) => {
 				const result = initialResults[index];
-				if (!result || result.success) return null;
+				if (!result || result.success) {
+					return null;
+				}
 				return {
 					action: step.action,
 					description: step.description,
@@ -814,8 +816,9 @@ export class PlanExecutionService {
 			})
 			.filter((s) => s !== null);
 
-		if (failedStepsSummary.length === 0 && diagnostics.length === 0)
+		if (failedStepsSummary.length === 0 && diagnostics.length === 0) {
 			return null;
+		}
 
 		this.postChatUpdate({
 			type: "appendRealtimeModelMessage",
@@ -847,7 +850,9 @@ Return the new plan as a JSON array of PlanStep objects. If no further action is
 				token,
 			);
 
-			if (token.isCancellationRequested) return null;
+			if (token.isCancellationRequested) {
+				return null;
+			}
 
 			const cleanedOutput = cleanCodeOutput(aiResponse.content);
 			const jsonMatch = cleanedOutput.match(/\[[\s\S]*\]/);

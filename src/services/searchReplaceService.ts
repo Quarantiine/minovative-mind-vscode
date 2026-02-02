@@ -125,10 +125,13 @@ export class SearchReplaceService {
 			// If matchIndex is 0, 'before' is empty string.
 
 			let result = "";
-			if (matchIndex > 0) result += before + "\n";
+			if (matchIndex > 0) {
+				result += before + "\n";
+			}
 			result += block.replace;
-			if (matchIndex + searchLines.length < lines.length)
+			if (matchIndex + searchLines.length < lines.length) {
 				result += "\n" + after;
+			}
 
 			newContent = result;
 		}

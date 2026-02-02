@@ -32,7 +32,7 @@ const CACHE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
  * Returns a compact summary suitable for including in AI prompts.
  */
 export async function gatherProjectConfigContext(
-	workspaceRoot: vscode.Uri
+	workspaceRoot: vscode.Uri,
 ): Promise<ProjectConfigContext> {
 	const workspacePath = workspaceRoot.fsPath;
 
@@ -79,9 +79,15 @@ export async function gatherProjectConfigContext(
 					const aScore = priorityPatterns.findIndex((p) => p.test(a));
 					const bScore = priorityPatterns.findIndex((p) => p.test(b));
 					// -1 means not found, put at end
-					if (aScore === -1 && bScore === -1) return a.localeCompare(b);
-					if (aScore === -1) return 1;
-					if (bScore === -1) return -1;
+					if (aScore === -1 && bScore === -1) {
+						return a.localeCompare(b);
+					}
+					if (aScore === -1) {
+						return 1;
+					}
+					if (bScore === -1) {
+						return -1;
+					}
 					return aScore - bScore;
 				});
 			};
@@ -89,7 +95,7 @@ export async function gatherProjectConfigContext(
 			context.keyDependencies = sortByPriority(Object.keys(deps)).slice(0, 15);
 			context.devDependencies = sortByPriority(Object.keys(devDeps)).slice(
 				0,
-				10
+				10,
 			);
 
 			// Detect frameworks
@@ -115,7 +121,7 @@ export async function gatherProjectConfigContext(
 			console.warn(
 				`[ConfigContextProvider] Failed to parse package.json: ${
 					(e as Error).message
-				}`
+				}`,
 			);
 		}
 	}
@@ -150,7 +156,7 @@ export async function gatherProjectConfigContext(
 			console.warn(
 				`[ConfigContextProvider] Failed to parse tsconfig.json: ${
 					(e as Error).message
-				}`
+				}`,
 			);
 		}
 	}
@@ -171,7 +177,7 @@ export async function gatherProjectConfigContext(
 	}
 
 	const dockerfileExists = fs.existsSync(
-		path.join(workspacePath, "Dockerfile")
+		path.join(workspacePath, "Dockerfile"),
 	);
 	if (dockerfileExists) {
 		frameworkHints.push("Docker");
@@ -190,7 +196,7 @@ export async function gatherProjectConfigContext(
 	console.log(
 		`[ConfigContextProvider] Gathered config context for ${
 			context.projectName || "project"
-		}`
+		}`,
 	);
 	return context;
 }
@@ -199,7 +205,7 @@ export async function gatherProjectConfigContext(
  * Formats the project config context into a prompt-friendly string.
  */
 export function formatProjectConfigForPrompt(
-	config: ProjectConfigContext
+	config: ProjectConfigContext,
 ): string {
 	if (!config || Object.keys(config).length === 0) {
 		return "";
