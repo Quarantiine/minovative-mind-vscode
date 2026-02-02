@@ -178,7 +178,7 @@ export class PlanExecutorService {
 						) {
 							this.postMessageToWebview({
 								type: "statusUpdate",
-								value: `Finalizing: Waiting for diagnostics to stabilize...`,
+								value: `Finalizing`,
 							});
 							await this._warmUpDiagnostics(affectedUris, combinedToken);
 						}
