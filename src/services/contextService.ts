@@ -46,6 +46,7 @@ import {
 	DEFAULT_SIZE,
 } from "../sidebar/common/sidebarConstants";
 import { SUPPORTED_CODE_EXTENSIONS } from "../utils/languageUtils";
+import { FileSummary } from "./sequentialFileProcessor";
 
 // Constants for symbol processing
 export const MAX_REFERENCED_TYPE_CONTENT_CHARS_CONSTANT = 20000;
@@ -958,7 +959,7 @@ export class ContextService {
 			// Summary generation logic with optimization
 			const alwaysRunInvestigation =
 				this.settingsManager.getOptimizationSettings().alwaysRunInvestigation;
-			const fileSummariesForAI = new Map<string, string>();
+			const fileSummariesForAI = new Map<string, FileSummary>();
 
 			// Skip expensive file summary generation when investigation mode is enabled
 			// since the AI will dynamically discover context via terminal commands
@@ -1007,7 +1008,16 @@ export class ContextService {
 									undefined,
 									MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION,
 								);
-								fileSummariesForAI.set(relativePath, summary);
+								fileSummariesForAI.set(relativePath, {
+									filePath: fileUri.fsPath,
+									relativePath: relativePath,
+									summary: summary,
+									lineCount: fileContentRaw.split("\n").length,
+									keyInsights: [],
+									fileType: path.extname(relativePath).slice(1),
+									estimatedComplexity: "medium",
+									mainPurpose: "Unknown",
+								});
 							} catch (error: any) {
 								console.warn(
 									`[ContextService] Could not generate summary for ${relativePath}: ${error.message}`,
