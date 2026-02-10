@@ -2,6 +2,14 @@ import * as sidebarTypes from "../../sidebar/common/sidebarTypes";
 import { HistoryEntryPart } from "../../sidebar/common/sidebarTypes";
 import { SafeCommandExecutor } from "../../context/safeCommandExecutor";
 
+export const STRICT_QUALITY_GUIDELINES = `
+Strict Quality Guidelines:
+- **Production-Ready**: All generated code must be complete, functional, and follow industry best practices.
+- **No Placeholders**: Never use \`TODO\`, \`...\`, or conceptual summaries. Provide the full implementation.
+- **Completeness**: Solutions must be fully fleshed out, covering all edge cases and requirements.
+- **Absolute Clarity**: Instructions and code must be explicit and unambiguous.
+`;
+
 export function createInitialPlanningExplanationPrompt(
 	projectContext: string,
 	userRequest?: string,
@@ -97,8 +105,10 @@ ${fullText}
 
 	return `You are an expert software engineer. Your task is to explain a detailed, high-level, step-by-step plan to fulfill the request, focusing solely on problem-solving or feature implementation. No code or JSON output, only human-readable text.
 
+${STRICT_QUALITY_GUIDELINES}
+
 Instructions for Plan Explanation:
-*   Goal: Provide a clear, comprehensive, high-level, and human-readable plan using Markdown.
+*   Goal: Provide a clear, comprehensive, high-level, and human-readable plan using Markdown that adheres to the Strict Quality Guidelines.
 *   Context & Analysis: ${planExplanationInstructions.trim()}
 ${createFileJsonRules.trim()}
 ${newDependencyInstructionsForExplanation.trim()}
@@ -115,8 +125,8 @@ ${
 		? "For '/fix' requests, specifically detail how your plan addresses all 'Relevant Diagnostics'."
 		: ""
 }
-*   Completeness & Clarity: Cover all necessary steps. Describe each step briefly (e.g., "Create 'utils.ts'", "Modify 'main.ts' to import utility", "Install 'axios' via npm").
-*   Production Readiness: Generate production-ready code. Prioritize robustness, maintainability, security, cleanliness, efficiency, and industry best practices.
+*   Completeness & Clarity: Cover all necessary steps. Describe each step briefly (e.g., "Create 'utils.ts'", "Modify 'main.ts' to import utility", "Install 'axios' via npm"). Ensure the plan is explicit and unambiguous.
+*   Production Readiness: Generate production-ready code. Prioritize robustness, maintainability, security, cleanliness, efficiency, and industry best practices. NO placeholders or partial implementations are allowed.
 
 ${
 	specificContextContent
@@ -220,7 +230,8 @@ ${fullText}
 	return `You are an expert software engineer AI. Generate a structured execution plan by calling the \`generateExecutionPlan\` function.
 
 Instructions for Function Call:
-- You MUST call the \`generateExecutionPlan\` tool.
+- **Thinking Process**: You should use the \`think\` tool to plan out your approach, analyze dependencies, and verify your strategy BEFORE calling \`generateExecutionPlan\`.
+- You MUST eventually call the \`generateExecutionPlan\` tool to submit your final plan.
 - \`plan\`: Use the entire detailed textual plan explanation below.
 - \`user_request\`: Original user's request or editor instruction.
 - \`project_context\`: Entire broader project context.
@@ -245,7 +256,8 @@ Crucial Rules for \`generateExecutionPlan\` Tool:
 - A single \`modification_prompt\` should cohesively describe multiple changes for one file, one step if they're part of one logical task.
 - Avoid over-fragmentation.
 - For \`create_file\` with code files, \`generate_prompt\` is MANDATORY, not optional. Never use \`content\` for code.
-- All generated code/instructions must be production-ready (complete, functional, no placeholders/TODOs). The best code you can give.
+${STRICT_QUALITY_GUIDELINES}
+- **Production-Ready Implementation**: All generated code/instructions must be production-ready (complete, functional, no placeholders/TODOs). The best code you can give.
 - **Allowed Command List**: For 'run_command' steps, you are strictly limited to the following commands: [${SafeCommandExecutor.getAllowedCommands().join(", ")}]. Ensure any command you use is in this list.
 - **Robustness**: Use \`find . -iname ...\` for searches to avoid case-sensitivity issues (e.g., \`find src -name "*service.ts"\` will fail to find \`planService.ts\` on many systems).
 
@@ -315,7 +327,8 @@ Instructions:
 1. Review the "Summary of Recent Changes/Errors" to understand what went wrong or what remains.
 2. Analyze the "Current Project Context" (focusing on recently changed files) and any "Target File" info.
 3. Propose a clear, high-level, step-by-step textual strategy (using Markdown) to fix the issues and complete the task.
-4. Focus solely on problem-solving. No code or JSON output yet.
+4. Ensure the strategy adheres to strict quality guidelines (production-ready, no placeholders, complete, clear).
+5. Focus solely on problem-solving. No code or JSON output yet.
 
 Summary of Recent Changes/Errors:
 ${summaryOfLastChanges}
@@ -376,7 +389,8 @@ Diagnostics: ${editorContext.diagnosticsString || "None"}`;
 Goal: Implement the "Correction Strategy" while carefully considering the "Summary of Recent Changes/Errors" to avoid repeating mistakes.
 
 Instructions for Function Call:
-- You MUST call the \`generateExecutionPlan\` tool.
+- **Thinking Process**: You should use the \`think\` tool to analyze the previous errors and refine your strategy BEFORE calling \`generateExecutionPlan\`.
+- You MUST eventually call the \`generateExecutionPlan\` tool to submit your final plan.
 - \`plan\`: Use the "Correction Strategy" provided below.
 - \`user_request\`: ${mainUserRequestDescription}
 - \`project_context\`: Entire broader project context.
@@ -389,7 +403,8 @@ Crucial Rules for \`generateExecutionPlan\` Tool:
 - **Enforce One \`ModifyFileStep\` Per File**: Consolidate all changes for a single file into exactly ONE step.
 - \`create_file\`: You MUST use \`generate_prompt\` for ALL code files.
 - **MANDATORY STREAMING RULE**: Using \`generate_prompt\` for code files is NON-NEGOTIABLE.
-- All generated code/instructions must be production-ready (complete, functional, no placeholders/TODOs).
+${STRICT_QUALITY_GUIDELINES}
+- **Production-Ready Implementation**: All generated code/instructions must be production-ready (complete, functional, no placeholders/TODOs).
 - **Allowed Command List**: For 'run_command' steps, you are strictly limited to the following commands: [${SafeCommandExecutor.getAllowedCommands().join(
 		", ",
 	)}].

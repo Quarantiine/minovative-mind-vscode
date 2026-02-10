@@ -412,27 +412,7 @@ export class ContextService {
 
 	/**
 	 * Converts a map of file dependencies (which includes relation type) into a simplified
-	 * map containing only the dependency paths (strings).
-	 * This conversion is necessary when passing data to components that only need path strings.
-	 * @param dependencyMap The input map of path -> DependencyRelation[]
-	 * @returns The output map of path -> string[]
-	 */
-	private _convertDependencyMapToStringMap(
-		dependencyMap?: Map<string, DependencyRelation[]>,
-	): Map<string, string[]> {
-		if (!dependencyMap) {
-			return new Map<string, string[]>();
-		}
 
-		const stringMap = new Map<string, string[]>();
-
-		for (const [importerPath, relations] of dependencyMap.entries()) {
-			const paths = relations.map((rel) => rel.path);
-			stringMap.set(importerPath, paths);
-		}
-
-		return stringMap;
-	}
 
 	/**
 	 * Scans the workspace for files, using the default settings.
@@ -946,7 +926,7 @@ export class ContextService {
 						rootFolder.uri,
 						editorContext,
 						fileDependencies,
-						this._convertDependencyMapToStringMap(reverseFileDependencies),
+						reverseFileDependencies,
 						activeSymbolDetailedInfo,
 						undefined, // semanticGraph
 						cancellationToken,
@@ -1136,11 +1116,8 @@ export class ContextService {
 						},
 						modelName: DEFAULT_FLASH_LITE_MODEL, // Use the default model for selection
 						cancellationToken,
-						fileDependencies:
-							this._convertDependencyMapToStringMap(fileDependencies),
-						reverseDependencies: this._convertDependencyMapToStringMap(
-							reverseFileDependencies,
-						),
+						fileDependencies: fileDependencies,
+						reverseDependencies: reverseFileDependencies,
 						preSelectedHeuristicFiles: heuristicSelectedFiles, // Pass heuristicSelectedFiles
 						fileSummaries: fileSummariesForAI, // Pass the generated file summaries
 						selectionOptions: {

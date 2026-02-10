@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as crypto from "crypto";
+import { ChildProcess } from "child_process";
 import { EnhancedCodeGenerator } from "../../ai/enhancedCodeGeneration";
 import { _performModification } from "./aiInteractionService";
 import { AIRequestService } from "../../services/aiRequestService";
@@ -18,11 +19,13 @@ import {
 import { formatSuccessfulChangesForPrompt } from "../../workflow/changeHistoryFormatter";
 import { formatUserFacingErrorMessage } from "../../utils/errorFormatter";
 import { ERROR_OPERATION_CANCELLED } from "../../ai/gemini";
+import { executeCommand, CommandResult } from "../../utils/commandExecution";
 
 // Define enums and interfaces for plan execution
 export enum PlanStepAction {
 	ModifyFile = "modifyFile",
 	CreateFile = "createFile",
+	CreateDirectory = "createDirectory",
 	DeleteFile = "deleteFile",
 	ViewFile = "viewFile",
 	TypeContent = "typeContent",
@@ -65,6 +68,8 @@ export interface ExecutionResultAggregate {
 }
 
 export class PlanExecutionService {
+	private commandExecutionTerminals: vscode.Terminal[] = [];
+
 	constructor(
 		private readonly changeLogger: ProjectChangeLogger,
 		private readonly aiRequestService: AIRequestService,
@@ -81,6 +86,80 @@ export class PlanExecutionService {
 
 	private _simpleDelay(ms: number): Promise<void> {
 		return new Promise((resolve) => setTimeout(resolve, ms));
+	}
+
+	/**
+	 * Delays execution for a specified number of milliseconds, supporting cancellation.
+	 */
+	private _delay(ms: number, token: vscode.CancellationToken): Promise<void> {
+		if (token.isCancellationRequested) {
+			return Promise.reject(new Error(ERROR_OPERATION_CANCELLED));
+		}
+		return new Promise<void>((resolve, reject) => {
+			let disposable: vscode.Disposable | undefined;
+			const timeout = setTimeout(() => {
+				if (disposable) {
+					disposable.dispose();
+				}
+				resolve();
+			}, ms);
+
+			disposable = token.onCancellationRequested(() => {
+				clearTimeout(timeout);
+				if (disposable) {
+					disposable.dispose();
+				}
+				reject(new Error(ERROR_OPERATION_CANCELLED));
+			});
+		});
+	}
+
+	private static _parseCommandArguments(commandString: string): {
+		executable: string;
+		args: string[];
+	} {
+		const parts = [];
+		let inQuote = false;
+		let currentPart = "";
+
+		for (let i = 0; i < commandString.length; i++) {
+			const char = commandString[i];
+
+			if (char === '"' || char === `'`) {
+				inQuote = !inQuote;
+				if (!inQuote && currentPart !== "") {
+					parts.push(currentPart);
+					currentPart = "";
+				}
+			} else if (char === " " && !inQuote) {
+				if (currentPart !== "") {
+					parts.push(currentPart);
+					currentPart = "";
+				}
+			} else {
+				currentPart += char;
+			}
+		}
+
+		if (currentPart !== "") {
+			parts.push(currentPart);
+		}
+
+		if (parts.length === 0) {
+			return { executable: "", args: [] };
+		}
+
+		const [executable, ...args] = parts;
+		return { executable, args };
+	}
+
+	private static _sanitizeArgumentForDisplay(arg: string): string {
+		// For display purposes, we might want to truncate very long arguments
+		// or replace sensitive information. For now, we return as is.
+		if (arg.length > 100) {
+			return `${arg.substring(0, 97)}...`;
+		}
+		return arg;
 	}
 
 	private _getDiagnosticsForFiles(modifiedFiles: Set<string>): string[] {
@@ -991,9 +1070,58 @@ Return the new plan as a JSON array of PlanStep objects. If no further action is
 		return aggregate;
 	}
 
+	private async _handleCreateDirectoryAction(
+		step: PlanStep,
+		workspaceRootUri: vscode.Uri,
+	): Promise<PlanStepExecutionResult> {
+		if (!step.file) {
+			const errMsg = "Missing path for CreateDirectory action.";
+			return this._reportErrorAndReturnResult(
+				new Error(errMsg),
+				errMsg,
+				undefined,
+				PlanStepAction.CreateDirectory,
+				workspaceRootUri,
+			);
+		}
+
+		const dirUri = vscode.Uri.joinPath(workspaceRootUri, step.file);
+		try {
+			await vscode.workspace.fs.createDirectory(dirUri);
+
+			const summary = `Created directory: '${step.file}'`;
+			this.postChatUpdate({
+				type: "appendRealtimeModelMessage",
+				value: {
+					text: `Step: ${summary}`,
+					isError: false,
+				},
+			});
+
+			this.changeLogger.logChange({
+				filePath: step.file,
+				changeType: "created",
+				summary,
+				timestamp: Date.now(),
+			});
+
+			return { success: true };
+		} catch (error: any) {
+			return this._reportErrorAndReturnResult(
+				error,
+				`Failed to create directory ${step.file}.`,
+				step.file,
+				PlanStepAction.CreateDirectory,
+				workspaceRootUri,
+			);
+		}
+	}
+
 	private async _handleRunCommandAction(
 		step: PlanStep,
 		workspaceRootUri: vscode.Uri,
+		activeChildProcesses: ChildProcess[],
+		combinedToken: vscode.CancellationToken,
 	): Promise<PlanStepExecutionResult> {
 		if (!step.command) {
 			const errMsg = "Missing command for RunCommand action.";
@@ -1006,28 +1134,61 @@ Return the new plan as a JSON array of PlanStep objects. If no further action is
 			);
 		}
 
+		const commandString = step.command.trim();
+
+		const { executable, args } =
+			PlanExecutionService._parseCommandArguments(commandString);
+
+		const displayCommand = [
+			executable,
+			...args.map(PlanExecutionService._sanitizeArgumentForDisplay),
+		].join(" ");
+
 		const terminalName = "Minovative Mind Task";
-		let terminal = vscode.window.terminals.find((t) => t.name === terminalName);
-		if (!terminal) {
-			terminal = vscode.window.createTerminal(terminalName);
+		let commandTerminal = vscode.window.terminals.find(
+			(t) => t.name === terminalName,
+		);
+		if (!commandTerminal) {
+			commandTerminal = vscode.window.createTerminal(terminalName);
 		}
-		terminal.show();
-		await this._simpleDelay(2000);
+		commandTerminal.show(true);
 
-		const fullCommand = `${step.command} ${
-			step.args ? step.args.join(" ") : ""
-		}`;
-		terminal.sendText(fullCommand);
+		try {
+			// 1. Send command text and wait for terminal readiness delay
+			commandTerminal.sendText(`${displayCommand}`, true);
+			await this._delay(100, combinedToken);
 
-		this.postChatUpdate({
-			type: "appendRealtimeModelMessage",
-			value: {
-				text: `Running command: \`${fullCommand}\``,
-				isError: false,
-			},
-		});
+			// 2. Execute command
+			const commandResult = await executeCommand(
+				executable,
+				args,
+				workspaceRootUri.fsPath,
+				combinedToken,
+				activeChildProcesses,
+				commandTerminal,
+			);
 
-		return { success: true };
+			// Log success
+			this.postChatUpdate({
+				type: "appendRealtimeModelMessage",
+				value: {
+					text: `Command \`${displayCommand}\` completed (Exit Code: ${commandResult.exitCode}).`,
+					isError: false,
+				},
+			});
+			return { success: true };
+		} catch (error: any) {
+			if (error.message === ERROR_OPERATION_CANCELLED) {
+				throw error;
+			}
+			return this._reportErrorAndReturnResult(
+				error,
+				`Failed to execute command ${displayCommand}.`,
+				undefined,
+				PlanStepAction.RunCommand,
+				workspaceRootUri,
+			);
+		}
 	}
 
 	public async executePlanStep(
@@ -1035,6 +1196,7 @@ Return the new plan as a JSON array of PlanStep objects. If no further action is
 		token: vscode.CancellationToken,
 		progress: vscode.Progress<{ message?: string; increment?: number }>,
 		projectContext: string = "",
+		activeChildProcesses: ChildProcess[] = [], // Added argument
 	): Promise<PlanStepExecutionResult> {
 		progress.report({ message: step.description });
 
@@ -1095,6 +1257,12 @@ Return the new plan as a JSON array of PlanStep objects. If no further action is
 						projectContext,
 					);
 
+				case PlanStepAction.CreateDirectory:
+					return await this._handleCreateDirectoryAction(
+						step,
+						workspaceRootUri,
+					);
+
 				case PlanStepAction.DeleteFile:
 					return await this._handleDeleteFileAction(
 						step,
@@ -1104,7 +1272,12 @@ Return the new plan as a JSON array of PlanStep objects. If no further action is
 					);
 
 				case PlanStepAction.RunCommand:
-					return await this._handleRunCommandAction(step, workspaceRootUri);
+					return await this._handleRunCommandAction(
+						step,
+						workspaceRootUri,
+						activeChildProcesses,
+						token,
+					);
 
 				case PlanStepAction.ViewFile: {
 					if (!step.file) {

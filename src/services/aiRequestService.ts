@@ -16,6 +16,7 @@ import {
 	ERROR_SERVICE_UNAVAILABLE,
 	generateContentStream,
 	countGeminiTokens,
+	generateFunctionCallWithCache,
 } from "../ai/gemini";
 import {
 	ParallelProcessor,
@@ -76,6 +77,13 @@ export class AIRequestService {
 	) {}
 
 	/**
+	 * Get the current active API key. Used for cache service integration.
+	 */
+	public getApiKey(): string | undefined {
+		return this.apiKeyManager.getActiveApiKey();
+	}
+
+	/**
 	 * Extracts structured search/replace blocks from raw LLM text output using Function Calling/Tool Use.
 	 * This is intended to replace brittle regex parsing of text output.
 	 */
@@ -127,8 +135,6 @@ ${rawTextOutput}
 			);
 		}
 
-		// The arguments are returned as a JSON string that needs parsing
-		const argsJson = result.args as unknown as string; // Cast to unknown then string because library types might be fuzzy or generic
 		// Actually, Gemini API types often return args as object already if parsed by library, or string if raw.
 		// Let's assume the library returns it as object based on FunctionCall type definition which usually has args: object.
 		// Wait, the Google Generative AI SDK `FunctionCall` interface has `args: object`.
@@ -194,7 +200,7 @@ ${rawTextOutput}
 	/**
 	 * Transforms an array of internal HistoryEntry objects into the format required by the Gemini API's `Content` type.
 	 */
-	private transformHistoryForGemini(history: HistoryEntry[]): Content[] {
+	public transformHistoryForGemini(history: HistoryEntry[]): Content[] {
 		return history.map((entry) => {
 			const parts: Content["parts"] = entry.parts.map((part) => {
 				// HistoryEntryPart can be either { text: string } or { inlineData: ImageInlineData }
@@ -235,19 +241,22 @@ ${rawTextOutput}
 	 * A robust wrapper for making generation requests to the AI.
 	 * It handles API key rotation on quota errors, retries, and cancellation.
 	 */
+	/* Retry wrapper with support for tools */
 	public async generateWithRetry(
 		userContentParts: HistoryEntryPart[],
 		modelName: string,
-		history: readonly HistoryEntry[] | undefined,
+		history: readonly HistoryEntry[] | Content[] | undefined,
 		requestType: string = "request",
 		generationConfig?: GenerationConfig,
 		streamCallbacks?: {
 			onChunk: (chunk: string) => Promise<void> | void;
 			onComplete?: () => void;
+			onToolCall?: (functionCall: FunctionCall) => void;
 		},
 		token?: vscode.CancellationToken,
 		isMergeOperation: boolean = false,
 		systemInstruction?: string,
+		tools?: Tool[],
 	): Promise<string> {
 		let currentApiKey = this.apiKeyManager.getActiveApiKey();
 
@@ -265,10 +274,44 @@ ${rawTextOutput}
 		let requestStatus: "success" | "failed" | "cancelled" = "failed";
 		let accumulatedResult = "";
 
-		const historyForGemini =
-			history && history.length > 0
-				? this.transformHistoryForGemini(history as HistoryEntry[])
-				: undefined;
+		let historyForGemini: Content[] | undefined;
+		if (history && history.length > 0) {
+			// Let's check if any part has 'functionCall'.
+			const hasFunctionCall = (history as any[]).some(
+				(h) =>
+					h.parts &&
+					h.parts.some(
+						(p: any) => "functionCall" in p || "functionResponse" in p,
+					),
+			);
+
+			if (hasFunctionCall) {
+				historyForGemini = history as Content[];
+			} else {
+				// Determine if we need to transform.
+				// If it's a HistoryEntry, we should transform.
+				// If it's already Content (just text), we CAN use it as content.
+				// transformHistoryForGemini handles HistoryEntry.
+				try {
+					// We assume it's HistoryEntry[] by default unless it has function calls which HistoryEntry definitely doesn't.
+					// But if I pass Content[] that happens to only have text, 'transformHistoryForGemini' might choke if structure differs?
+					// 'transformHistoryForGemini' maps 'entry.parts'.
+					// HistoryEntryPart: {text} or {inlineData}.
+					// Content Part: {text} or {inlineData} or {functionCall}.
+					// They are compatible for text/inlineData.
+					// 'transformHistoryForGemini' also checks 'entry.diffContent'. Content doesn't have it.
+					// So if we pass Content[] (only text), 'transformHistoryForGemini' works fine (diffContent undefined).
+					// So we can always run 'transformHistoryForGemini' UNLESS it has function calls.
+					historyForGemini = this.transformHistoryForGemini(
+						history as HistoryEntry[],
+					);
+				} catch (e) {
+					// If transform fails (maybe because of incompatible structure?), fallback or reuse.
+					// Actually 'transformHistoryForGemini' is simple map.
+					historyForGemini = history as Content[];
+				}
+			}
+		}
 
 		const currentUserContentPartsForGemini = userContentParts
 			.map((part) => {
@@ -285,10 +328,14 @@ ${rawTextOutput}
 					"inlineData" in part,
 			); // Ensure valid parts
 
-		const requestContentsForGemini: Content[] = [
-			...(historyForGemini || []),
-			{ role: "user", parts: currentUserContentPartsForGemini },
-		];
+		const requestContentsForGemini: Content[] = [...(historyForGemini || [])];
+
+		if (currentUserContentPartsForGemini.length > 0) {
+			requestContentsForGemini.push({
+				role: "user",
+				parts: currentUserContentPartsForGemini,
+			});
+		}
 
 		const userMessageTextForContext = userContentParts
 			.filter((part): part is { text: string } => "text" in part)
@@ -358,6 +405,7 @@ ${rawTextOutput}
 						token,
 						isMergeOperation,
 						systemInstruction,
+						tools,
 					);
 
 					let chunkCount = 0;
@@ -365,20 +413,28 @@ ${rawTextOutput}
 						if (token?.isCancellationRequested) {
 							throw new Error(ERROR_OPERATION_CANCELLED);
 						}
-						accumulatedResult += chunk;
-						chunkCount++;
 
-						if (this.tokenTrackingService && chunkCount % 10 === 0) {
-							// Update real-time estimates
-							this.tokenTrackingService.getRealTimeTokenEstimates(
-								totalInputTextForContext,
-								accumulatedResult,
-							);
-							this.tokenTrackingService.triggerRealTimeUpdate();
-						}
+						if (typeof chunk === "string") {
+							accumulatedResult += chunk;
+							chunkCount++;
 
-						if (streamCallbacks?.onChunk) {
-							await streamCallbacks.onChunk(chunk);
+							if (this.tokenTrackingService && chunkCount % 10 === 0) {
+								// Update real-time estimates
+								this.tokenTrackingService.getRealTimeTokenEstimates(
+									totalInputTextForContext,
+									accumulatedResult,
+								);
+								this.tokenTrackingService.triggerRealTimeUpdate();
+							}
+
+							if (streamCallbacks?.onChunk) {
+								await streamCallbacks.onChunk(chunk);
+							}
+						} else {
+							// It's a FunctionCall
+							if (streamCallbacks?.onToolCall) {
+								streamCallbacks.onToolCall(chunk);
+							}
 						}
 					}
 
@@ -519,6 +575,8 @@ ${rawTextOutput}
 				streamCallbacks.onComplete();
 			}
 		}
+
+		throw new Error("Unexpected end of AI generation loop.");
 	}
 
 	/**
@@ -682,7 +740,8 @@ ${rawTextOutput}
 		tools: Tool[],
 		functionCallingMode?: FunctionCallingMode,
 		token?: vscode.CancellationToken,
-		contextString: string = "function_call", // New parameter with default value
+		contextString: string = "function_call",
+		cachedContentName?: string, // Optional cached content for reduced token costs
 	): Promise<FunctionCall | null> {
 		if (token?.isCancellationRequested) {
 			console.log(
@@ -730,16 +789,48 @@ ${rawTextOutput}
 			}
 
 			// 2. Generate function call with cancellation support
-			functionCall = await this.raceWithCancellation(
-				gemini.generateFunctionCall(
-					apiKey,
-					modelName,
-					contents,
-					tools,
-					functionCallingMode,
-				),
-				token,
-			);
+			// Use cached generation if cache name is provided
+			if (cachedContentName) {
+				try {
+					functionCall = await this.raceWithCancellation(
+						generateFunctionCallWithCache(
+							apiKey,
+							modelName,
+							contents,
+							tools,
+							cachedContentName,
+							functionCallingMode,
+						),
+						token,
+					);
+				} catch (cacheError) {
+					// Fall back to regular generation if cache fails
+					console.warn(
+						`[AIRequestService] Cached generation failed, falling back to regular: ${(cacheError as Error).message}`,
+					);
+					functionCall = await this.raceWithCancellation(
+						gemini.generateFunctionCall(
+							apiKey,
+							modelName,
+							contents,
+							tools,
+							functionCallingMode,
+						),
+						token,
+					);
+				}
+			} else {
+				functionCall = await this.raceWithCancellation(
+					gemini.generateFunctionCall(
+						apiKey,
+						modelName,
+						contents,
+						tools,
+						functionCallingMode,
+					),
+					token,
+				);
+			}
 
 			if (functionCall === null) {
 				status = "success"; // Successfully got a null response (no tool needed)
@@ -803,6 +894,7 @@ ${rawTextOutput}
 		functionCallingMode?: FunctionCallingMode,
 		token?: vscode.CancellationToken,
 		contextString: string = "function_call",
+		cachedContentName?: string, // Optional cached content for reduced token costs
 	): Promise<FunctionCall | null> {
 		const apiKey = this.apiKeyManager.getActiveApiKey();
 		if (!apiKey) {
@@ -818,6 +910,7 @@ ${rawTextOutput}
 			functionCallingMode,
 			token,
 			contextString,
+			cachedContentName,
 		);
 	}
 }

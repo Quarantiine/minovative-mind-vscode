@@ -29,6 +29,7 @@ import { ContextRefresherService } from "../services/contextRefresherService";
 import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
 import { LightweightClassificationService } from "../services/lightweightClassificationService";
 import { SearchReplaceService } from "../services/searchReplaceService";
+import { PlanExecutionService } from "./services/planExecutionService";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import * as crypto from "crypto"; // Import crypto for UUID generation
 import { z } from "zod";
@@ -341,11 +342,27 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			this.changeLogger,
 		);
 
+		const planExecutionService = new PlanExecutionService(
+			this.changeLogger,
+			this.aiRequestService,
+			(message) => {
+				// Adapter for postChatUpdate to reuse existing message structure if possible,
+				// or just use postMessageToWebview if that's what PlanExecutionService uses.
+				// PlanExecutionService expects: (message: { type: string; value: { text: string; isError?: boolean }; diffContent?: string; }) => void
+				// SidebarProvider keys off 'type'.
+				// If type is 'appendRealtimeModelMessage', value matches.
+				this.postMessageToWebview(message as any);
+			},
+			this.postMessageToWebview.bind(this),
+			this.enhancedCodeGenerator,
+		);
+
 		this.planService = new PlanService(
 			this,
 			this.workspaceRootUri,
 			this.enhancedCodeGenerator,
 			this.postMessageToWebview.bind(this),
+			planExecutionService,
 		);
 		this.chatService = new ChatService(this);
 		this.commitService = new CommitService(this);

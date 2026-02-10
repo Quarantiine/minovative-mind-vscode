@@ -41,7 +41,7 @@ export async function getHeuristicRelevantFiles(
 	projectRoot: vscode.Uri,
 	activeEditorContext?: PlanGenerationContext["editorContext"],
 	fileDependencies?: Map<string, DependencyRelation[]>,
-	reverseFileDependencies?: Map<string, string[]>,
+	reverseFileDependencies?: Map<string, DependencyRelation[]>,
 	activeSymbolDetailedInfo?: ActiveSymbolDetailedInfo,
 	semanticGraph?: Map<string, { relatedPath: string; score: number }[]>,
 	cancellationToken?: vscode.CancellationToken,
@@ -229,7 +229,7 @@ export async function getHeuristicRelevantFiles(
 			if (
 				reverseFileDependencies
 					?.get(activeFileRelativePath)
-					?.includes(relativePath)
+					?.some((rel) => rel.path === relativePath)
 			) {
 				score += effectiveOptions.reverseDependencyWeight;
 			}

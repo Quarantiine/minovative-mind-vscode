@@ -291,6 +291,12 @@ export async function parseAndValidatePlan(
 					if (hasContent === hasPrompt) {
 						actionSpecificError =
 							"Invalid 'create_file' step. Must have either 'content' or 'generate_prompt', but not both or neither.";
+					} else if (hasPrompt) {
+						const placeholderPattern = /TODO|FIXME|\.\.\.|\[implementation\]/i;
+						if (placeholderPattern.test(flatStep.generate_prompt)) {
+							actionSpecificError =
+								"The 'generate_prompt' contains placeholders (e.g., TODO, ..., FIXME). Full implementation is required.";
+						}
 					}
 					break;
 				case PlanStepAction.ModifyFile:
@@ -300,6 +306,12 @@ export async function parseAndValidatePlan(
 					) {
 						actionSpecificError =
 							"Invalid 'modify_file' step. Must have a non-empty 'modification_prompt'.";
+					} else {
+						const placeholderPattern = /TODO|FIXME|\.\.\.|\[implementation\]/i;
+						if (placeholderPattern.test(flatStep.modification_prompt)) {
+							actionSpecificError =
+								"The 'modification_prompt' contains placeholders (e.g., TODO, ..., FIXME). Full implementation instructions are required.";
+						}
 					}
 					break;
 				case PlanStepAction.RunCommand:

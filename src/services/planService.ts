@@ -23,11 +23,13 @@ import {
 import { repairJsonEscapeSequences } from "../utils/jsonUtils";
 import { PlanExecutorService } from "./planExecutorService";
 import { generateExecutionPlanTool } from "../ai/prompts/planFunctions";
+import { thinkingTool } from "../ai/tools/thinkingTool";
 import { ActiveSymbolDetailedInfo } from "./contextService";
 import {
 	DiagnosticService,
 	FormatDiagnosticsOptions,
 } from "../utils/diagnosticUtils";
+import { PlanExecutionService } from "../sidebar/services/planExecutionService";
 
 export class PlanService {
 	private readonly MAX_PLAN_PARSE_RETRIES: number;
@@ -41,6 +43,7 @@ export class PlanService {
 		private workspaceRootUri: vscode.Uri | undefined,
 		enhancedCodeGenerator: EnhancedCodeGenerator,
 		private postMessageToWebview: (message: ExtensionToWebviewMessages) => void,
+		planExecutionService: PlanExecutionService, // Added dependency
 	) {
 		this.urlContextService = new UrlContextService();
 		this.enhancedCodeGenerator = enhancedCodeGenerator;
@@ -57,6 +60,7 @@ export class PlanService {
 			postMessageToWebview,
 			this.urlContextService,
 			enhancedCodeGenerator,
+			planExecutionService, // Injected dependency
 			this.MAX_TRANSIENT_STEP_RETRIES,
 		);
 	}
@@ -735,20 +739,90 @@ export class PlanService {
 						type: "updateJsonLoadingState",
 						value: true,
 					});
-					const functionCall: FunctionCall | null =
-						await this.provider.aiRequestService.generateFunctionCall(
-							planContext.initialApiKey,
-							planContext.modelName,
-							[{ role: "user", parts: [{ text: prompt }] }],
-							[{ functionDeclarations: [generateExecutionPlanTool] }],
-							FunctionCallingMode.ANY,
-							token,
-							"correction plan generation",
-						);
 
-					if (token.isCancellationRequested) {
-						throw new Error(ERROR_OPERATION_CANCELLED);
+					let functionCall: FunctionCall | null = null;
+					let currentHistory: any[] = [
+						{ role: "user", parts: [{ text: prompt }] },
+					];
+					let turnCount = 0;
+					const MAX_THINKING_TURNS = 5;
+
+					// Loop to handle thinking steps
+					while (turnCount < MAX_THINKING_TURNS) {
+						functionCall =
+							await this.provider.aiRequestService.generateFunctionCall(
+								planContext.initialApiKey,
+								planContext.modelName,
+								currentHistory,
+								[
+									{
+										functionDeclarations: [
+											generateExecutionPlanTool,
+											thinkingTool,
+										],
+									},
+								],
+								FunctionCallingMode.AUTO,
+								token,
+								"correction plan generation",
+							);
+
+						if (token.isCancellationRequested) {
+							throw new Error(ERROR_OPERATION_CANCELLED);
+						}
+
+						if (!functionCall) {
+							throw new Error("AI failed to generate a valid function call.");
+						}
+
+						if (functionCall.name === "think") {
+							const args = functionCall.args as any;
+							const thought = args["thought"] as string;
+							const thoughtLog = `Thinking: ${thought}`;
+
+							// Log to UI
+							this.provider.postMessageToWebview({
+								type: "statusUpdate",
+								value: thoughtLog,
+							});
+
+							// Also log as a chat bubble if possible, or just status update.
+							// For now, let's add it to the chat history visible to the user
+							this.provider.chatHistoryManager.addHistoryEntry(
+								"model",
+								thoughtLog,
+								undefined,
+								undefined,
+								undefined,
+								false,
+								false,
+								true, // isContextAgentLog
+							);
+
+							// Update history for next turn
+							currentHistory.push({
+								role: "model",
+								parts: [{ functionCall: functionCall }],
+							});
+							currentHistory.push({
+								role: "function",
+								parts: [
+									{
+										functionResponse: {
+											name: "think",
+											response: { content: "Thought recorded. Proceed." },
+										},
+									},
+								],
+							});
+
+							turnCount++;
+						} else {
+							// It's likely generateExecutionPlan, break the loop to process it
+							break;
+						}
 					}
+
 					if (!functionCall) {
 						throw new Error("AI failed to generate a valid function call.");
 					}

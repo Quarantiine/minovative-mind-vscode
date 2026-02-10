@@ -16,6 +16,7 @@ export interface FileSummary {
 	mainPurpose: string;
 	dependencies?: string[];
 	lastModified?: Date;
+	lineCount?: number;
 }
 
 export interface SequentialProcessingOptions {
@@ -328,6 +329,7 @@ export class SequentialFileProcessor {
 			mainPurpose,
 			dependencies,
 			lastModified,
+			lineCount: fileContent.split("\n").length,
 		};
 
 		// Store in cache before returning

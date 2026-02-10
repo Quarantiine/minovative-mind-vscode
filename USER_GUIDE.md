@@ -93,10 +93,11 @@ If you are a developer looking to build from source or contribute, please refer 
 - **Smart Visual Flash**: Newly added or modified code is highlighted with a full-width green flash effect. This highlight tracks with your code as you edit around it and intelligently removes itself only when you modify or delete the flashed lines.
 - **Applying Changes**: AI modifications are applied to your editor, often involving diff analysis and intelligent application of changes.
 
-- **Active Exploration**: For complex queries, the **Context Agent** will automatically spring into action. It "investigates" your codebase by running safe terminal commands (`ls`, `grep`, `find`, `sed`, `head`) to find relevant files that static analysis might miss.
-- **Transparent Logs**: You'll see "Context Agent" logs in the chat showing exactly what commands are being run (e.g., `grep -r "auth" .`) and what they returned.
+- **Active Exploration**: For complex queries, the **Context Agent** will automatically spring into action. It "investigates" your codebase using high-performance models and advanced **Precise Vision Tools** (`outline`, `definitions`, `references`, `diagnostics`) to find relevant code that static analysis might miss.
+- **Surgical Selection Mandate**: To eliminate token bloat and maximize precision, the agent is **restricted from selecting full files** that are larger than 100 lines. It must use precise line ranges (e.g., `src/auth.ts:10-50`) or symbols.
+- **Transparent Logs**: You'll see "Context Agent" logs in the chat showing exactly what investigative steps are being taken (e.g., "Finding references for 'getUser'").
 - **Progressive Discovery**: In large projects, the Context Agent uses a "Progressive Discovery" strategy, starting with a truncated view of your project structure and discovering files on-the-fly to save tokens and improve performance.
-- **Error Awareness**: If you ask about an error or bug, the Context Agent automatically enters "Investigation Mode" to hunt down the root cause using the error message and real-time diagnostics.
+- **Error Awareness**: If you ask about an error or bug, the Context Agent automatically enters "Investigation Mode" to hunt down the root cause using the error message and real-time diagnostics from VS Code.
 
 ---
 

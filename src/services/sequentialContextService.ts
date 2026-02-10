@@ -390,7 +390,7 @@ export class SequentialContextService {
 			this.workspaceRoot,
 			undefined, // No active editor context for filtering
 			this.fileDependencies, // Pass structured dependency map
-			this.convertDependencyMapToStringMap(this.reverseFileDependencies), // Pass structured reverse dependency map
+			this.reverseFileDependencies, // Pass structured reverse dependency map
 			undefined, // No active symbol info for filtering
 			undefined, // No semantic graph
 			undefined, // No cancellation token
@@ -409,7 +409,7 @@ export class SequentialContextService {
 				});
 
 				// Generate quick summaries for AI selection
-				const fileSummaries = new Map<string, string>();
+				const fileSummaries = new Map<string, FileSummary>();
 				const summaryPromises = heuristicFiles
 					.slice(0, 30)
 					.map(async (fileUri) => {
@@ -426,7 +426,16 @@ export class SequentialContextService {
 								500, // Shorter summary for filtering
 							);
 
-							fileSummaries.set(relativePath, summary);
+							fileSummaries.set(relativePath, {
+								summary: summary,
+								lineCount: fileContent.split("\n").length,
+								relativePath: relativePath,
+								filePath: fileUri.fsPath,
+								fileType: relativePath.split(".").pop() || "",
+								keyInsights: [],
+								mainPurpose: "Unknown",
+								estimatedComplexity: "medium",
+							});
 						} catch (error) {
 							console.warn(`Failed to read file ${fileUri.fsPath}:`, error);
 						}
@@ -475,9 +484,7 @@ export class SequentialContextService {
 					addContextAgentLogToHistory: options.addContextAgentLogToHistory,
 					modelName,
 					cancellationToken: undefined,
-					fileDependencies: this.convertDependencyMapToStringMap(
-						this.fileDependencies,
-					), // Pass file dependencies for AI filtering
+					fileDependencies: this.fileDependencies, // Pass file dependencies for AI filtering
 					preSelectedHeuristicFiles: heuristicFiles,
 					fileSummaries,
 					selectionOptions: {

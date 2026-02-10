@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.51.0] - February 10, 2026
+
+### High-Precision Context and Semantic Vision
+
+This major update introduces a "Surgical Selection" mandate and semantic "Vision" tools to eliminate token inflation and improve the Context Agent's investigative accuracy.
+
+- **Surgical Selection Mandate**: Implemented a hard gatekeeper that forbids the AI from selecting full files > 100 lines. The agent must now provide precise line ranges or symbols.
+- **Semantic Vision Tools**: Equipped the Context Agent with a new suite of semantic investigation tools:
+- `get_file_outline`: For structural mapping of files.
+- `get_symbol_definitions` & `get_symbol_implementations`: For "Semantic Teleportation" directly to relevant code.
+- `find_symbol_references`: For tracing logic and usage patterns.
+- `get_diagnostics`: For pulling real-time VS Code errors into the context.
+- **Context Optimization**: Modified `FileSummary` to include `lineCount`, making the agent aware of file sizes before selection.
+- **Terminal Security & Precision**: Restricted `run_terminal_command` to exclude file-reading tools like `cat`, `head`, and `tail`, forcing the use of precise semantic tools.
+- **Investigative Resilience**: Increased `MAX_TURNS` to 30 and reinforced the "Golden Rule" (Never guess if you can verify) in system instructions.
+
 ## [2.50.0] - February 1, 2026
 
 ### Production-Ready Workflow and Smart UX

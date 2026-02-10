@@ -98,8 +98,14 @@ Minovative Mind builds a profound understanding of your project using comprehens
 
 ### 3.4 Agentic Context Investigation
 
-- **Active Codebase Exploration**: The Context Agent proactively "looks around" your codebase using high-performance, cost-effective models (**Gemini Flash Lite**) and safe terminal commands (`ls`, `grep`, `find`, `cat`, `sed`, `head`, `tail`, `wc`, `file`) to discover relevant files that static analysis might miss.
+- **Active Codebase Exploration**: The Context Agent proactively "looks around" your codebase using high-performance, cost-effective models (**Gemini Flash Lite**) and precise "Vision" tools.
+- **Semantic Vision Tools**: Beyond simple text search, the agent utilizes advanced semantic tools:
+  - `get_file_outline`: Retrieves a structured map of classes, methods, and variables within a file.
+  - `get_symbol_definitions` & `get_symbol_implementations`: Enables "Semantic Teleportation" directly to relevant code.
+  - `find_symbol_references`: Traces symbol usage workspace-wide to understand logic flow.
+  - `get_diagnostics`: Integrates real-time VS Code errors/warnings into the investigation.
 - **Progressive Discovery**: For large repositories, the agent starts with a highly efficient, truncated view of the project structure and discovers files on-demand using **Progressive Discovery**, reducing initial context token usage by up to 90%.
+- **The Surgical Gatekeeper**: Forces high-precision context by **forbidding full selections** of files > 100 lines. The agent must provide specific line ranges (e.g., `file.ts:50-80`) or symbols, ensuring 100% relevance and zero token bloat.
 - **Intent-Aware Context**: Automatically classifies the user's intent (e.g., bug fixing vs. general query) to prioritize the most relevant diagnostic or symbol information for the context.
 - **AI-Driven Error Investigation**: Automatically detects when you're asking about errors or bugs using intelligent intent classification and proactively investigates error messages, stack traces, and relevant code paths before generating a response.
 - **Safe Execution Environment**: All investigation commands are executed in a secure, read-only sandbox that prevents modification or external network access.

@@ -6,7 +6,8 @@ import {
 	GenerationConfig,
 	Tool,
 	FunctionCall,
-	FunctionCallingMode, // Added FunctionCallingMode import
+	FunctionCallingMode,
+	CachedContent,
 } from "@google/generative-ai";
 import { MINO_SYSTEM_INSTRUCTION } from "./prompts/systemInstructions";
 import { geminiLogger } from "../utils/logger";
@@ -240,7 +241,8 @@ export async function* generateContentStream(
 	token?: vscode.CancellationToken,
 	isMergeOperation: boolean = false,
 	systemInstruction?: string,
-): AsyncIterableIterator<string> {
+	tools?: Tool[],
+): AsyncIterableIterator<string | FunctionCall> {
 	if (token?.isCancellationRequested) {
 		geminiLogger.log(
 			modelName,
@@ -249,9 +251,7 @@ export async function* generateContentStream(
 		throw new Error(ERROR_OPERATION_CANCELLED);
 	}
 
-	if (
-		!initializeGenerativeAI(apiKey, modelName, undefined, systemInstruction)
-	) {
+	if (!initializeGenerativeAI(apiKey, modelName, tools, systemInstruction)) {
 		throw new Error(
 			`Gemini AI client not initialized. Please check API key and selected model (${modelName}).`,
 		);
@@ -278,6 +278,11 @@ export async function* generateContentStream(
 			modelName,
 			`Sending stream request. Contents: "${truncatedContentsLog}"`,
 		);
+		// Log tools if present
+		if (tools) {
+			geminiLogger.log(modelName, `Tools included: ${tools.length}`);
+		}
+
 		geminiLogger.log(
 			modelName,
 			`Using generationConfig: ${JSON.stringify(requestConfig)}`,
@@ -292,6 +297,7 @@ export async function* generateContentStream(
 		const result = await model.generateContentStream({
 			contents: contents,
 			generationConfig: requestConfig,
+			tools: tools,
 		});
 
 		for await (const chunk of result.stream) {
@@ -301,12 +307,25 @@ export async function* generateContentStream(
 			}
 
 			const text = chunk.text();
+			const functionCalls = chunk.functionCalls();
+
 			if (text && text.length > 0) {
 				contentYielded = true;
 				const truncatedChunk =
 					text.length > 50 ? `${text.substring(0, 50)}...` : text;
 				geminiLogger.log(modelName, `Received chunk: "${truncatedChunk}"`);
 				yield text;
+			}
+
+			if (functionCalls && functionCalls.length > 0) {
+				contentYielded = true;
+				for (const fc of functionCalls) {
+					geminiLogger.log(
+						modelName,
+						`Received function call chunk: ${fc.name}`,
+					);
+					yield fc;
+				}
 			}
 		}
 
@@ -461,6 +480,131 @@ export function resetClient() {
 	currentToolsHash = null; // Reset tools hash on client reset
 	currentSystemInstruction = null;
 	geminiLogger.log(undefined, "AI client state has been reset.");
+}
+
+/**
+ * Generates content using a cached content reference for reduced token costs.
+ * Falls back to regular generation if cached content is not available.
+ *
+ * @param apiKey The Google Gemini API key.
+ * @param modelName The specific Gemini model name to use.
+ * @param contents The content array for the Gemini model.
+ * @param tools Array of tools to configure the model with for function calling.
+ * @param cachedContentName The name/ID of the cached content to use.
+ * @param functionCallingMode Optional: Specifies the function calling mode.
+ * @returns The extracted FunctionCall object or null if not present.
+ */
+export async function generateFunctionCallWithCache(
+	apiKey: string,
+	modelName: string,
+	contents: Content[],
+	tools: Tool[],
+	cachedContentName: string,
+	functionCallingMode?: FunctionCallingMode,
+): Promise<FunctionCall | null> {
+	geminiLogger.log(
+		modelName,
+		`Attempting to generate function call with cached content: ${cachedContentName}`,
+	);
+
+	try {
+		// Initialize the client if needed
+		if (!generativeAI || apiKey !== currentApiKey) {
+			generativeAI = new GoogleGenerativeAI(apiKey);
+			currentApiKey = apiKey;
+		}
+
+		// Create a CachedContent object with the name
+		const cachedContent: CachedContent = {
+			name: cachedContentName,
+			model: modelName,
+			contents: [],
+		};
+
+		// Get model from cached content
+		const cachedModel = generativeAI.getGenerativeModelFromCachedContent(
+			cachedContent,
+			{
+				model: modelName,
+			},
+		);
+
+		geminiLogger.log(
+			modelName,
+			`[gemini.ts] Using cached model for function call generation`,
+		);
+
+		const requestOptions: {
+			contents: Content[];
+			tools: Tool[];
+			toolConfig?: {
+				functionCallingConfig: {
+					mode: FunctionCallingMode;
+				};
+			};
+		} = {
+			contents: contents,
+			tools: tools,
+		};
+
+		if (functionCallingMode) {
+			requestOptions.toolConfig = {
+				functionCallingConfig: {
+					mode: functionCallingMode,
+				},
+			};
+		}
+
+		const result = await cachedModel.generateContent(requestOptions);
+		const response = result.response;
+
+		// Log cache usage metadata if available
+		if (response.usageMetadata) {
+			geminiLogger.log(
+				modelName,
+				`[gemini.ts] Cache usage - Cached tokens: ${response.usageMetadata.cachedContentTokenCount || 0}, ` +
+					`Prompt tokens: ${response.usageMetadata.promptTokenCount || 0}`,
+			);
+		}
+
+		if (response.promptFeedback?.blockReason) {
+			const { blockReason, safetyRatings } = response.promptFeedback;
+			geminiLogger.warn(
+				modelName,
+				`Function call (cached) blocked. Reason: ${blockReason}`,
+				{ safetyRatings },
+			);
+			throw new Error(
+				`Gemini response blocked with reason: ${blockReason}. Safety ratings: ${JSON.stringify(
+					safetyRatings,
+				)}`,
+			);
+		}
+
+		const candidate = response.candidates?.[0];
+		const functionCall = candidate?.content?.parts?.[0]?.functionCall;
+
+		if (functionCall?.name && functionCall?.args !== undefined) {
+			geminiLogger.log(
+				modelName,
+				`Function call extracted (cached): ${functionCall.name}`,
+			);
+			return functionCall;
+		} else {
+			geminiLogger.warn(
+				modelName,
+				`No function call found in cached response.`,
+			);
+			return null;
+		}
+	} catch (error: any) {
+		// If cache-related error, log and re-throw to let caller handle fallback
+		geminiLogger.warn(
+			modelName,
+			`Error using cached content: ${error.message}`,
+		);
+		_handleGeminiError(error, modelName, "cached function call", true);
+	}
 }
 
 /**

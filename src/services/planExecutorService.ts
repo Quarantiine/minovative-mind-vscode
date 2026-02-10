@@ -6,31 +6,30 @@ import { ExtensionToWebviewMessages } from "../sidebar/common/sidebarTypes";
 import { ERROR_OPERATION_CANCELLED } from "../ai/gemini";
 import {
 	ExecutionPlan,
+	PlanStep,
+	PlanStepAction, // Keep this for workflowPlanner types
 	isCreateDirectoryStep,
 	isCreateFileStep,
 	isModifyFileStep,
 	isRunCommandStep,
-	PlanStep,
-	PlanStepAction,
 	CreateDirectoryStep,
 	CreateFileStep,
 	ModifyFileStep,
 	RunCommandStep,
 } from "../ai/workflowPlanner";
-import { generateFileChangeSummary } from "../utils/diffingUtils";
-import { applyAITextEdits, cleanCodeOutput } from "../utils/codeUtils";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import { UrlContextService } from "./urlContextService";
 import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
-import { executeCommand, CommandResult } from "../utils/commandExecution";
 import * as sidebarConstants from "../sidebar/common/sidebarConstants";
 import { DiagnosticService } from "../utils/diagnosticUtils";
-import {
-	SelectRelevantFilesAIOptions,
-	FileSelection,
-} from "../context/smartContextSelector";
+import { FileSelection } from "../context/smartContextSelector";
 import { getSymbolsInDocument } from "./symbolService";
-import { SearchReplaceService } from "./searchReplaceService";
+import {
+	PlanExecutionService,
+	PlanStep as ServicePlanStep,
+	PlanStepAction as ServicePlanStepAction,
+} from "../sidebar/services/planExecutionService";
+import { thinkingTool, suggestFixTool } from "../ai/tools/thinkingTool";
 
 export class PlanExecutorService {
 	private commandExecutionTerminals: vscode.Terminal[] = [];
@@ -42,6 +41,7 @@ export class PlanExecutorService {
 		private postMessageToWebview: (message: ExtensionToWebviewMessages) => void,
 		private urlContextService: UrlContextService,
 		private enhancedCodeGenerator: EnhancedCodeGenerator,
+		private planExecutionService: PlanExecutionService, // Injected dependency
 		private readonly MAX_TRANSIENT_STEP_RETRIES: number,
 	) {}
 
@@ -412,44 +412,34 @@ export class PlanExecutorService {
 				}
 
 				try {
-					if (isCreateDirectoryStep(step)) {
-						await this._handleCreateDirectoryStep(step, rootUri, changeLogger);
-					} else if (isCreateFileStep(step)) {
-						await this._handleCreateFileStep(
-							step as CreateFileStep,
-							currentStepNumber,
-							totalSteps,
-							rootUri,
-							context,
-							relevantSnippets,
-							affectedFileUris,
-							changeLogger,
-							combinedToken,
-						);
-					} else if (isModifyFileStep(step)) {
-						await this._handleModifyFileStep(
-							step as ModifyFileStep,
-							currentStepNumber,
-							totalSteps,
-							rootUri,
-							context,
-							relevantSnippets,
-							affectedFileUris,
-							changeLogger,
-							combinedToken,
-						);
-					} else if (isCommandStep) {
-						await this._handleRunCommandStep(
-							step,
-							index,
-							totalSteps,
-							rootUri,
-							context,
-							progress,
-							originalRootInstruction,
-							combinedToken,
+					/* Delegation to PlanExecutionService */
+					// Convert nested WorkflowPlanner PlanStep to flat ServicePlanStep
+					const serviceStep = this._mapToServiceStep(step);
+
+					const result = await this.planExecutionService.executePlanStep(
+						serviceStep,
+						combinedToken,
+						progress,
+						context.projectContext, // context string
+						this.provider.activeChildProcesses, // Pass active processes for tracking
+					);
+
+					if (!result.success) {
+						if (result.errorType === "cancellation") {
+							throw new Error(ERROR_OPERATION_CANCELLED);
+						}
+						throw new Error(
+							result.errorMessage || "Unknown step execution error",
 						);
 					}
+
+					// Update affected files if successful
+					if (serviceStep.file) {
+						affectedFileUris.add(
+							vscode.Uri.joinPath(rootUri, serviceStep.file),
+						);
+					}
+
 					currentStepCompletedSuccessfullyOrSkipped = true;
 				} catch (error: any) {
 					let errorMsg = formatUserFacingErrorMessage(
@@ -625,7 +615,6 @@ export class PlanExecutorService {
 			isRetryableTransientError &&
 			currentTransientAttempt < maxTransientRetries
 		) {
-			// Replaced _logStepProgress (Line 485)
 			console.warn(
 				`Minovative Mind: FAILED (transient, auto-retrying): ${stepDescription}. Attempt ${
 					currentTransientAttempt + 1
@@ -633,19 +622,124 @@ export class PlanExecutorService {
 			);
 			return { type: "retry" };
 		} else {
-			// Replaced _logStepProgress (Line 497)
 			console.error(
 				`Minovative Mind: FAILED: ${stepDescription}. Requires user intervention. Error: ${errorMsg}`,
 			);
 
+			// --- AI Error Analysis with Thinking ---
+			// --- AI Error Analysis with Thinking ---
+			let aiSuggestion = "Analysis not available.";
+			try {
+				this.postMessageToWebview({
+					type: "statusUpdate",
+					value: "AI is analyzing the error...",
+					showLoadingDots: true,
+				});
+
+				const prompt = `The plan step '${stepDescription}' failed with error: "${errorMsg}".
+Please analyze this error.
+1. Use the 'think' tool to reason about the cause.
+2. Then, use the 'suggest_fix' tool to provide a user-facing explanation and a suggested course of action (Retry, Skip, or manual fix).`;
+
+				let currentHistory: any[] = [
+					{ role: "user", parts: [{ text: prompt }] },
+				];
+				let turnCount = 0;
+				const MAX_TURNS = 4;
+				let suggestionFound = false;
+
+				while (turnCount < MAX_TURNS && !suggestionFound) {
+					// We need to use the AIRequestService from the provider
+					// Assuming this.provider.aiRequestService is available and public
+					const aiService = (this.provider as any).aiRequestService;
+					if (!aiService) {
+						console.warn("AIRequestService not available on provider.");
+						break;
+					}
+
+					// Get API Key and Model Name
+					const apiKey = aiService.getApiKey();
+					const modelName = sidebarConstants.DEFAULT_FLASH_MODEL; // Use a fast model
+
+					if (!apiKey) {
+						console.warn("No API key available for error analysis.");
+						break;
+					}
+
+					const functionCall: any = await aiService.generateFunctionCall(
+						apiKey,
+						modelName,
+						currentHistory,
+						[{ functionDeclarations: [thinkingTool, suggestFixTool] }],
+						"auto",
+						token,
+						"error analysis",
+					);
+
+					if (token?.isCancellationRequested) break;
+
+					if (functionCall) {
+						const args = functionCall.args;
+						if (functionCall.name === "think") {
+							const thought = args["thought"];
+							const thoughtLog = `Thinking (Error Analysis): ${thought}`;
+							this.postMessageToWebview({
+								type: "statusUpdate",
+								value: thoughtLog,
+							});
+							currentHistory.push({
+								role: "model",
+								parts: [{ functionCall: functionCall }],
+							});
+							currentHistory.push({
+								role: "function",
+								parts: [
+									{
+										functionResponse: {
+											name: "think",
+											response: { content: "Proceed." },
+										},
+									},
+								],
+							});
+						} else if (functionCall.name === "suggest_fix") {
+							aiSuggestion = `**Analysis:** ${args["analysis"]}\n\n**Suggestion:** ${args["suggestion"]}`;
+							suggestionFound = true;
+						}
+						turnCount++;
+					} else {
+						break;
+					}
+				}
+			} catch (aiError) {
+				console.warn("AI Error Analysis failed:", aiError);
+			}
+			// --- End AI Analysis ---
+
 			// Use raceWithCancellation to allow terminating the prompt if operation is cancelled
 			let choice: string | undefined;
+
+			// If we have a suggestion, add it to chat history
+			if (aiSuggestion !== "Analysis not available.") {
+				this.provider.chatHistoryManager.addHistoryEntry(
+					"model",
+					`### Execution Error Analysis\n\n${aiSuggestion}`,
+					undefined,
+					undefined,
+					undefined,
+					false,
+					false,
+					true, // isContextAgentLog
+				);
+			}
+
 			const showMessagePromise = vscode.window.showErrorMessage(
-				`Plan step failed: ${stepDescription} failed with error: ${errorMsg}. What would you like to do?`,
+				`Plan step failed: ${stepDescription}. See chat for AI analysis.`,
 				"Retry Step",
 				"Skip Step",
 				"Cancel Plan",
 			);
+			// --- End AI Analysis ---
 
 			if (token) {
 				choice = await this._raceWithCancellation(showMessagePromise, token);
@@ -864,634 +958,42 @@ export class PlanExecutorService {
 		return formattedSnippets.join("\n");
 	}
 
-	private _postChatUpdateForPlanExecution(
-		message: sidebarTypes.AppendRealtimeModelMessage,
-	): void {
-		// 4. Modify addHistoryEntry call to remove message.isPlanStepUpdate
-		this.provider.chatHistoryManager.addHistoryEntry(
-			"model",
-			message.value.text,
-			message.diffContent,
-			undefined,
-			undefined,
-		);
-
-		this.provider.chatHistoryManager.restoreChatHistoryToWebview();
-	}
-
-	private async _handleCreateDirectoryStep(
-		step: CreateDirectoryStep,
-		rootUri: vscode.Uri,
-		changeLogger: SidebarProvider["changeLogger"],
-	): Promise<void> {
-		await vscode.workspace.fs.createDirectory(
-			vscode.Uri.joinPath(rootUri, step.step.path),
-		);
-		changeLogger.logChange({
-			filePath: step.step.path,
-			changeType: "created",
-			summary: `Created directory: '${step.step.path}'`,
-			timestamp: Date.now(),
-		});
-	}
-
-	private async _handleCreateFileStep(
-		step: CreateFileStep,
-		currentStepNumber: number,
-		totalSteps: number,
-		rootUri: vscode.Uri,
-		context: sidebarTypes.PlanGenerationContext,
-		relevantSnippets: string,
-		affectedFileUris: Set<vscode.Uri>,
-		changeLogger: SidebarProvider["changeLogger"],
-		combinedToken: vscode.CancellationToken,
-	): Promise<void> {
-		// Early cancellation check before any async work
-		if (combinedToken.isCancellationRequested) {
-			throw new Error(ERROR_OPERATION_CANCELLED);
-		}
-
-		const fileUri = vscode.Uri.joinPath(rootUri, step.step.path);
-
-		let desiredContent: string | undefined = step.step.content;
-
-		if (step.step.generate_prompt) {
-			const generationContext = {
-				projectContext: context.projectContext,
-				relevantSnippets: relevantSnippets,
-				editorContext: context.editorContext,
-				activeSymbolInfo: undefined,
-			};
-
-			let generatedResult: { content: string } | undefined;
-			let attempt = 0;
-			let success = false;
-			while (!success && attempt <= this.MAX_TRANSIENT_STEP_RETRIES) {
-				if (combinedToken.isCancellationRequested) {
-					throw new Error(ERROR_OPERATION_CANCELLED);
-				}
-				try {
-					generatedResult =
-						await this.enhancedCodeGenerator.generateFileContent(
-							step.step.path,
-							step.step.generate_prompt,
-							generationContext,
-							this.provider.settingsManager.getSelectedModelName(),
-							combinedToken,
-						);
-					success = true;
-				} catch (error: any) {
-					const errorMsg = formatUserFacingErrorMessage(error, "", "", rootUri);
-					const isRetryable =
-						errorMsg.includes("quota") ||
-						errorMsg.includes("rate limit") ||
-						errorMsg.includes("network issue") ||
-						errorMsg.includes("service unavailable") ||
-						errorMsg.includes("timeout") ||
-						errorMsg.includes("parsing failed") ||
-						errorMsg.includes("overloaded");
-
-					if (isRetryable && attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
-						attempt++;
-						console.warn(
-							`AI generation for ${step.step.path} failed, retrying (${attempt}/${this.MAX_TRANSIENT_STEP_RETRIES})... Error: ${errorMsg}`,
-						);
-						await this._delay(2000 * attempt, combinedToken);
-					} else {
-						throw error;
-					}
-				}
-			}
-			if (!generatedResult) {
+	private _mapToServiceStep(step: PlanStep): ServicePlanStep {
+		switch (step.step.action) {
+			case PlanStepAction.CreateDirectory:
+				return {
+					action: ServicePlanStepAction.CreateDirectory,
+					file: step.step.path,
+					description:
+						step.step.description || `Create directory ${step.step.path}`,
+				};
+			case PlanStepAction.CreateFile:
+				return {
+					action: ServicePlanStepAction.CreateFile,
+					file: step.step.path,
+					content: step.step.content,
+					generate_prompt: step.step.generate_prompt,
+					description: step.step.description || `Create file ${step.step.path}`,
+				};
+			case PlanStepAction.ModifyFile:
+				return {
+					action: ServicePlanStepAction.ModifyFile,
+					file: step.step.path,
+					modificationPrompt: step.step.modification_prompt,
+					description: step.step.description || `Modify file ${step.step.path}`,
+				};
+			case PlanStepAction.RunCommand:
+				return {
+					action: ServicePlanStepAction.RunCommand,
+					command: step.step.command,
+					description:
+						step.step.description || `Run command ${step.step.command}`,
+				};
+			default:
 				throw new Error(
-					`AI generation for ${step.step.path} failed after multiple retries.`,
+					`Unsupported plan step action: ${(step as any).step?.action}`,
 				);
-			}
-			desiredContent = generatedResult.content;
 		}
-
-		const cleanedDesiredContent = cleanCodeOutput(desiredContent ?? "");
-
-		console.log(
-			`Minovative Mind: [Step ${currentStepNumber}/${totalSteps}] Creating file \`${path.basename(
-				step.step.path,
-			)}\`...`,
-		);
-
-		try {
-			await vscode.workspace.fs.stat(fileUri);
-			const existingContent = Buffer.from(
-				await vscode.workspace.fs.readFile(fileUri),
-			).toString("utf-8");
-
-			if (step.step.generate_prompt) {
-				// Runtime Guard: Check for errors before overwriting
-				// Ensure diagnostics are fresh
-				await DiagnosticService.waitForDiagnosticsToStabilize(
-					fileUri,
-					combinedToken,
-				);
-				const diagnostics = DiagnosticService.getDiagnosticsForUri(fileUri);
-				const hasErrors = diagnostics.some(
-					(d) => d.severity === vscode.DiagnosticSeverity.Error,
-				);
-
-				if (context.isCorrectionMode) {
-					if (!hasErrors) {
-						console.log(
-							`[Runtime Guard] Skipping overwrite for ${path.basename(
-								step.step.path,
-							)}: No visible error diagnostics found.`,
-						);
-						const skipMessage = `Step ${currentStepNumber}/${totalSteps}: Skipped overwrite for \`${path.basename(
-							step.step.path,
-						)}\` (No visible errors detected).`;
-						this._postChatUpdateForPlanExecution({
-							type: "appendRealtimeModelMessage",
-							value: {
-								text: skipMessage,
-							},
-							diffContent: undefined,
-						});
-						return;
-					}
-				}
-			}
-
-			if (existingContent === cleanedDesiredContent) {
-				console.log(
-					`Minovative Mind: [Step ${currentStepNumber}/${totalSteps}] File \`${path.basename(
-						step.step.path,
-					)}\` already has the desired content. Skipping.`,
-				);
-			} else {
-				const document = await vscode.workspace.openTextDocument(fileUri);
-				const editor = await vscode.window.showTextDocument(document);
-
-				await applyAITextEdits(
-					editor,
-					existingContent,
-					cleanedDesiredContent,
-					combinedToken,
-				);
-				const newContentAfterApply = editor.document.getText();
-				await editor.document.save();
-
-				const { formattedDiff, summary } = await generateFileChangeSummary(
-					existingContent,
-					newContentAfterApply,
-					step.step.path,
-				);
-
-				// Replaced _logStepProgress (Modification success)
-				console.log(
-					`Minovative Mind: [Step ${currentStepNumber}/${totalSteps}] Modified file \`${path.basename(
-						step.step.path,
-					)}\``,
-				);
-
-				// 2. In the existing file modification path (the `try` block), update the `chatMessageText` string to use the format: `Step ${currentStepNumber}/${totalSteps}: Modified file: \`${path.basename(step.step.path)}\`\n\n${summary}`.
-				const chatMessageText = `Step ${currentStepNumber}/${totalSteps}: Modified file: \`${path.basename(
-					step.step.path,
-				)}\`\n\n${summary}`;
-				this._postChatUpdateForPlanExecution({
-					type: "appendRealtimeModelMessage",
-					value: {
-						text: chatMessageText,
-					},
-					diffContent: formattedDiff,
-				});
-
-				changeLogger.logChange({
-					filePath: step.step.path,
-					changeType: "modified",
-					summary,
-					diffContent: formattedDiff,
-					timestamp: Date.now(),
-					originalContent: existingContent,
-					newContent: newContentAfterApply,
-				});
-				affectedFileUris.add(fileUri);
-			}
-		} catch (error: any) {
-			if (
-				error instanceof vscode.FileSystemError &&
-				(error.code === "FileNotFound" || error.code === "EntryNotFound")
-			) {
-				await vscode.workspace.fs.writeFile(
-					fileUri,
-					Buffer.from(cleanedDesiredContent),
-				);
-
-				const { formattedDiff, summary } = await generateFileChangeSummary(
-					"",
-					cleanedDesiredContent,
-					step.step.path,
-				);
-
-				// Replaced _logStepProgress (Creation success)
-				console.log(
-					`Minovative Mind: [Step ${currentStepNumber}/${totalSteps}] Created file \`${path.basename(
-						step.step.path,
-					)}\``,
-				);
-
-				const chatMessageText = `Step ${currentStepNumber}/${totalSteps}: Created file: \`${path.basename(
-					step.step.path,
-				)}\`\n\n${summary}`;
-				this._postChatUpdateForPlanExecution({
-					type: "appendRealtimeModelMessage",
-					value: {
-						text: chatMessageText,
-					},
-					diffContent: formattedDiff,
-				});
-
-				changeLogger.logChange({
-					filePath: step.step.path,
-					changeType: "created",
-					summary,
-					diffContent: formattedDiff,
-					timestamp: Date.now(),
-					originalContent: "",
-					newContent: cleanedDesiredContent,
-				});
-				affectedFileUris.add(fileUri);
-			} else {
-				throw error;
-			}
-		}
-	}
-
-	private async _handleModifyFileStep(
-		step: ModifyFileStep,
-		currentStepNumber: number,
-		totalSteps: number,
-		rootUri: vscode.Uri,
-		context: sidebarTypes.PlanGenerationContext,
-		relevantSnippets: string,
-		affectedFileUris: Set<vscode.Uri>,
-		changeLogger: SidebarProvider["changeLogger"],
-		combinedToken: vscode.CancellationToken,
-	): Promise<void> {
-		// Early cancellation check before any async work
-		if (combinedToken.isCancellationRequested) {
-			throw new Error(ERROR_OPERATION_CANCELLED);
-		}
-
-		const fileUri = vscode.Uri.joinPath(rootUri, step.step.path);
-
-		const originalContent = Buffer.from(
-			await vscode.workspace.fs.readFile(fileUri),
-		).toString("utf-8");
-
-		const modificationContext = {
-			projectContext: context.projectContext,
-			relevantSnippets: relevantSnippets,
-			editorContext: context.editorContext,
-			activeSymbolInfo: undefined,
-		};
-
-		// Dynamic Context Selection (Context Agent) removed
-
-		// Runtime Guard: Check for errors before modifying
-		// Ensure diagnostics are fresh
-		await DiagnosticService.waitForDiagnosticsToStabilize(
-			fileUri,
-			combinedToken,
-		);
-		const diagnostics = DiagnosticService.getDiagnosticsForUri(fileUri);
-		const hasErrors = diagnostics.some(
-			(d) => d.severity === vscode.DiagnosticSeverity.Error,
-		);
-
-		if (context.isCorrectionMode) {
-			if (!hasErrors) {
-				console.log(
-					`[Runtime Guard] Skipping modification for ${path.basename(
-						step.step.path,
-					)}: No visible error diagnostics found.`,
-				);
-				const skipMessage = `Step ${currentStepNumber}/${totalSteps}: Skipped modification for \`${path.basename(
-					step.step.path,
-				)}\` (No visible errors detected).`;
-				this._postChatUpdateForPlanExecution({
-					type: "appendRealtimeModelMessage",
-					value: {
-						text: skipMessage,
-					},
-					diffContent: undefined,
-				});
-				return;
-			}
-		}
-
-		let modifiedResult: { content: string } | undefined;
-		let attempt = 0;
-		let success = false;
-		while (!success && attempt <= this.MAX_TRANSIENT_STEP_RETRIES) {
-			if (combinedToken.isCancellationRequested) {
-				throw new Error(ERROR_OPERATION_CANCELLED);
-			}
-			try {
-				modifiedResult = await this.enhancedCodeGenerator.modifyFileContent(
-					step.step.path,
-					step.step.modification_prompt,
-					originalContent,
-					modificationContext,
-					this.provider.settingsManager.getSelectedModelName(),
-					combinedToken,
-				);
-				success = true;
-			} catch (error: any) {
-				const errorMsg = formatUserFacingErrorMessage(error, "", "", rootUri);
-				const isRetryable =
-					errorMsg.includes("quota") ||
-					errorMsg.includes("rate limit") ||
-					errorMsg.includes("network issue") ||
-					errorMsg.includes("service unavailable") ||
-					errorMsg.includes("timeout") ||
-					errorMsg.includes("parsing failed") ||
-					errorMsg.includes("overloaded");
-
-				if (isRetryable && attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
-					attempt++;
-					console.warn(
-						`AI modification for ${step.step.path} failed, retrying (${attempt}/${this.MAX_TRANSIENT_STEP_RETRIES})... Error: ${errorMsg}`,
-					);
-					await this._delay(2000 * attempt, combinedToken);
-				} else {
-					throw error;
-				}
-			}
-		}
-		if (!modifiedResult) {
-			throw new Error(
-				`AI modification for ${step.step.path} failed after multiple retries.`,
-			);
-		}
-
-		/* Search and Replace Block Logic */
-		const rawOutput = cleanCodeOutput(modifiedResult.content);
-		const searchReplaceService = new SearchReplaceService();
-		let newContent: string;
-
-		// Check if the output contains search/replace blocks
-		if (rawOutput.includes("<<<<<<< SEARCH")) {
-			try {
-				const blocks = searchReplaceService.parseBlocks(rawOutput);
-				if (blocks.length === 0) {
-					throw new Error(
-						"Detected Search/Replace markers but failed to parse any valid blocks.",
-					);
-				}
-				newContent = searchReplaceService.applyBlocks(originalContent, blocks);
-			} catch (error: any) {
-				throw new Error(
-					`Failed to apply Search/Replace blocks: ${error.message}`,
-				);
-			}
-		} else {
-			// Fallback to full file rewrite if no blocks detected (backward compatibility or LLM failure fallback)
-			// Although we prompt for blocks, sometimes LLMs might output full file if the file is small or it "forgets".
-			console.warn(
-				`[PlanExecutor] No Search/Replace blocks detected for ${step.step.path}. Treating as full file rewrite.`,
-			);
-			newContent = rawOutput;
-		}
-
-		if (originalContent === newContent) {
-			console.log(
-				`Minovative Mind: [Step ${currentStepNumber}/${totalSteps}] File \`${path.basename(
-					step.step.path,
-				)}\` content is already as desired, no substantial modifications needed.`,
-			);
-		} else {
-			const document = await vscode.workspace.openTextDocument(fileUri);
-			const editor = await vscode.window.showTextDocument(document);
-			await applyAITextEdits(
-				editor,
-				originalContent,
-				newContent,
-				combinedToken,
-			);
-			const newContentAfterApply = editor.document.getText();
-			await editor.document.save();
-
-			const { formattedDiff, summary } = await generateFileChangeSummary(
-				originalContent,
-				newContentAfterApply,
-				step.step.path,
-			);
-
-			// Update the _logStepProgress message
-			console.log(
-				`Minovative Mind: [Step ${currentStepNumber}/${totalSteps}] Modified file \`${path.basename(
-					step.step.path,
-				)}\``,
-			);
-
-			// Update the chatMessageText string format
-			const chatMessageText = `Step ${currentStepNumber}/${totalSteps}: Modified file: \`${path.basename(
-				step.step.path,
-			)}\`\n\n${summary}`;
-			this._postChatUpdateForPlanExecution({
-				type: "appendRealtimeModelMessage",
-				value: {
-					text: chatMessageText,
-				},
-				diffContent: formattedDiff,
-			});
-
-			changeLogger.logChange({
-				filePath: step.step.path,
-				changeType: "modified",
-				summary,
-				diffContent: formattedDiff,
-				timestamp: Date.now(),
-				originalContent: originalContent,
-				newContent: newContentAfterApply,
-			});
-			affectedFileUris.add(fileUri);
-		}
-	}
-
-	private async _handleRunCommandStep(
-		step: RunCommandStep,
-		index: number,
-		totalSteps: number,
-		rootUri: vscode.Uri,
-		context: sidebarTypes.PlanGenerationContext,
-		progress: vscode.Progress<{ message?: string; increment?: number }>,
-		originalRootInstruction: string,
-		combinedToken: vscode.CancellationToken,
-	): Promise<boolean> {
-		const commandString = step.step.command.trim();
-
-		const { executable, args } =
-			PlanExecutorService._parseCommandArguments(commandString);
-
-		const displayCommand = [
-			executable,
-			...args.map(PlanExecutorService._sanitizeArgumentForDisplay),
-		].join(" ");
-
-		const commandTerminal = vscode.window.createTerminal({
-			name: `Minovative Mind: Cmd ${index + 1}/${totalSteps}`,
-			cwd: rootUri.fsPath,
-		});
-		commandTerminal.show(true);
-		this.commandExecutionTerminals.push(commandTerminal); // Store the reference
-
-		let promptMessage = `Command:\n[ \`${displayCommand}.\` ]`;
-		promptMessage += `\n\n⚠️ WARNING: Please review it carefully. The plan wants to run the command above. Allow?`;
-
-		// Remove all calls to this._logStepProgress (Instruction 1)
-		console.log(
-			`Minovative Mind: [Command Step ${
-				index + 1
-			}/${totalSteps}] About to display command execution prompt: ${displayCommand}`,
-		);
-
-		// Use raceWithCancellation for the modal prompt
-		const userChoicePromise = vscode.window.showInformationMessage(
-			promptMessage,
-			{ modal: true },
-			"Allow",
-			"Skip",
-		);
-		const userChoice = await this._raceWithCancellation(
-			userChoicePromise,
-			combinedToken,
-		);
-
-		// Remove all calls to this._logStepProgress (Instruction 1)
-		console.log(
-			`Minovative Mind: [Command Step ${
-				index + 1
-			}/${totalSteps}] User choice for command: ${displayCommand} is: ${userChoice}`,
-		);
-
-		// Check for cancellation immediately after capturing userChoice
-		if (combinedToken.isCancellationRequested) {
-			throw new Error(ERROR_OPERATION_CANCELLED);
-		}
-
-		// Handle undefined userChoice (prompt dismissed or cancelled) (Instruction 2)
-		if (userChoice === undefined) {
-			console.log(
-				`Minovative Mind: [Command Step ${
-					index + 1
-				}/${totalSteps}] User prompt dismissed without selection; treating as skip.`,
-			);
-			return true;
-		}
-
-		if (userChoice === "Allow") {
-			let commandResult: CommandResult | undefined;
-			try {
-				// 1. Send command text and wait for terminal readiness delay
-				commandTerminal.sendText(`${displayCommand}`, true);
-				await this._delay(100, combinedToken);
-
-				// 2. Execute command
-				commandResult = await executeCommand(
-					executable,
-					args,
-					rootUri.fsPath,
-					combinedToken,
-					this.provider.activeChildProcesses,
-					commandTerminal,
-				);
-
-				// Instruction 3: Removed logic checking for non-zero exit code and throwing.
-				// Instruction 4: Removed call to this._postCommandResultToChat(...)
-			} catch (error: any) {
-				if (error.message === ERROR_OPERATION_CANCELLED) {
-					throw error;
-				}
-
-				// Instruction 6: Catch execution/spawn errors (rejected promise from executeCommand)
-				const wrappedError = new Error(
-					`RunCommandStep failed to spawn/execute command: ${displayCommand}. Error: ${error.message}`,
-				);
-				console.error(
-					`Minovative Mind: [Command Step ${
-						index + 1
-					}/${totalSteps}] Execution failed (Spawn failure or Promise Rejection): ${
-						wrappedError.message
-					}`,
-					error,
-				);
-				throw wrappedError;
-			}
-
-			// Instruction 5 & 2c: Success (command spawned successfully). Log and return true.
-			console.log(
-				`Minovative Mind: [Command Step ${
-					index + 1
-				}/${totalSteps}] Command completed execution (Exit Code: ${
-					commandResult?.exitCode
-				}). Continuing plan.`,
-			);
-			return true;
-		} else {
-			// userChoice is "Skip"
-			console.log(
-				`Minovative Mind: [Command Step ${
-					index + 1
-				}/${totalSteps}] Step SKIPPED by user.`,
-			);
-			return true;
-		}
-	}
-
-	private static _parseCommandArguments(commandString: string): {
-		executable: string;
-		args: string[];
-	} {
-		const parts = [];
-		let inQuote = false;
-		let currentPart = "";
-
-		for (let i = 0; i < commandString.length; i++) {
-			const char = commandString[i];
-
-			if (char === '"' || char === `'`) {
-				inQuote = !inQuote;
-				if (!inQuote && currentPart !== "") {
-					parts.push(currentPart);
-					currentPart = "";
-				}
-			} else if (char === " " && !inQuote) {
-				if (currentPart !== "") {
-					parts.push(currentPart);
-					currentPart = "";
-				}
-			} else {
-				currentPart += char;
-			}
-		}
-
-		if (currentPart !== "") {
-			parts.push(currentPart);
-		}
-
-		if (parts.length === 0) {
-			return { executable: "", args: [] };
-		}
-
-		const [executable, ...args] = parts;
-		return { executable, args };
-	}
-
-	private static _sanitizeArgumentForDisplay(arg: string): string {
-		// For display purposes, we might want to truncate very long arguments
-		// or replace sensitive information. For now, we return as is.
-		if (arg.length > 100) {
-			return `${arg.substring(0, 97)}...`;
-		}
-		return arg;
 	}
 
 	/**

@@ -21,6 +21,11 @@ import {
 	gatherProjectConfigContext,
 	formatProjectConfigForPrompt,
 } from "./configContextProvider";
+import { ContextAgentCacheService } from "../services/contextAgentCacheService";
+import { getHeuristicRelevantFiles } from "./heuristicContextSelector";
+import { DependencyRelation } from "./dependencyGraphBuilder";
+import { HeuristicSelectionOptions } from "./heuristicContextSelector";
+import { FileSummary } from "../services/sequentialFileProcessor";
 
 const MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION = 10000;
 export { MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION };
@@ -112,11 +117,11 @@ export interface SelectRelevantFilesAIOptions {
 	projectRoot: vscode.Uri;
 	activeEditorContext?: PlanGenerationContext["editorContext"];
 	diagnostics?: string;
-	fileDependencies?: Map<string, string[]>;
-	reverseDependencies?: Map<string, string[]>; // Files that import each file
+	fileDependencies?: Map<string, DependencyRelation[]>;
+	reverseDependencies?: Map<string, DependencyRelation[]>; // Files that import each file
 	activeEditorSymbols?: vscode.DocumentSymbol[];
 	preSelectedHeuristicFiles?: vscode.Uri[];
-	fileSummaries?: Map<string, string>;
+	fileSummaries?: Map<string, FileSummary>;
 	activeSymbolDetailedInfo?: ActiveSymbolDetailedInfo;
 	aiModelCall?: (
 		prompt: string,
@@ -138,6 +143,7 @@ export interface SelectRelevantFilesAIOptions {
 	modelName: string;
 	cancellationToken?: vscode.CancellationToken;
 	selectionOptions?: AISelectionOptions; // Selection options
+	heuristicSelectionOptions?: HeuristicSelectionOptions; // Heuristic selection options
 }
 
 /**
@@ -232,10 +238,10 @@ function optimizePrompt(
  */
 function buildOptimizedProjectStructure(
 	relativeFilePaths: string[],
-	fileSummaries: Map<string, string> | undefined,
+	fileSummaries: Map<string, FileSummary> | undefined,
 	heuristicPathSet: Set<string>,
-	fileDependencies: Map<string, string[]> | undefined,
-	reverseDependencies: Map<string, string[]> | undefined,
+	fileDependencies: Map<string, DependencyRelation[]> | undefined,
+	reverseDependencies: Map<string, DependencyRelation[]> | undefined,
 	forceOptimization: boolean,
 ): { fileListString: string; isTruncated: boolean } {
 	const fileCount = relativeFilePaths.length;
@@ -274,7 +280,7 @@ function buildOptimizedProjectStructure(
 		output += "--- Top-Level Directories ---\n";
 		if (topLevelDirs.size > 0) {
 			output +=
-				Array.from(topLevelDirs)
+				Array.from(topLevelDirs) // Corrected from duplicate to original logic
 					.sort()
 					.map((d) => `- ${d} (contains files)`)
 					.join("\n") + "\n";
@@ -288,10 +294,13 @@ function buildOptimizedProjectStructure(
 				.sort()
 				.map((p) => {
 					// Add summary if available
-					const summary = fileSummaries?.get(p);
+					const summaryObj = fileSummaries?.get(p);
 					let fileEntry = `- "${p}"`;
-					if (summary) {
-						fileEntry += ` (${summary
+					if (summaryObj) {
+						const summaryText = summaryObj.summary;
+						const lineCount = summaryObj.lineCount;
+						const lineCountStr = lineCount ? `[${lineCount} lines] ` : "";
+						fileEntry += ` (${lineCountStr}${summaryText
 							.substring(0, 100)
 							.replace(/\s+/g, " ")}...)`;
 					}
@@ -304,7 +313,7 @@ function buildOptimizedProjectStructure(
 						if (imports && imports.length > 0) {
 							const importList = imports
 								.slice(0, 3)
-								.map((i) => path.basename(i))
+								.map((i) => path.basename(i.path)) // Fixed property access
 								.join(", ");
 							fileEntry += `\n    ↳ imports: ${importList}${
 								imports.length > 3 ? "..." : ""
@@ -313,7 +322,7 @@ function buildOptimizedProjectStructure(
 						if (importedBy && importedBy.length > 0) {
 							const importedByList = importedBy
 								.slice(0, 3)
-								.map((i) => path.basename(i))
+								.map((i) => path.basename(i.path))
 								.join(", ");
 							fileEntry += `\n    ↳ imported by: ${importedByList}${
 								importedBy.length > 3 ? "..." : ""
@@ -336,7 +345,10 @@ function buildOptimizedProjectStructure(
 
 					// Add summary if available
 					if (summary) {
-						fileEntry += ` (${summary
+						const summaryText = summary.summary;
+						const lineCount = summary.lineCount;
+						const lineCountStr = lineCount ? `[${lineCount} lines] ` : "";
+						fileEntry += ` (${lineCountStr}${summaryText
 							.substring(0, 150)
 							.replace(/\s+/g, " ")}...)`;
 					}
@@ -349,7 +361,7 @@ function buildOptimizedProjectStructure(
 						if (imports && imports.length > 0) {
 							const importList = imports
 								.slice(0, 5)
-								.map((i) => path.basename(i))
+								.map((i) => path.basename(i.path))
 								.join(", ");
 							const moreCount =
 								imports.length > 5 ? ` +${imports.length - 5} more` : "";
@@ -359,7 +371,7 @@ function buildOptimizedProjectStructure(
 						if (importedBy && importedBy.length > 0) {
 							const importedByList = importedBy
 								.slice(0, 3)
-								.map((i) => path.basename(i))
+								.map((i) => path.basename(i.path))
 								.join(", ");
 							const moreCount =
 								importedBy.length > 3 ? ` +${importedBy.length - 3} more` : "";
@@ -472,6 +484,59 @@ export async function selectRelevantFilesAI(
 	const projectConfig = await gatherProjectConfigContext(projectRoot);
 	const projectConfigPrompt = formatProjectConfigForPrompt(projectConfig);
 
+	// 1. Detect if the user request appears to be about fixing an error OR refactoring/searching
+	// Use AI classification if available, otherwise fallback to regex
+	const projectAnalysisKeywordsRegex =
+		/\b(error|bug|fix|issue|exception|crash|fail|broken|undefined|null|cannot|warning|problem|refactor|restructure|optimize|find|search|where|locate|architecture|dependency|structure)\b/i;
+
+	let isLikelyAnalysisRequired = false;
+
+	if (aiRequestService) {
+		try {
+			const classificationPrompt = `Analyze the following user request and determine if it requires deep codebase investigation (e.g., fixing a bug, refactoring code, searching for patterns, or understanding architecture).
+User Request: "${userRequest}"
+Return ONLY a JSON object: { "requiresInvestigation": boolean }`;
+
+			const response = await aiRequestService.generateWithRetry(
+				[{ text: classificationPrompt }],
+				modelName,
+				undefined,
+				"intent_classification",
+				{ responseMimeType: "application/json" },
+				undefined,
+				undefined, // token
+				false, // isMergeOperation
+				"You are an intelligent intent classifier specialized in codebase analysis. Your job is to determine if a user request indicates a need for deep investigation. Output strict JSON.", // systemInstruction
+			);
+
+			const jsonMatch = response.match(/\{.*\}/s);
+			if (jsonMatch) {
+				const parsed = JSON.parse(jsonMatch[0]);
+				if (typeof parsed.requiresInvestigation === "boolean") {
+					isLikelyAnalysisRequired = parsed.requiresInvestigation;
+					console.log(
+						`[SmartContextSelector] AI classified intent: requiresInvestigation=${isLikelyAnalysisRequired}`,
+					);
+				}
+			}
+		} catch (error) {
+			console.warn(
+				"[SmartContextSelector] AI intent classification failed, falling back to regex.",
+				error,
+			);
+		}
+	}
+
+	// Safety Net: If AI failed OR returned false, still check common keywords
+	if (!isLikelyAnalysisRequired) {
+		isLikelyAnalysisRequired = projectAnalysisKeywordsRegex.test(userRequest);
+		if (isLikelyAnalysisRequired) {
+			console.log(
+				`[SmartContextSelector] Regex safety net triggered requiresInvestigation.`,
+			);
+		}
+	}
+
 	let contextPrompt = `User Request: "${userRequest}"\n`;
 
 	// Add project configuration context if available
@@ -479,13 +544,21 @@ export async function selectRelevantFilesAI(
 		contextPrompt += `\n${projectConfigPrompt}\n`;
 	}
 
+	let heuristicSection = "";
 	if (preSelectedHeuristicFiles && preSelectedHeuristicFiles.length > 0) {
 		const heuristicPaths = preSelectedHeuristicFiles.map((uri) =>
 			path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/"),
 		);
-		contextPrompt += `\nHeuristically Pre-selected Files (strong candidates, but critically evaluate them): ${heuristicPaths.join(
-			", ",
-		)}\n`;
+
+		if (isLikelyAnalysisRequired) {
+			heuristicSection = `\n--- Initial Heuristic Leads (UNVERIFIED / LOW CONFIDENCE) ---\nThese files were selected by a simple keyword-matching algorithm. They may be incomplete or irrelevant for this complex request.\nPotential Leads: ${heuristicPaths.join(
+				", ",
+			)}\n--- End Heuristic Leads ---\n`;
+		} else {
+			contextPrompt += `\nHeuristically Pre-selected Files (strong candidates, but critically evaluate them): ${heuristicPaths.join(
+				", ",
+			)}\n`;
+		}
 	}
 
 	if (activeEditorContext) {
@@ -558,6 +631,11 @@ export async function selectRelevantFilesAI(
 		contextPrompt += `--- End Active Symbol Information ---\n`;
 	}
 
+	// Append reframed heuristics at the end of context if analysis is required
+	if (isLikelyAnalysisRequired && heuristicSection) {
+		contextPrompt += heuristicSection;
+	}
+
 	// Create a set of heuristic files for faster lookup
 	const heuristicPathSet = new Set(
 		preSelectedHeuristicFiles?.map((uri) =>
@@ -576,49 +654,6 @@ export async function selectRelevantFilesAI(
 		options.reverseDependencies,
 		alwaysRunInvestigation,
 	);
-
-	// Detect if the user request appears to be about fixing an error
-	// Use AI classification if available, otherwise fallback to regex
-	const errorKeywordsRegex =
-		/\b(error|bug|fix|issue|exception|crash|fail|broken|undefined|null|cannot|warning|problem)\b/i;
-
-	let isLikelyErrorRequest = errorKeywordsRegex.test(userRequest);
-
-	if (aiRequestService) {
-		try {
-			const classificationPrompt = `Analyze the following user request and determine if it is asking to fix a bug, error, or issue.
-User Request: "${userRequest}"
-Return ONLY a JSON object: { "isErrorFix": boolean }`;
-
-			const response = await aiRequestService.generateWithRetry(
-				[{ text: classificationPrompt }],
-				modelName,
-				undefined,
-				"intent_classification",
-				{ responseMimeType: "application/json" },
-				undefined,
-				undefined, // token
-				false, // isMergeOperation
-				"You are an intelligent intent classifier. Your job is to determine if a user request indicates a software bug, error, or issue that requires investigation. Output strict JSON.", // systemInstruction
-			);
-
-			const jsonMatch = response.match(/\{.*\}/s);
-			if (jsonMatch) {
-				const parsed = JSON.parse(jsonMatch[0]);
-				if (typeof parsed.isErrorFix === "boolean") {
-					isLikelyErrorRequest = parsed.isErrorFix;
-					console.log(
-						`[SmartContextSelector] AI classified intent: isErrorFix=${isLikelyErrorRequest}`,
-					);
-				}
-			}
-		} catch (error) {
-			console.warn(
-				"[SmartContextSelector] AI intent classification failed, using regex fallback:",
-				error,
-			);
-		}
-	}
 
 	// Build diagnostics context if available
 	let diagnosticsContext = "";
@@ -666,20 +701,20 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 	// Build investigation instruction based on context
 	let investigationInstruction: string;
 
-	if (isTruncated || alwaysRunInvestigation || isLikelyErrorRequest) {
+	if (isTruncated || alwaysRunInvestigation || isLikelyAnalysisRequired) {
 		const searchToolInstructions = `*   **POWERFUL SEARCH**: You can use \`|\` (pipes) and \`grep\` / \`find\` to filter results.
     *   **Examples**:
         *   \`ls -R | grep "auth"\` (Find files with "auth" in name)
         *   \`find src -name "*.ts" -exec grep -l "interface User" {} +\` (Find files containing text)
         *   \`grep -r "class User" src\` (Search content recursively)`;
 
-		investigationInstruction = `2.  **Investigate (REQUIRED)**: The file list is TRUNCATED or this is a high-priority request. You MUST run a \`run_terminal_command\` to find specific files.
+		investigationInstruction = `2.  **Investigate (REQUIRED)**: The file list is TRUNCATED or this is a complex request. You MUST run a \`run_terminal_command\` to find specific files. **Never rely solely on heuristically provided files for any request.**
     ${searchToolInstructions}
     *   **CHECK BEFORE READING**: Use \`wc -l file\` to check size.
-    *   **EXIT STRATEGY**: As soon as you find the relevant file path, **STOP** investigating. Call \`finish_selection\`.`;
+    *   **EXIT STRATEGY**: Ensure you have found **ALL** relevant context (files, symbols, imports) required to satisfy the request before calling \`finish_selection\`. Thoroughness is prioritized over speed.`;
 	} else {
 		investigationInstruction =
-			"2.  **Investigate (Highly Recommended)**: Use `run_terminal_command` with `ls`, `find`, or `grep -r` to verify file existence and content before selecting.";
+			"2.  **Investigate (Highly Recommended)**: Use `run_terminal_command` with `ls`, `find`, or `grep -r` to verify file existence and content before selecting. Relying on memory or heuristics for file paths is error-prone.";
 	}
 
 	const selectionPrompt = `
@@ -693,21 +728,34 @@ ${fileListString}
 
 -- Instructions --
 1.  **Analyze the Goal**: Understand the user's request and the provided context.${
-		isLikelyErrorRequest
-			? " This appears to be an ERROR-FIXING request - prioritize investigation!"
+		isLikelyAnalysisRequired
+			? " This request requires deep analysis - NOT just heuristics!"
 			: ""
 	}
 ${investigationInstruction}
     *   **Loop Prevention**: Do not run the same command twice.
-    *   **Peek Content**: Use \`head -n 50 src/file.ts\` or \`tail -n 20 src/file.ts\`.
-    *   **View Specific Lines**: If you MUST view specific lines, use \`sed -n '10,20p' src/file.ts\`.
-2b. **Symbol Lookup (PREFERRED for finding definitions)**: If you see a symbol used (e.g., \`auth.User\`), use \`lookup_workspace_symbol\`.
-3.  **Select**: Call \`finish_selection\` with the list of file paths.
+    *   **Search Before Reading (Targeted Inspection)**: NEVER scan a file linearly (e.g., 1-100, then 101-200). Instead, use \`grep\`, \`lookup_workspace_symbol\`, or \`get_symbol_definitions\` to find exact line numbers and then use \`read_file_range\` to jump there.
+    *   **Precise Inspection (REQUIRED)**: Use \`read_file_range\` to inspect specific code blocks. Do NOT use \`cat\`, \`head\`, or \`tail\` via the terminal.
+    *   **Semantic Teleportation**:
+        - Use \`get_symbol_definitions\` to jump directly to a symbol's source code.
+        - Use \`get_symbol_implementations\` to find concrete implementations of interfaces/classes.
+    *   **Search**: Use \`search_codebase\` to find relevant code patterns.
+    *   **Connections**: Use \`find_related_files\` to discover imports/usage of a specific file.
+    *   **Mapping Structure**: Use \`get_file_outline\` to see classes and methods in a file without reading the whole thing.
+    *   **Trace Usage**: Use \`find_symbol_references\` to see every file that uses a specific function or variable.
+    *   **Diagnosis**: Use \`get_diagnostics\` to see current linter errors or warnings that might pinpoint the bug.
+3.  **The Triangulation Principle**: A thorough investigation requires cross-referencing. Do not rely on a single tool result.
+    *   **Find** a target (e.g., using \`get_symbol_definitions\` or \`lookup_workspace_symbol\`).
+    *   **Verify** its relevance (e.g., using \`find_symbol_references\` or \`grep\` to see usage).
+    *   **Explore** its context (e.g., using \`ls\` or checking related files).
+4.  **Select (SURGICAL SELECTION REQUIRED)**: Call \`finish_selection\` with precise line ranges.
+    *   **NO FULL FILES**: For files > 100 lines, you MUST provide a range (e.g., \`src/file.ts:20-80\`). Selecting an entire large file is a FAILURE of precision.
+    *   **PRECISION TAX**: Every line you select that is NOT directly relevant to the request is a failure. Aim for the smallest possible window that proves your point or solves the goal.
     *   **LINE RANGES**: \`src/auth.ts:40-80\` (lines 40-80).
     *   **CRITICAL WARNING**: Line ranges (e.g. \`:10\`) are **ONLY** allowed inside \`finish_selection\`.
         *   ❌ **WRONG**: \`cat src/file.ts:10\`
-        *   ✅ **CORRECT**: \`finish_selection(selectedFiles=["src/file.ts:10"])\`
-4.  **Constraint**: Return ONLY the function call.
+        *   ✅ **CORRECT**: \`finish_selection(selectedFiles=["src/file.ts:10-50"])\`
+5.  **Constraint**: Return ONLY the function call.
 `.trim();
 
 	console.log(
@@ -723,14 +771,14 @@ ${investigationInstruction}
 					{
 						name: "run_terminal_command",
 						description:
-							"Execute a safe terminal command (ls, grep, find, cat, git, sed, head, tail, wc, file, xargs, grep) to investigate the codebase. Pipes (|) ARE ALLOWED.",
+							"Execute a safe terminal command (ls, grep, find, git, wc, file, xargs) to investigate the codebase. Pipes (|) ARE ALLOWED. Note: Do NOT use this for reading files (use read_file_range instead).",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {
 								command: {
 									type: SchemaType.STRING,
 									description:
-										"The terminal command to execute. Allowed: ls, grep, find, cat, git, sed, head, tail, wc, file, xargs. PIPES (|) ARE SUPPORTED. Example: `grep -r 'foo' src`.",
+										"The terminal command to execute. Allowed: ls, grep, find, git, wc, file, xargs. Pipes (|) are supported. Example: `grep -r 'foo' src`.",
 								},
 							},
 							required: ["command"],
@@ -739,16 +787,16 @@ ${investigationInstruction}
 					{
 						name: "finish_selection",
 						description:
-							"Call this when you have found all relevant file paths. Supports optional line ranges OR symbol names. Returns the final list.",
+							"Finish the investigation and return the final list of relevant files and line ranges. MANDATORY: For any file > 100 lines, you MUST provide a line range (e.g., 'src/file.ts:10-50') or a symbol ('src/file.ts#MyClass'). Selecting full large files is FORBIDDEN.",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {
 								selectedFiles: {
 									type: SchemaType.ARRAY,
 									description:
-										"JSON Array of file paths. Supports line ranges: 'path/file.ts' (full), 'path/file.ts:10-50' (lines), OR symbols: 'path/file.ts#symbolName' (e.g. 'auth.ts#login'). You can also use objects: { \"path\": \"src/auth.ts\", \"symbol\": \"login\" }.",
+										"JSON Array of file paths with ranges. Examples: ['src/main.ts:10-50', 'src/utils.ts#myFunc', 'src/small_file.ts'].",
 									items: {
-										type: SchemaType.STRING, // Use STRING to avoid enum errors, rely on string parsing
+										type: SchemaType.STRING,
 									},
 								},
 							},
@@ -769,6 +817,164 @@ ${investigationInstruction}
 								},
 							},
 							required: ["query"],
+						},
+					},
+					{
+						name: "find_related_files",
+						description:
+							"Find files related to a specific file (e.g., imports, tests, definitions) using heuristic analysis. Useful when you have a file and want to know what it uses or what uses it.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								filePath: {
+									type: SchemaType.STRING,
+									description:
+										"The relative path of the file to investigate (e.g., 'src/services/authService.ts').",
+								},
+							},
+							required: ["filePath"],
+						},
+					},
+					{
+						name: "search_codebase",
+						description:
+							"Search the entire codebase for a string or pattern. Uses 'grep' under the hood. Case insensitive by default.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								query: {
+									type: SchemaType.STRING,
+									description: "The string or regex pattern to search for.",
+								},
+								caseSensitive: {
+									type: SchemaType.BOOLEAN,
+									description: "If true, search is case sensitive.",
+								},
+							},
+							required: ["query"],
+						},
+					},
+					{
+						name: "read_file_range",
+						description:
+							"Read a specific line range from a file. Use this to inspect code blocks and verify relevance. Lines are 1-indexed and inclusive.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								filePath: {
+									type: SchemaType.STRING,
+									description:
+										"The relative path of the file to read (e.g., 'src/main.ts').",
+								},
+								startLine: {
+									type: SchemaType.NUMBER,
+									description:
+										"The starting line number (1-indexed, inclusive).",
+								},
+								endLine: {
+									type: SchemaType.NUMBER,
+									description: "The ending line number (1-indexed, inclusive).",
+								},
+							},
+							required: ["filePath", "startLine", "endLine"],
+						},
+					},
+					{
+						name: "get_file_outline",
+						description:
+							"Retrieve a structured list of symbols (classes, methods, variables) in a specific file. Useful for mapping a file's structure quickly.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								filePath: {
+									type: SchemaType.STRING,
+									description:
+										"The relative path of the file (e.g., 'src/services/planService.ts').",
+								},
+							},
+							required: ["filePath"],
+						},
+					},
+					{
+						name: "find_symbol_references",
+						description:
+							"Find all references to a specific symbol across the workspace. Use this to trace usage and verify connections between files.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								symbolName: {
+									type: SchemaType.STRING,
+									description: "The name of the symbol to find references for.",
+								},
+							},
+							required: ["symbolName"],
+						},
+					},
+					{
+						name: "get_diagnostics",
+						description:
+							"Pull current VS Code errors and warnings. Can be filtered by file path or scoped to the entire workspace.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								filePath: {
+									type: SchemaType.STRING,
+									description:
+										"Optional: Filter diagnostics to a specific file path.",
+								},
+							},
+							required: [],
+						},
+					},
+					{
+						name: "get_symbol_definitions",
+						description:
+							"Jump directly to where a symbol is defined. Use this to find the source code for a class, function, or variable name.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								symbolName: {
+									type: SchemaType.STRING,
+									description:
+										"The name of the symbol to find the definition for.",
+								},
+							},
+							required: ["symbolName"],
+						},
+					},
+					{
+						name: "get_symbol_implementations",
+						description:
+							"Find implementations of a class or interface symbol. Useful for tracing logic in polymorphic systems.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								symbolName: {
+									type: SchemaType.STRING,
+									description:
+										"The name of the symbol to find implementations for.",
+								},
+							},
+							required: ["symbolName"],
+						},
+					},
+				],
+			},
+			{
+				functionDeclarations: [
+					{
+						name: "think",
+						description:
+							"Use this tool to think about the problem, analyze context, and plan your next steps. This helps you make better decisions. The user will see your thoughts.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								thought: {
+									type: SchemaType.STRING,
+									description: "Your detailed thoughts and reasoning.",
+								},
+							},
+							required: ["thought"],
 						},
 					},
 				],
@@ -793,7 +999,40 @@ ${investigationInstruction}
 				},
 			];
 
-			const MAX_TURNS = 20;
+			const MAX_TURNS = 30;
+
+			// Create cache service for reduced token costs during the agentic loop
+			// This caches the system instruction + tools so they're not re-sent every turn
+			const contextAgentCacheService = new ContextAgentCacheService(() =>
+				aiRequestService.getApiKey(),
+			);
+
+			let cachedContentName: string | null = null;
+			try {
+				// System instruction for the context agent
+				const contextAgentSystemInstruction = `You are an expert AI developer assistant specialized in codebase analysis. Your task is to select the most relevant files to help with a user's request.
+Use the provided tools to investigate the codebase and select files. Always call a tool - never respond with text.
+Use the 'think' tool to PLAN your investigation steps. DO NOT use thinking to justify skipping tools.
+**THE TRIANGULATION PRINCIPLE**: You must provide evidence from at least TWO different types of tool outputs (e.g., a symbol lookup + a grep search) for any file you select for complex requests.
+**AVOID SEQUENTIAL SCANNING**: Do not read files in blocks (1-100, 101-200). Use search tools to make "semantic leaps" to relevant code.
+Never assume a file belongs in the selection because it sounds important; VERIFY its content and connections first.`;
+
+				cachedContentName = await contextAgentCacheService.getOrCreateCache(
+					modelName,
+					contextAgentSystemInstruction,
+					tools,
+				);
+
+				if (cachedContentName) {
+					console.log(
+						`[SmartContextSelector] Using cached content: ${cachedContentName}`,
+					);
+				}
+			} catch (cacheError) {
+				console.warn(
+					`[SmartContextSelector] Failed to create cache, proceeding without: ${(cacheError as Error).message}`,
+				);
+			}
 
 			for (let turn = 0; turn < MAX_TURNS; turn++) {
 				if (cancellationToken?.isCancellationRequested) {
@@ -810,6 +1049,7 @@ ${investigationInstruction}
 						FunctionCallingMode.ANY,
 						cancellationToken,
 						"context_agent_turn",
+						cachedContentName ?? undefined, // Pass cached content for reduced token costs
 					);
 				} catch (e) {
 					console.warn(
@@ -840,6 +1080,65 @@ ${investigationInstruction}
 					);
 					const args = functionCall.args as any;
 					const selectedPaths = args["selectedFiles"];
+
+					// --- SURGICAL GATEKEEPER ---
+					const surgicalViolations: string[] = [];
+					if (Array.isArray(selectedPaths)) {
+						selectedPaths.forEach((pathWithSelector: any) => {
+							if (typeof pathWithSelector !== "string") return;
+							const {
+								path: filePath,
+								startLine,
+								symbolName,
+							} = parseFileSelector(pathWithSelector);
+							const summary = fileSummaries?.get(filePath);
+							// If file is > 100 lines and no range/symbol is provided, it's a violation
+							if (
+								summary &&
+								summary.lineCount &&
+								summary.lineCount > 100 &&
+								!startLine &&
+								!symbolName
+							) {
+								surgicalViolations.push(
+									`${filePath} (${summary.lineCount} lines)`,
+								);
+							}
+						});
+					}
+
+					if (surgicalViolations.length > 0) {
+						const errorMsg = `PRECISION ERROR: You attempted to select full files that are > 100 lines: ${surgicalViolations.join(", ")}. This is FORBIDDEN to prevent token inflation. You MUST use line ranges (e.g., 'path.ts:10-50') or symbols ('path.ts#MyClass') to be surgical. Re-evaluate your selection and call finish_selection again with precise ranges.`;
+						const logText = `Surgical validation failed: Full selection of large files is restricted.`;
+
+						if (postMessageToWebview) {
+							postMessageToWebview({
+								type: "contextAgentLog",
+								value: { text: logText },
+							});
+						}
+						if (addContextAgentLogToHistory) {
+							addContextAgentLogToHistory(logText);
+						}
+
+						currentHistory.push({
+							role: "model",
+							parts: [{ functionCall: functionCall }],
+						});
+						currentHistory.push({
+							role: "function",
+							parts: [
+								{
+									functionResponse: {
+										name: "finish_selection",
+										response: { error: errorMsg },
+									},
+								},
+							],
+						});
+						continue; // Force the AI to retry with surgical ranges
+					}
+
 					const result = _processSelectedPaths(
 						selectedPaths,
 						allScannedFiles,
@@ -871,6 +1170,8 @@ ${investigationInstruction}
 							value: false,
 						});
 					}
+					// Dispose cache before returning
+					contextAgentCacheService.dispose().catch(() => {});
 					return result;
 				} else if (functionCall.name === "run_terminal_command") {
 					const args = functionCall.args as any;
@@ -1012,6 +1313,675 @@ ${investigationInstruction}
 							},
 						],
 					});
+				} else if (functionCall.name === "find_related_files") {
+					const args = functionCall.args as any;
+					const filePathStr = args["filePath"] as string;
+
+					// Log
+					const logText = `Finding files related to \`${filePathStr}\`...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					let output = "";
+					try {
+						// Resolve URI
+						let targetUri = allScannedFiles.find(
+							(u) =>
+								path
+									.relative(projectRoot.fsPath, u.fsPath)
+									.replace(/\\/g, "/") === filePathStr,
+						);
+						if (!targetUri) {
+							targetUri = vscode.Uri.joinPath(projectRoot, filePathStr);
+						}
+
+						// Use getHeuristicRelevantFiles with the target file as the "active" context
+						const relatedUris = await getHeuristicRelevantFiles(
+							allScannedFiles,
+							projectRoot,
+							{
+								documentUri: targetUri,
+								// Mock required properties of EditorContext
+								fullText: "",
+								selectedText: "",
+								instruction: "",
+								languageId: "typescript", // Default/Dummy
+								filePath: targetUri.fsPath,
+								selection: new vscode.Range(0, 0, 0, 0),
+							},
+							options.fileDependencies,
+							options.reverseDependencies,
+							undefined, // activeSymbolDetailedInfo
+							undefined, // semanticGraph
+							cancellationToken,
+							{
+								maxHeuristicFilesTotal: 20, // Limit results
+							},
+						);
+
+						if (relatedUris.length > 0) {
+							const paths = relatedUris
+								.map((u) =>
+									path
+										.relative(projectRoot.fsPath, u.fsPath)
+										.replace(/\\/g, "/"),
+								)
+								.slice(0, 15); // Show top 15
+							output = `Found ${relatedUris.length} related files. Top results:\n- ${paths.join("\n- ")}`;
+						} else {
+							output = `No strongly related files found for ${filePathStr}.`;
+						}
+					} catch (e: any) {
+						output = `Error finding related files: ${e.message}`;
+					}
+
+					// Log output / History
+					const displayOutput =
+						output.length > 500 ? output.substring(0, 500) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "find_related_files",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "search_codebase") {
+					const args = functionCall.args as any;
+					const query = args["query"] as string;
+					const caseSensitive = args["caseSensitive"] === true;
+
+					// Logic
+					const logText = `Searching codebase for "${query}"...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					let output = "";
+					try {
+						// Use grep via SafeCommandExecutor
+						// Flags: -r (recursive), -n (line numbers), -I (ignore binary), -i (case insensitive if not set)
+						const flags = caseSensitive ? "-rnI" : "-rnIi";
+						// Limit output to avoid massive tokens
+						const command = `grep ${flags} "${query.replace(/"/g, '\\"')}" . | head -n 50`;
+
+						output = await SafeCommandExecutor.execute(
+							command,
+							projectRoot.fsPath,
+						);
+						if (!output.trim()) {
+							output = "No matches found.";
+						} else {
+							// If truncated by head, mention it
+							if (output.split("\n").length >= 50) {
+								output += "\n...(matches truncated to first 50 lines)";
+							}
+						}
+					} catch (e: any) {
+						output = `Search Error: ${e.message}`;
+					}
+
+					// Log output / History
+					const displayOutput =
+						output.length > 500 ? output.substring(0, 500) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "search_codebase",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "read_file_range") {
+					const args = functionCall.args as any;
+					const filePathStr = args["filePath"] as string;
+					const startLine = Math.max(
+						1,
+						Math.floor(args["startLine"] as number),
+					);
+					const endLine = Math.floor(args["endLine"] as number);
+
+					// Log
+					const logText = `Reading \`${filePathStr}:${startLine}-${endLine}\`...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					let output = "";
+					try {
+						// Use sed via SafeCommandExecutor
+						const command = `sed -n '${startLine},${endLine}p' "${filePathStr.replace(/"/g, '\\"')}"`;
+						output = await SafeCommandExecutor.execute(
+							command,
+							projectRoot.fsPath,
+						);
+
+						if (!output.trim()) {
+							output = "(File empty or range out of bounds)";
+						}
+					} catch (e: any) {
+						output = `Read Error: ${e.message}`;
+					}
+
+					// Log output / History
+					const displayOutput =
+						output.length > 500 ? output.substring(0, 500) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "read_file_range",
+									response: { result: output.substring(0, 10000) },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "get_file_outline") {
+					const args = functionCall.args as any;
+					const filePathStr = args["filePath"] as string;
+
+					// Log
+					const logText = `Fetching outline for \`${filePathStr}\`...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					let output = "";
+					try {
+						// Resolve URI
+						const targetUri = vscode.Uri.joinPath(projectRoot, filePathStr);
+						const symbols: (
+							| vscode.SymbolInformation
+							| vscode.DocumentSymbol
+						)[] = await vscode.commands.executeCommand(
+							"vscode.executeDocumentSymbolProvider",
+							targetUri,
+						);
+
+						if (symbols && symbols.length > 0) {
+							// Flatten and format (naive flattening for DocumentSymbol)
+							const formatSymbol = (s: any, indent: string = ""): string => {
+								let result = `${indent}${s.name} (${vscode.SymbolKind[s.kind]})\n`;
+								if (s.children) {
+									s.children.forEach((c: any) => {
+										result += formatSymbol(c, indent + "  ");
+									});
+								}
+								return result;
+							};
+
+							const formatted = symbols.map((s) => formatSymbol(s)).join("");
+							output = `File Outline for ${filePathStr}:\n${formatted}`;
+						} else {
+							output = `No symbols found in ${filePathStr}.`;
+						}
+					} catch (e: any) {
+						output = `Outline Error: ${e.message}`;
+					}
+
+					// Log output / History
+					const displayOutput =
+						output.length > 500 ? output.substring(0, 500) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "get_file_outline",
+									response: { result: output.substring(0, 10000) },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "find_symbol_references") {
+					const args = functionCall.args as any;
+					const symbolName = args["symbolName"] as string;
+
+					const logText = `Finding references for "${symbolName}"...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					let output = "";
+					try {
+						// First find the symbol location to get its URI and position
+						const symbols: vscode.SymbolInformation[] =
+							await vscode.commands.executeCommand(
+								"vscode.executeWorkspaceSymbolProvider",
+								symbolName,
+							);
+
+						if (symbols && symbols.length > 0) {
+							const primarySymbol = symbols[0];
+							const references: vscode.Location[] =
+								await vscode.commands.executeCommand(
+									"vscode.executeReferenceProvider",
+									primarySymbol.location.uri,
+									primarySymbol.location.range.start,
+								);
+
+							if (references && references.length > 0) {
+								const formatted = references
+									.slice(0, 20)
+									.map((loc) => {
+										const relPath = path
+											.relative(projectRoot.fsPath, loc.uri.fsPath)
+											.replace(/\\/g, "/");
+										return `${relPath}:${loc.range.start.line + 1}`;
+									})
+									.join("\n- ");
+								output = `Found ${references.length} references for "${symbolName}". Top results:\n- ${formatted}`;
+							} else {
+								output = `No references found for "${symbolName}".`;
+							}
+						} else {
+							output = `Symbol "${symbolName}" not found.`;
+						}
+					} catch (e: any) {
+						output = `Reference Search Error: ${e.message}`;
+					}
+
+					// Log/History
+					const outputLogText = `\`\`\`\n${output}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "find_symbol_references",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "get_diagnostics") {
+					const args = functionCall.args as any;
+					const filePathStr = args["filePath"] as string | undefined;
+
+					const logText = filePathStr
+						? `Getting diagnostics for \`${filePathStr}\`...`
+						: "Getting workspace-wide diagnostics...";
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					let output = "";
+					try {
+						const allDiag = vscode.languages.getDiagnostics();
+						let filtered = allDiag;
+
+						if (filePathStr) {
+							const targetUri = vscode.Uri.joinPath(projectRoot, filePathStr);
+							filtered = allDiag.filter(
+								([uri, _]) => uri.fsPath === targetUri.fsPath,
+							);
+						}
+
+						if (filtered.length > 0) {
+							const formatted = filtered
+								.flatMap(([uri, diags]) => {
+									const relPath = path
+										.relative(projectRoot.fsPath, uri.fsPath)
+										.replace(/\\/g, "/");
+									return diags.map(
+										(d) =>
+											`[${vscode.DiagnosticSeverity[d.severity]}] ${relPath}:${
+												d.range.start.line + 1
+											}: ${d.message}`,
+									);
+								})
+								.slice(0, 50)
+								.join("\n- ");
+							output = `Found ${filtered.reduce(
+								(acc, [_, d]) => acc + d.length,
+								0,
+							)} diagnostics:\n- ${formatted}`;
+						} else {
+							output = "No diagnostics found.";
+						}
+					} catch (e: any) {
+						output = `Diagnostics Error: ${e.message}`;
+					}
+
+					// Log/History
+					const outputLogText = `\`\`\`\n${output.substring(0, 500)}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "get_diagnostics",
+									response: { result: output.substring(0, 10000) },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "get_symbol_definitions") {
+					const args = functionCall.args as any;
+					const symbolName = args["symbolName"] as string;
+
+					const logText = `Jumping to definition of "${symbolName}"...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					let output = "";
+					try {
+						// 1. Find symbol location
+						const symbols: vscode.SymbolInformation[] =
+							await vscode.commands.executeCommand(
+								"vscode.executeWorkspaceSymbolProvider",
+								symbolName,
+							);
+
+						if (symbols && symbols.length > 0) {
+							// For definitions, we use the first high-confidence match
+							const target = symbols[0];
+							const definitions: vscode.Location[] =
+								await vscode.commands.executeCommand(
+									"vscode.executeDefinitionProvider",
+									target.location.uri,
+									target.location.range.start,
+								);
+
+							if (definitions && definitions.length > 0) {
+								const formatted = definitions
+									.map((loc) => {
+										const relPath = path
+											.relative(projectRoot.fsPath, loc.uri.fsPath)
+											.replace(/\\/g, "/");
+										return `${relPath}:${loc.range.start.line + 1}`;
+									})
+									.join("\n- ");
+								output = `Found definition(s) for "${symbolName}":\n- ${formatted}`;
+							} else {
+								// Fallback to the workspace symbol location itself if definition provider is empty
+								const relPath = path
+									.relative(projectRoot.fsPath, target.location.uri.fsPath)
+									.replace(/\\/g, "/");
+								output = `Found symbol location for "${symbolName}" (Definition provider returned no secondary results):\n- ${relPath}:${target.location.range.start.line + 1}`;
+							}
+						} else {
+							output = `Symbol "${symbolName}" not found in workspace.`;
+						}
+					} catch (e: any) {
+						output = `Definition Error: ${e.message}`;
+					}
+
+					// Log/History
+					const outputLogText = `\`\`\`\n${output}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "get_symbol_definitions",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "get_symbol_implementations") {
+					const args = functionCall.args as any;
+					const symbolName = args["symbolName"] as string;
+
+					const logText = `Finding implementations for "${symbolName}"...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					let output = "";
+					try {
+						const symbols: vscode.SymbolInformation[] =
+							await vscode.commands.executeCommand(
+								"vscode.executeWorkspaceSymbolProvider",
+								symbolName,
+							);
+
+						if (symbols && symbols.length > 0) {
+							const target = symbols[0];
+							const implementations: vscode.Location[] =
+								await vscode.commands.executeCommand(
+									"vscode.executeImplementationProvider",
+									target.location.uri,
+									target.location.range.start,
+								);
+
+							if (implementations && implementations.length > 0) {
+								const formatted = implementations
+									.map((loc) => {
+										const relPath = path
+											.relative(projectRoot.fsPath, loc.uri.fsPath)
+											.replace(/\\/g, "/");
+										return `${relPath}:${loc.range.start.line + 1}`;
+									})
+									.join("\n- ");
+								output = `Found implementation(s) for "${symbolName}":\n- ${formatted}`;
+							} else {
+								output = `No specific implementations found for "${symbolName}".`;
+							}
+						} else {
+							output = `Symbol "${symbolName}" not found.`;
+						}
+					} catch (e: any) {
+						output = `Implementation Error: ${e.message}`;
+					}
+
+					// Log/History
+					const outputLogText = `\`\`\`\n${output}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "get_symbol_implementations",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "think") {
+					const args = functionCall.args as any;
+					const thought = args["thought"] as string;
+
+					// Log thought to Chat
+					const thoughtLogText = `Thinking: ${thought}`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: {
+								text: thoughtLogText,
+							},
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(thoughtLogText);
+					}
+
+					// Update History
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "think",
+									response: { result: "Thought recorded." },
+								},
+							},
+						],
+					});
 				} else {
 					console.warn(
 						`[SmartContextSelector] Unknown tool: ${functionCall.name}`,
@@ -1025,6 +1995,8 @@ ${investigationInstruction}
 					value: false,
 				});
 			}
+			// Dispose cache when loop completes without selection
+			contextAgentCacheService.dispose().catch(() => {});
 			console.log(
 				`[SmartContextSelector] Agentic loop finished without selection, falling back.`,
 			);
@@ -1292,14 +2264,14 @@ function _processSelectedPaths(
 
 	let finalResultSelections = Array.from(finalSelections.values());
 
-	// Always include the active file if it exists (full file, not chunked)
+	// If active file was NOT selected surgically, add it full as a fallback
 	if (
 		activeEditorContext?.documentUri &&
 		!finalResultSelections.some(
-			(sel) => sel.uri.fsPath === activeEditorContext.documentUri.fsPath,
+			(s) => s.uri.fsPath === activeEditorContext.documentUri.fsPath,
 		)
 	) {
-		finalResultSelections.unshift({
+		finalResultSelections.push({
 			uri: activeEditorContext.documentUri,
 			startLine: undefined,
 			endLine: undefined,

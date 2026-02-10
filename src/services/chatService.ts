@@ -11,6 +11,8 @@ import { HistoryEntry, HistoryEntryPart } from "../sidebar/common/sidebarTypes";
 import { DEFAULT_FLASH_LITE_MODEL } from "../sidebar/common/sidebarConstants";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import { ContextBuildOptions } from "../types/context";
+import { FunctionCall } from "@google/generative-ai";
+import { thinkingTool } from "../ai/tools/thinkingTool";
 
 const AI_CHAT_PROMPT =
 	"Lets discuss and do not code yet. You should only focus on high level thinking in this project, using the project context given to you. Only respone helpfully with production-ready explainations, no placeholders, no TODOs for the user. Make sure to mention what files are being changed or created if any. Most importantly, only focus on the User's message and the project context, do not make assumptions outside of that. If the User's message is not clear, ask for clarification.";
@@ -263,39 +265,131 @@ export class ChatService {
 				? []
 				: this.provider.chatHistoryManager.getChatHistory();
 
-			finalAiResponseText =
-				await this.provider.aiRequestService.generateWithRetry(
-					fullUserTurnContents,
-					modelName,
-					historyToPass,
-					"chat",
-					generationConfig,
-					{
-						onChunk: (chunk: string) => {
-							accumulatedResponse += chunk;
-							if (this.provider.currentAiStreamingState) {
-								this.provider.updatePersistedAiStreamingState({
-									...this.provider.currentAiStreamingState,
-									content:
-										this.provider.currentAiStreamingState.content + chunk,
+			// Prepare history for loop - convert to Content[] to support mixed content types
+			let currentHistory: any[] = []; // Use any[] first to allow mixing before casting or rely on generateWithRetry handling Content[]
+			// Actually, generateWithRetry takes Content[] | HistoryEntry[].
+			// We want to accumulate history including tool calls.
+			// Tool calls are Content.
+			// So we must use Content[].
+			if (historyToPass.length > 0) {
+				// Use the public method we exposed
+				currentHistory =
+					this.provider.aiRequestService.transformHistoryForGemini(
+						historyToPass as any[],
+					);
+			}
+
+			let currentParts = fullUserTurnContents;
+			let loopCount = 0;
+			const maxLoops = 6; // Allow some back-and-forth
+			let shouldContinue = true;
+
+			while (shouldContinue && loopCount < maxLoops) {
+				let toolCallDetected: FunctionCall | null = null;
+
+				finalAiResponseText =
+					await this.provider.aiRequestService.generateWithRetry(
+						currentParts,
+						modelName,
+						currentHistory as unknown as ReadonlyArray<any>, // Cast to satisfy type checker if needed, but generateWithRetry accepts Content[]
+						"chat",
+						generationConfig,
+						{
+							onChunk: (chunk: string) => {
+								accumulatedResponse += chunk;
+								if (this.provider.currentAiStreamingState) {
+									this.provider.updatePersistedAiStreamingState({
+										...this.provider.currentAiStreamingState,
+										content:
+											this.provider.currentAiStreamingState.content + chunk,
+									});
+								}
+								this.provider.postMessageToWebview({
+									type: "aiResponseChunk",
+									value: chunk,
+									operationId: operationId as string,
 								});
-							}
-							this.provider.postMessageToWebview({
-								type: "aiResponseChunk",
-								value: chunk,
-								operationId: operationId as string,
-							});
+							},
+							onToolCall: (fc: FunctionCall) => {
+								toolCallDetected = fc;
+							},
 						},
-					},
-					token,
-					false,
-					systemInstruction,
-				);
+						token,
+						false,
+						systemInstruction,
+						[{ functionDeclarations: [thinkingTool] }],
+					);
+
+				if (toolCallDetected) {
+					loopCount++;
+					const thinkingCall = toolCallDetected as FunctionCall;
+					if (thinkingCall.name === "think") {
+						const thought = (thinkingCall.args as any).thought;
+
+						// Display thought to user
+						const thoughtMessage = `> **Thinking:** ${thought}\n\n`;
+						accumulatedResponse += thoughtMessage;
+						this.provider.postMessageToWebview({
+							type: "aiResponseChunk",
+							value: thoughtMessage,
+							operationId: operationId as string,
+						});
+
+						// Add the User's input (if any) to history for the next turn
+						if (currentParts.length > 0) {
+							const userContentParts = currentParts
+								.map((p) => {
+									if ("text" in p) return { text: p.text };
+									if ("inlineData" in p)
+										return {
+											inlineData: {
+												mimeType: p.inlineData.mimeType,
+												data: p.inlineData.data,
+											},
+										};
+									return { text: "" };
+								})
+								.filter((p) => p.text !== "" || "inlineData" in p);
+
+							if (userContentParts.length > 0) {
+								currentHistory.push({ role: "user", parts: userContentParts });
+							}
+							currentParts = []; // Clear for next turn (we rely on history)
+						}
+
+						// Add the Model's Tool Call to history
+						currentHistory.push({
+							role: "model",
+							parts: [{ functionCall: thinkingCall }],
+						});
+
+						// Add the Function Response to history
+						currentHistory.push({
+							role: "function",
+							parts: [
+								{
+									functionResponse: {
+										name: "think",
+										response: { name: "think", content: "Thought recorded." },
+									},
+								},
+							],
+						});
+
+						// Loop continues
+					} else {
+						// Unknown tool
+						shouldContinue = false;
+					}
+				} else {
+					shouldContinue = false;
+				}
+			}
 
 			if (token.isCancellationRequested) {
 				throw new Error(ERROR_OPERATION_CANCELLED);
 			}
-			if (finalAiResponseText.toLowerCase().startsWith("error:")) {
+			if (finalAiResponseText?.toLowerCase().startsWith("error:")) {
 				success = false;
 			} else {
 				const aiResponseUrlContexts =
@@ -528,7 +622,7 @@ export class ChatService {
 			if (token.isCancellationRequested) {
 				throw new Error(ERROR_OPERATION_CANCELLED);
 			}
-			if (finalAiResponseText.toLowerCase().startsWith("error:")) {
+			if (finalAiResponseText?.toLowerCase().startsWith("error:")) {
 				success = false;
 			} else {
 				chatHistoryManager.addHistoryEntry(
