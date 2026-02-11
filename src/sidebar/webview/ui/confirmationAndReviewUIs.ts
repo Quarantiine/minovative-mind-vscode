@@ -19,7 +19,7 @@ export function createPlanConfirmationUI(
 	elements: RequiredDomElements,
 	postMessageToExtension: Function,
 	updateStatus: Function,
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	// Check if the container is already created and stored in the elements object
 	if (!elements.planConfirmationContainer) {
@@ -47,7 +47,7 @@ export function createPlanConfirmationUI(
 		// Insert the new container after the chat container in the DOM
 		elements.chatContainer.insertAdjacentElement(
 			"afterend",
-			elements.planConfirmationContainer
+			elements.planConfirmationContainer,
 		);
 
 		setIconForButton(elements.confirmPlanButton, faCheck);
@@ -59,16 +59,16 @@ export function createPlanConfirmationUI(
 				elements,
 				postMessageToExtension,
 				updateStatus,
-				setLoadingState
-			)
+				setLoadingState,
+			),
 		);
 		elements.cancelPlanButton.addEventListener("click", () =>
 			handleCancelPlanExecution(
 				elements,
 				postMessageToExtension,
 				updateStatus,
-				setLoadingState
-			)
+				setLoadingState,
+			),
 		);
 
 		console.log("Plan confirmation UI created and event listeners attached.");
@@ -83,7 +83,7 @@ export function createPlanConfirmationUI(
  */
 export function createClearChatConfirmationUI(
 	elements: RequiredDomElements,
-	postMessageToExtension: Function
+	postMessageToExtension: Function,
 ): void {
 	if (!elements.chatClearConfirmationContainer) {
 		elements.chatClearConfirmationContainer = document.createElement("div");
@@ -106,16 +106,16 @@ export function createClearChatConfirmationUI(
 
 		elements.chatClearConfirmationContainer.appendChild(textElement);
 		elements.chatClearConfirmationContainer.appendChild(
-			elements.confirmClearChatButton
+			elements.confirmClearChatButton,
 		);
 		elements.chatClearConfirmationContainer.appendChild(
-			elements.cancelClearChatButton
+			elements.cancelClearChatButton,
 		);
 
 		// Insert the new container after the chat container, similar to plan confirmation
 		elements.chatContainer.insertAdjacentElement(
 			"afterend",
-			elements.chatClearConfirmationContainer
+			elements.chatClearConfirmationContainer,
 		);
 
 		setIconForButton(elements.confirmClearChatButton, faCheck);
@@ -126,7 +126,7 @@ export function createClearChatConfirmationUI(
 			hideClearChatConfirmationUI(elements);
 			postMessageToExtension({ type: "confirmClearChatAndRevert" });
 			console.log(
-				"Confirm Clear Chat button clicked. Sending confirmClearChatAndRevert."
+				"Confirm Clear Chat button clicked. Sending confirmClearChatAndRevert.",
 			);
 		});
 
@@ -137,7 +137,7 @@ export function createClearChatConfirmationUI(
 		});
 
 		console.log(
-			"Clear chat confirmation UI created and event listeners attached."
+			"Clear chat confirmation UI created and event listeners attached.",
 		);
 	}
 }
@@ -157,14 +157,14 @@ export function showPlanConfirmationUI(
 	pendingPlanData: PendingPlanData,
 	postMessageToExtension: Function,
 	updateStatus: Function,
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	// Ensure the UI elements are created first. This function is idempotent.
 	createPlanConfirmationUI(
 		elements,
 		postMessageToExtension,
 		updateStatus,
-		setLoadingState
+		setLoadingState,
 	);
 
 	if (elements.planConfirmationContainer) {
@@ -173,7 +173,7 @@ export function showPlanConfirmationUI(
 		appState.isAwaitingUserReview = true; // Add this line
 		updateStatus(
 			elements,
-			"Textual plan generated. Review and confirm to proceed."
+			"Textual plan generated. Review and confirm to proceed.",
 		);
 		setLoadingState(false, elements);
 		// Hide the global cancel generation button when a specific confirmation UI is shown
@@ -201,7 +201,7 @@ export function showClearChatConfirmationUI(
 	elements: RequiredDomElements,
 	postMessageToExtension: Function,
 	updateStatus: Function,
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	createClearChatConfirmationUI(elements, postMessageToExtension);
 
@@ -211,7 +211,7 @@ export function showClearChatConfirmationUI(
 		updateStatus(
 			elements,
 			"Confirm clearing chat history and reverting changes?",
-			false
+			false,
 		);
 		setLoadingState(false, elements);
 		hidePlanConfirmationUI(elements);
@@ -223,7 +223,7 @@ export function showClearChatConfirmationUI(
 		updateStatus(
 			elements,
 			"Error: UI for clear chat confirmation is missing.",
-			true
+			true,
 		);
 		setLoadingState(false, elements);
 	}
@@ -248,7 +248,7 @@ export function hidePlanConfirmationUI(elements: RequiredDomElements): void {
  * @param elements An object containing references to all required DOM elements.
  */
 export function hideClearChatConfirmationUI(
-	elements: RequiredDomElements
+	elements: RequiredDomElements,
 ): void {
 	if (elements.chatClearConfirmationContainer) {
 		elements.chatClearConfirmationContainer.style.display = "none";
@@ -266,11 +266,11 @@ export function updateCommitButtonState(elements: RequiredDomElements): void {
 		const trimmedMessage = elements.commitMessageTextarea.value.trim();
 		elements.confirmCommitButton.disabled = trimmedMessage === "";
 		console.log(
-			`Commit button state updated. Disabled: ${elements.confirmCommitButton.disabled}`
+			`Commit button state updated. Disabled: ${elements.confirmCommitButton.disabled}`,
 		);
 	} else {
 		console.warn(
-			"Commit message textarea or confirm commit button not found for state update."
+			"Commit message textarea or confirm commit button not found for state update.",
 		);
 	}
 }
@@ -291,7 +291,7 @@ export function showPlanParseErrorUI(
 	failedJson: string,
 	postMessageToExtension: Function,
 	updateStatus: Function,
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	const {
 		planParseErrorContainer,
@@ -309,7 +309,7 @@ export function showPlanParseErrorUI(
 		updateStatus(
 			elements,
 			"Structured plan parsing failed. Review error and retry or cancel.",
-			true
+			true,
 		);
 		setLoadingState(false, elements);
 
@@ -324,8 +324,8 @@ export function showPlanParseErrorUI(
 					elements,
 					postMessageToExtension,
 					updateStatus,
-					setLoadingState
-				)
+					setLoadingState,
+				),
 			);
 			retryGenerationButton.dataset.listenerAttached = "true";
 		}
@@ -339,8 +339,8 @@ export function showPlanParseErrorUI(
 					elements,
 					postMessageToExtension,
 					updateStatus,
-					setLoadingState
-				)
+					setLoadingState,
+				),
 			); // Reuse plan cancel handler
 			cancelParseErrorButton.dataset.listenerAttached = "true";
 		}
@@ -356,7 +356,7 @@ export function showPlanParseErrorUI(
 		updateStatus(
 			elements,
 			"Error: Failed to display plan parsing error details.",
-			true
+			true,
 		);
 		setLoadingState(false, elements);
 	}
@@ -398,7 +398,7 @@ export function showCommitReviewUI(
 	stagedFiles: string[],
 	postMessageToExtension: Function,
 	updateStatus: Function,
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	const {
 		commitReviewContainer,
@@ -465,8 +465,8 @@ export function showCommitReviewUI(
 					elements,
 					postMessageToExtension,
 					updateStatus,
-					setLoadingState
-				)
+					setLoadingState,
+				),
 			);
 			confirmCommitButton.dataset.listenerAttached = "true";
 		}
@@ -477,8 +477,8 @@ export function showCommitReviewUI(
 					elements,
 					postMessageToExtension,
 					updateStatus,
-					setLoadingState
-				)
+					setLoadingState,
+				),
 			);
 			cancelCommitButton.dataset.listenerAttached = "true";
 		}
@@ -511,7 +511,7 @@ export function hideCommitReviewUI(elements: RequiredDomElements): void {
 		if (appState.currentAiMessageContentElement) {
 			// Render the final accumulated text as Markdown into the element
 			appState.currentAiMessageContentElement.innerHTML = md.render(
-				appState.currentAccumulatedText
+				appState.currentAccumulatedText,
 			);
 			// Store the original markdown text for consistency with other messages and copy functionality
 			appState.currentAiMessageContentElement.dataset.originalMarkdown =
@@ -532,7 +532,7 @@ export function hideCommitReviewUI(elements: RequiredDomElements): void {
  * @param elements An object containing references to all required DOM elements.
  */
 export function hideAllConfirmationAndReviewUIs(
-	elements: RequiredDomElements
+	elements: RequiredDomElements,
 ): void {
 	hidePlanConfirmationUI(elements);
 	hidePlanParseErrorUI(elements);
@@ -553,9 +553,18 @@ export function handleConfirmPlanExecution(
 	elements: RequiredDomElements,
 	postMessageToExtension: Function,
 	updateStatus: Function,
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	console.log("Confirm Plan button clicked.");
+
+	// Prevent duplicate execution requests
+	if (appState.isPlanExecutionInProgress) {
+		console.warn(
+			"[handleConfirmPlanExecution] Plan execution already in progress. Ignoring duplicate click.",
+		);
+		return;
+	}
+
 	if (appState.pendingPlanData && elements.planConfirmationContainer) {
 		postMessageToExtension({
 			type: "confirmPlanExecution",
@@ -584,7 +593,7 @@ export function handleCancelPlanExecution(
 	elements: RequiredDomElements,
 	postMessageToExtension: Function,
 	updateStatus: Function,
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	console.log("Cancel Plan button clicked.");
 	hideAllConfirmationAndReviewUIs(elements); // Call hideAllConfirmationAndReviewUIs at the beginning
@@ -592,7 +601,7 @@ export function handleCancelPlanExecution(
 	// Prevent duplicate cancellation requests
 	if (appState.isCancellationInProgress) {
 		console.warn(
-			"Cancellation already in progress, ignoring duplicate request"
+			"Cancellation already in progress, ignoring duplicate request",
 		);
 		return;
 	}
@@ -615,7 +624,7 @@ export function handleRetryStructuredPlanGeneration(
 	elements: RequiredDomElements,
 	postMessageToExtension: Function,
 	updateStatus: Function,
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	console.log("Retry Generation button clicked.");
 	hidePlanParseErrorUI(elements);
@@ -636,12 +645,12 @@ export function handleConfirmCommit(
 	elements: RequiredDomElements,
 	postMessageToExtension: Function,
 	updateStatus: Function,
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	// Add client-side safeguard to prevent duplicate requests
 	if (appState.isCommitActionInProgress) {
 		console.warn(
-			"[handleConfirmCommit] Commit action already in progress. Ignoring duplicate click."
+			"[handleConfirmCommit] Commit action already in progress. Ignoring duplicate click.",
 		);
 		return;
 	}
@@ -673,12 +682,12 @@ export function handleCancelCommit(
 	elements: RequiredDomElements,
 	postMessageToExtension: Function,
 	updateStatus: Function,
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	// Prevent duplicate cancellation requests
 	if (appState.isCancellationInProgress) {
 		console.warn(
-			"Cancellation already in progress, ignoring duplicate request"
+			"Cancellation already in progress, ignoring duplicate request",
 		);
 		return;
 	}

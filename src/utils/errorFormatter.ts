@@ -21,7 +21,7 @@ export function formatUserFacingErrorMessage(
 	error: any,
 	defaultMessage: string = "An unexpected error occurred. Please try again or contact support.",
 	contextPrefix: string = "",
-	workspaceRootUri?: vscode.Uri
+	workspaceRootUri?: vscode.Uri,
 ): string {
 	let message: string;
 
@@ -47,7 +47,8 @@ export function formatUserFacingErrorMessage(
 			"Permission denied: You do not have the necessary permissions to perform this operation. Please check file/directory permissions or try running VS Code as administrator.";
 	} else if (
 		message.includes("ENOENT: no such file or directory") ||
-		message.includes("not found")
+		((message.includes("not found") || message.includes("EntryNotFound")) &&
+			!message.includes("SEARCH block"))
 	) {
 		message =
 			"File or directory not found: The specified file or directory does not exist or is inaccessible. Please verify the path and ensure the file/directory exists.";

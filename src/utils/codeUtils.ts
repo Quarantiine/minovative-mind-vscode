@@ -56,123 +56,42 @@ export async function applyAITextEdits(
 	// We'll collect all ranges that were modified to apply the flash at the end (or during)
 	const modifiedRanges: vscode.Range[] = [];
 
-	// 2. Apply edits sequentially with streaming
-	// We sort in reverse order to keep positions valid for upstream edits
+	// 2. Apply edits in a single transaction
+	// We sort ASCENDING to make line delta calculation for the final document helper
 	const sortedEdits = preciseEdits.sort((a, b) => {
-		return b.range.start.compareTo(a.range.start);
+		return a.range.start.compareTo(b.range.start);
 	});
 
-	for (const edit of sortedEdits) {
-		if (token.isCancellationRequested) {
-			return;
+	let lineDelta = 0;
+
+	await editor.edit((builder) => {
+		for (const edit of sortedEdits) {
+			// Apply edit (VS Code handles original coordinates within the transaction)
+			builder.replace(edit.range, edit.newText);
+
+			// --- Calculate Final Range for Flash Effect ---
+
+			// 1. Calculate how many lines this edit adds/removes
+			const newLines = edit.newText.split("\n");
+			const textAddedHeight = newLines.length - 1;
+			const textRemovedHeight = edit.range.end.line - edit.range.start.line;
+
+			// 2. Determine the start line in the FINAL document
+			// It is the original start line + all accumulated shifts from previous edits
+			const finalStartLine = edit.range.start.line + lineDelta; // Use 'let' variable if needed, but here it's read-only for this step
+
+			// 3. Determine the end line in the FINAL document
+			const finalEndLine =
+				finalStartLine + (textAddedHeight > 0 ? textAddedHeight : 0);
+
+			// 4. Push the range representing this change in the FINAL document
+			// We only care about lines for the "isWholeLine" decoration
+			modifiedRanges.push(new vscode.Range(finalStartLine, 0, finalEndLine, 0));
+
+			// 5. Update global delta for the next edit (which is below this one)
+			lineDelta += textAddedHeight - textRemovedHeight;
 		}
-
-		const isInsertion = edit.range.isEmpty && edit.newText.length > 0;
-		const isReplacement = !edit.range.isEmpty && edit.newText.length > 0;
-		const isDeletion = !edit.range.isEmpty && edit.newText === "";
-
-		if (isDeletion) {
-			// Deletions are instantaneous
-			await editor.edit((builder) => {
-				builder.replace(edit.range, edit.newText);
-			});
-
-			// Calculate line delta for deletion
-			const finalLine = edit.range.start.line; // Since content was removed
-			const originalEndLine = edit.range.end.line;
-			const lineDelta = finalLine - originalEndLine;
-
-			// Deletions can remove lines, so we might need to shift UP (negative delta)
-			// However, for deletions we just treat the start point as the remaining point.
-			// But wait, if we deleted lines, subsequent edits (which we processed in reverse order? No, we sorted reverse order)
-			// We sorted reverse order: b.start.compareTo(a.start)
-			// So edits appearing later in the specific file happen towards the top.
-			// Wait, if we process from bottom to top, upstream line numbers remain valid for *applying* edits.
-			// BUT, for *tracking* ranges for the flash effect, we are collecting ranges.
-			// Since we process bottom-up, the ranges we collected *earlier* in this loop are actually *below* the current edit.
-			// So when we modify lines here, we need to shift the *previously collected* ranges (which are physically below this edit).
-
-			if (lineDelta !== 0) {
-				for (let i = 0; i < modifiedRanges.length; i++) {
-					const r = modifiedRanges[i];
-					modifiedRanges[i] = new vscode.Range(
-						r.start.translate(lineDelta),
-						r.end.translate(lineDelta),
-					);
-				}
-			}
-			// For deletion we might want to flash the line where deletion happened?
-			// The user mainly cares about insertions/changes.
-			// Let's add the start line of the deletion to modified ranges so it flashes "something happened here"
-			modifiedRanges.push(new vscode.Range(edit.range.start, edit.range.start));
-		} else {
-			// Insertion or Replacement
-			const text = edit.newText;
-			const chunkSize = 20; // char chunk size
-			const delay = 0; // ms delay
-
-			let insertPos = edit.range.start;
-
-			if (isReplacement) {
-				// Clear the existing text first
-				await editor.edit((builder) => {
-					builder.delete(edit.range);
-				});
-				// after deletion, start remains valid as the insertion point
-			}
-
-			// Stream the insertion
-			let currentOffset = 0;
-			while (currentOffset < text.length) {
-				if (token.isCancellationRequested) {
-					break;
-				}
-
-				const chunk = text.slice(currentOffset, currentOffset + chunkSize);
-				await editor.edit((builder) => {
-					builder.insert(insertPos, chunk);
-				});
-
-				// Calculate new position for next chunk
-				const lines = chunk.split("\n");
-				if (lines.length === 1) {
-					insertPos = insertPos.translate(0, lines[0].length);
-				} else {
-					insertPos = new vscode.Position(
-						insertPos.line + lines.length - 1,
-						lines[lines.length - 1].length,
-					);
-				}
-
-				currentOffset += chunkSize;
-				// Small delay to simulate typing
-				await new Promise((resolve) => setTimeout(resolve, delay));
-			}
-
-			// Calculate line delta
-			// For insertion/replacement:
-			// The new end line is insertPos.line
-			// The old end line was edit.range.end.line
-			const finalLine = insertPos.line;
-			const originalEndLine = edit.range.end.line;
-			const lineDelta = finalLine - originalEndLine;
-
-			if (lineDelta !== 0) {
-				// Shift all previously recorded ranges (which are below this current edit because we iterate in reverse)
-				for (let i = 0; i < modifiedRanges.length; i++) {
-					const r = modifiedRanges[i];
-					modifiedRanges[i] = new vscode.Range(
-						r.start.translate(lineDelta),
-						r.end.translate(lineDelta),
-					);
-				}
-			}
-
-			// Track range for flash effect
-			// From original start (which is preserved/restored) to final insertPos
-			modifiedRanges.push(new vscode.Range(edit.range.start, insertPos));
-		}
-	}
+	});
 
 	// 3. Reveal Changes and Apply Flash Effect
 	if (modifiedRanges.length > 0) {

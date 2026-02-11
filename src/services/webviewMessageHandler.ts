@@ -14,9 +14,6 @@ import { generateLightweightPlanPrompt } from "../ai/prompts/lightweightPrompts"
 import { scanWorkspace } from "../context/workspaceScanner";
 import { createAsciiTree } from "../utils/treeFormatter";
 
-export const PRE_PROMPT_MESSAGE =
-	"You are an expert software engineer. Your task is to provide production-ready code that is robust, maintainable, secure, clean, efficient, and follows industry best practices. No placeholders, no todo comments, no basic code. Focus on implementing the following feature/enhancement from the message instructions below.";
-
 export async function handleWebviewMessage(
 	data: any,
 	provider: SidebarProvider,
@@ -917,7 +914,7 @@ export async function handleWebviewMessage(
 
 					const header =
 						historyEntry.role === "user" ? "User message" : "Instructions";
-					const finalCombinedContent = `${PRE_PROMPT_MESSAGE}\n\n${header}: ${messageContentText}\n\nFile Tree:\n${fileTreeContent}\n\nFile Content:\n${allFileContents}`;
+					const finalCombinedContent = `AI Context Copy:\n\n${header}: ${messageContentText}\n\nFile Tree:\n${fileTreeContent}\n\nFile Content:\n${allFileContents}`;
 
 					await vscode.env.clipboard.writeText(finalCombinedContent);
 

@@ -11,6 +11,12 @@ import { ActiveSymbolDetailedInfo } from "../services/contextService";
 import { SafeCommandExecutor } from "./safeCommandExecutor";
 import { AIRequestService } from "../services/aiRequestService";
 import {
+	getSymbolsInDocument,
+	serializeDocumentSymbolHierarchy,
+	findReferences,
+	getDefinition,
+} from "../services/symbolService";
+import {
 	Tool,
 	Content,
 	FunctionCall,
@@ -678,36 +684,80 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
     *   **CHECK BEFORE READING**: Use \`wc -l file\` to check size.
     *   **EXIT STRATEGY**: As soon as you find the relevant file path, **STOP** investigating. Call \`finish_selection\`.`;
 	} else {
-		investigationInstruction =
-			"2.  **Investigate (Highly Recommended)**: Use `run_terminal_command` with `ls`, `find`, or `grep -r` to verify file existence and content before selecting.";
 	}
 
-	const selectionPrompt = `
-You are an expert AI developer assistant. Your task is to select the most relevant files to help with a user's request.
+	// Build individual prompt sections
+	const activeFilePrompt = activeEditorContext
+		? `\nActive File: ${path
+				.relative(projectRoot.fsPath, activeEditorContext.filePath)
+				.replace(/\\/g, "/")}\n`
+		: "";
 
--- Context --
-${contextPrompt}${diagnosticsContext}
--- End Context --
+	const activeSymbolPrompt = activeSymbolDetailedInfo?.name
+		? `Active Symbol: ${activeSymbolDetailedInfo.name} (${
+				activeSymbolDetailedInfo.kind || "Unknown"
+			})\n`
+		: "";
 
-${fileListString}
+	const heuristicFilesPrompt =
+		preSelectedHeuristicFiles && preSelectedHeuristicFiles.length > 0
+			? preSelectedHeuristicFiles
+					.map((uri) =>
+						path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/"),
+					)
+					.join("\n")
+			: "None pre-selected.";
+
+	const summariesPrompt =
+		fileSummaries && fileSummaries.size > 0
+			? Array.from(fileSummaries.entries())
+					.map(([file, summary]) => `[${file}]\n${summary}`)
+					.join("\n\n")
+			: "No summaries available.";
+
+	const selectionPrompt =
+		`You are a Context Selection Agent. Your goal is to identify the most relevant files for a coding task.
+You will iterate using tools until you have enough information to call \`finish_selection\`.
 
 -- Instructions --
-1.  **Analyze the Goal**: Understand the user's request and the provided context.${
-		isLikelyErrorRequest
-			? " This appears to be an ERROR-FIXING request - prioritize investigation!"
-			: ""
-	}
-${investigationInstruction}
-    *   **Loop Prevention**: Do not run the same command twice.
-    *   **Peek Content**: Use \`head -n 50 src/file.ts\` or \`tail -n 20 src/file.ts\`.
-    *   **View Specific Lines**: If you MUST view specific lines, use \`sed -n '10,20p' src/file.ts\`.
-2b. **Symbol Lookup (PREFERRED for finding definitions)**: If you see a symbol used (e.g., \`auth.User\`), use \`lookup_workspace_symbol\`.
-3.  **Select**: Call \`finish_selection\` with the list of file paths.
-    *   **LINE RANGES**: \`src/auth.ts:40-80\` (lines 40-80).
-    *   **CRITICAL WARNING**: Line ranges (e.g. \`:10\`) are **ONLY** allowed inside \`finish_selection\`.
-        *   ❌ **WRONG**: \`cat src/file.ts:10\`
-        *   ✅ **CORRECT**: \`finish_selection(selectedFiles=["src/file.ts:10"])\`
-4.  **Constraint**: Return ONLY the function call.
+1.  **Thinking Process (MANDATORY)**: You MUST call the \`report_thought\` tool to explain your search strategy before using other tools.
+    *   Example:
+        \`\`\`
+        [Tool Call] report_thought(thought="User mentioned 'auth'. I should search for 'AuthService' or 'LoginController'.")
+        [Tool Call] lookup_workspace_symbol("AuthService")
+        \`\`\`
+2.  **Investigate (REQUIRED)**: \`report_thought\` is **NOT** an investigation tool. After explaining your strategy, you **MUST** use \`run_terminal_command\`, \`lookup_workspace_symbol\`, or \`get_file_symbols\` to verify file existence and content.
+    *   **Rule**: You cannot call \`finish_selection\` immediately after \`report_thought\` unless you have already run an investigation command in a previous turn and found the specific files you need.
+3.  **Symbol Exploration (PREFERRED)**: Use \`get_file_symbols\` to see a file's structure (functions, classes, variables) without reading its entire content. This is much faster and context-efficient than \`sed\`.
+4.  **Symbol Lookup (GLOBAL)**: Use \`lookup_workspace_symbol\` to find where a specific symbol is defined across the entire project.
+5.  **Graph Traversal (DEEP)**:
+    *   Use \`find_references\` to see where a symbol is *used* (callers).
+    *   Use \`go_to_definition\` to see where a symbol is *defined* (implementation).
+    *   **Crucial**: These tools allow you to traverse the dependency graph. Use them to understand how components interact.
+6.  **Strategic Independence (CRITICAL)**: You are provided with "Legacy Suggestions" (Heuristically Pre-selected Files). These are ONLY a starting guess. Do NOT assume they are correct or complete. 
+    *   **Mandate**: Even if the files you think you need are in the legacy list, you **MUST** investigate them (e.g., using \`ls -R\`, \`get_file_symbols\`, or \`sed\`) to confirm their relevance and content before finishing.
+    *   **Truth**: Search the codebase yourself to find the "ground truth." Heuristics often miss important files or include irrelevant ones.
+7.  **Loop Prevention**: Do not run the same command twice.
+8.  **Read Specific Lines (MANDATORY)**: Use \`sed -n 'start,endp' file\` for ALL file reading.
+    *   Example: \`sed -n '1,50p' src/file.ts\` (reads first 50 lines)
+    *   Example: \`sed -n '100,200p' src/file.ts\` (reads lines 100-200)
+9.  **No head/cat**: Do NOT use \`head\` or \`cat\`. Always specify a range with \`sed\` to avoid overwhelming the context.
+10. **Finalize**: Only call \`finish_selection\` when you are confident you have identified ALL necessary files.
+
+-- Project Context --
+Project Path: ${projectRoot.fsPath}
+${activeFilePrompt}${activeSymbolPrompt}${diagnosticsContext}${historyContext}${projectConfigPrompt}
+
+-- Available Files (Ground Truth for Investigation) --
+Use \`run_terminal_command\` with \`ls -R\` or \`find\` if you need to explore the directory structure.
+
+-- Heuristically Pre-selected Files (MAY BE WRONG - INVESTIGATE FIRST) --
+${heuristicFilesPrompt}
+
+-- File Summaries (Reference only) --
+${summariesPrompt}
+
+You MUST start by calling \`report_thought\`.
 `.trim();
 
 	console.log(
@@ -721,16 +771,31 @@ ${investigationInstruction}
 			{
 				functionDeclarations: [
 					{
+						name: "report_thought",
+						description:
+							"Report your thinking process and search strategy to the user. This helps transparency. Use this BEFORE calling other tools.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								thought: {
+									type: SchemaType.STRING,
+									description: "The thinking process and strategy explanation.",
+								},
+							},
+							required: ["thought"],
+						},
+					},
+					{
 						name: "run_terminal_command",
 						description:
-							"Execute a safe terminal command (ls, grep, find, cat, git, sed, head, tail, wc, file, xargs, grep) to investigate the codebase. Pipes (|) ARE ALLOWED.",
+							"Execute a safe terminal command (ls, grep, find, cat, git, sed, tail, wc, file, xargs, grep) to investigate the codebase. Pipes (|) ARE ALLOWED.",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {
 								command: {
 									type: SchemaType.STRING,
 									description:
-										"The terminal command to execute. Allowed: ls, grep, find, cat, git, sed, head, tail, wc, file, xargs. PIPES (|) ARE SUPPORTED. Example: `grep -r 'foo' src`.",
+										"The terminal command to execute. Allowed: ls, grep, find, cat, git, sed, tail, wc, file, xargs. PIPES (|) ARE SUPPORTED. Example: `grep -r 'foo' src`.",
 								},
 							},
 							required: ["command"],
@@ -771,6 +836,74 @@ ${investigationInstruction}
 							required: ["query"],
 						},
 					},
+					{
+						name: "get_file_symbols",
+						description:
+							"Get all symbols (classes, functions, variables, etc.) defined in a specific file. Use this to understand a file's structure before reading its content.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								path: {
+									type: SchemaType.STRING,
+									description:
+										"The file path relative to the project root (e.g., 'src/auth.ts').",
+								},
+							},
+							required: ["path"],
+						},
+					},
+					{
+						name: "find_references",
+						description:
+							"Find all usages of a symbol across the workspace. Use this to see who calls a function or uses a variable.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								path: {
+									type: SchemaType.STRING,
+									description:
+										"The file path relative to the project root (e.g., 'src/auth.ts').",
+								},
+								line: {
+									type: SchemaType.NUMBER,
+									description:
+										"The line number (1-based) where the symbol is located.",
+								},
+								symbol_name: {
+									type: SchemaType.STRING,
+									description:
+										"The name of the symbol (optional, used to help locate the character position).",
+								},
+							},
+							required: ["path", "line"],
+						},
+					},
+					{
+						name: "go_to_definition",
+						description:
+							"Find where a symbol used at a specific location is defined. Use this to understand the implementation of a dependency.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								path: {
+									type: SchemaType.STRING,
+									description:
+										"The file path relative to the project root (e.g., 'src/auth.ts').",
+								},
+								line: {
+									type: SchemaType.NUMBER,
+									description:
+										"The line number (1-based) where the symbol usage is located.",
+								},
+								symbol_name: {
+									type: SchemaType.STRING,
+									description:
+										"The name of the symbol (optional, used to help locate the character position).",
+								},
+							},
+							required: ["path", "line"],
+						},
+					},
 				],
 			},
 		];
@@ -793,7 +926,7 @@ ${investigationInstruction}
 				},
 			];
 
-			const MAX_TURNS = 20;
+			const MAX_TURNS = 30;
 
 			for (let turn = 0; turn < MAX_TURNS; turn++) {
 				if (cancellationToken?.isCancellationRequested) {
@@ -801,9 +934,11 @@ ${investigationInstruction}
 				}
 
 				// Generate
-				let functionCall: FunctionCall | null;
+				let functionCall: FunctionCall | null = null;
+				let thought: string | undefined;
+
 				try {
-					functionCall = await aiRequestService.generateManagedFunctionCall(
+					const result = await aiRequestService.generateManagedFunctionCall(
 						modelName,
 						currentHistory,
 						tools,
@@ -811,6 +946,8 @@ ${investigationInstruction}
 						cancellationToken,
 						"context_agent_turn",
 					);
+					functionCall = result.functionCall;
+					thought = result.thought;
 				} catch (e) {
 					console.warn(
 						`[SmartContextSelector] Agentic loop error: ${(e as Error).message}`,
@@ -818,15 +955,40 @@ ${investigationInstruction}
 					break;
 				}
 
+				// Log Text-based Thinking if available (fallback)
+				if (thought) {
+					const thoughtLogText = `[Thinking] ${thought}`;
+					console.log(
+						`[SmartContextSelector] Agent thought (text): ${thought}`,
+					);
+
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: {
+								text: thoughtLogText,
+							},
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(thoughtLogText);
+					}
+					currentHistory.push({
+						role: "model",
+						parts: [{ text: thought }],
+					});
+				}
+
 				if (!functionCall) {
 					console.warn(
-						`[SmartContextSelector] Agent returned text instead of function call. Retrying.`,
+						`[SmartContextSelector] Agent returned text/thought but no function call. Retrying or Continuing.`,
 					);
+
 					currentHistory.push({
 						role: "user",
 						parts: [
 							{
-								text: "Error: You responded with conversational text. You MUST call one of the provided tools (run_terminal_command, lookup_workspace_symbol, or finish_selection). Do not provide explanations.",
+								text: "Error: You provided thoughts but did NOT call a tool. You MUST call one of the provided tools (report_thought, run_terminal_command, lookup_workspace_symbol, or finish_selection) to proceed.",
 							},
 						],
 					});
@@ -834,7 +996,49 @@ ${investigationInstruction}
 				}
 
 				// Handle
-				if (functionCall.name === "finish_selection") {
+				if (functionCall.name === "report_thought") {
+					const args = functionCall.args as any;
+					const thoughtContent = args["thought"] as string;
+
+					// Log to Chat with [Thinking] prefix
+					const thoughtLogText = `[Thinking] ${thoughtContent}`;
+					console.log(
+						`[SmartContextSelector] Agent thought (tool): ${thoughtContent}`,
+					);
+
+					if (postMessageToWebview) {
+						// Only log to webview, no need to add to history log as it is separate
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: {
+								text: thoughtLogText,
+							},
+						});
+					}
+
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(thoughtLogText);
+					}
+
+					// Update History
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "report_thought",
+									response: {
+										result: "Thinking recorded. Proceed with next tool.",
+									},
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "finish_selection") {
 					console.log(
 						`[SmartContextSelector] Agent finished selection used tool.`,
 					);
@@ -1007,6 +1211,238 @@ ${investigationInstruction}
 							{
 								functionResponse: {
 									name: "lookup_workspace_symbol",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "get_file_symbols") {
+					const args = functionCall.args as any;
+					const filePath = args["path"] as string;
+
+					// Log to Chat
+					const symbolLogText = `Getting symbols for \`${filePath}\`...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: {
+								text: symbolLogText,
+							},
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(symbolLogText);
+					}
+
+					// Execute
+					let output = "";
+					try {
+						const fullPath = path.join(projectRoot.fsPath, filePath);
+						const symbols = await getSymbolsInDocument(
+							vscode.Uri.file(fullPath),
+							cancellationToken,
+						);
+						if (symbols && symbols.length > 0) {
+							// Serialize all top-level symbols and their children
+							output = symbols
+								.map((s) => serializeDocumentSymbolHierarchy(s, filePath))
+								.join("\n");
+						} else {
+							output = `No symbols found in "${filePath}".`;
+						}
+					} catch (e: any) {
+						output = `Error getting symbols: ${e.message}`;
+					}
+
+					// Log output to chat
+					const displayOutput =
+						output.length > 500 ? output.substring(0, 500) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: {
+								text: outputLogText,
+							},
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					// Update History
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "get_file_symbols",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "find_references") {
+					const args = functionCall.args as any;
+					const filePath = args["path"] as string;
+					const line = args["line"] as number;
+					// const symbolName = args["symbol_name"] as string; // TODO: Use for precise char location
+
+					// Log to Chat
+					const logText = `Finding references for symbol at \`${filePath}:${line}\`...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					// Execute
+					let output = "";
+					try {
+						const fullPath = path.join(projectRoot.fsPath, filePath);
+						// Simple heuristic: assume symbol is at the beginning or middle of line.
+						// A robust implementation would scan the line for the symbol name if provided.
+						// For now, we default to character 0 or basic estimation.
+						const position = new vscode.Position(line - 1, 0);
+
+						const locations = await findReferences(
+							vscode.Uri.file(fullPath),
+							position,
+							cancellationToken,
+						);
+
+						if (locations && locations.length > 0) {
+							const results = locations.slice(0, 20).map((l) => {
+								const relativePath = path
+									.relative(projectRoot.fsPath, l.uri.fsPath)
+									.replace(/\\/g, "/");
+								return `- ${relativePath}:${l.range.start.line + 1}`;
+							});
+							output = `Found ${locations.length} reference(s):\n${results.join(
+								"\n",
+							)}`;
+							if (locations.length > 20) {
+								output += `\n...and ${locations.length - 20} more.`;
+							}
+						} else {
+							output = `No references found for symbol at ${filePath}:${line}.`;
+						}
+					} catch (e: any) {
+						output = `Error finding references: ${e.message}`;
+					}
+
+					// Log output to chat
+					const displayOutput =
+						output.length > 500 ? output.substring(0, 500) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					// Update History
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "find_references",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "go_to_definition") {
+					const args = functionCall.args as any;
+					const filePath = args["path"] as string;
+					const line = args["line"] as number;
+
+					// Log to Chat
+					const logText = `Going to definition for symbol at \`${filePath}:${line}\`...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					// Execute
+					let output = "";
+					try {
+						const fullPath = path.join(projectRoot.fsPath, filePath);
+						const position = new vscode.Position(line - 1, 0);
+
+						const locationOrArr = await getDefinition(
+							vscode.Uri.file(fullPath),
+							position,
+							cancellationToken,
+						);
+						const locations = Array.isArray(locationOrArr)
+							? locationOrArr
+							: locationOrArr
+								? [locationOrArr]
+								: [];
+
+						if (locations && locations.length > 0) {
+							const results = locations.map((l) => {
+								const relativePath = path
+									.relative(projectRoot.fsPath, l.uri.fsPath)
+									.replace(/\\/g, "/");
+								return `- ${relativePath}:${l.range.start.line + 1}`;
+							});
+							output = `Found definition(s) at:\n${results.join("\n")}`;
+						} else {
+							output = `No definition found for symbol at ${filePath}:${line}.`;
+						}
+					} catch (e: any) {
+						output = `Error finding definition: ${e.message}`;
+					}
+
+					// Log output to chat
+					const displayOutput =
+						output.length > 500 ? output.substring(0, 500) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					// Update History
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "go_to_definition",
 									response: { result: output },
 								},
 							},

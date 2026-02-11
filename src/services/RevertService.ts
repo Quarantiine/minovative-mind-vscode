@@ -3,7 +3,6 @@ import * as path from "path";
 import { ProjectChangeLogger } from "../workflow/ProjectChangeLogger";
 import { FileChangeEntry } from "../types/workflow";
 import { showErrorNotification } from "../utils/notificationUtils";
-import { applyAITextEdits } from "../utils/codeUtils";
 import { generateFileChangeSummary, applyPatch } from "../utils/diffingUtils";
 
 export class RevertService {
@@ -12,7 +11,7 @@ export class RevertService {
 
 	constructor(
 		workspaceRootUri: vscode.Uri,
-		projectChangeLogger: ProjectChangeLogger
+		projectChangeLogger: ProjectChangeLogger,
 	) {
 		this.workspaceRootUri = workspaceRootUri;
 		this.projectChangeLogger = projectChangeLogger;
@@ -35,10 +34,10 @@ export class RevertService {
 			showErrorNotification(
 				new Error("Workspace root URI not found."),
 				"Cannot revert changes: No workspace folder is currently open.",
-				"Revert Failed: "
+				"Revert Failed: ",
 			);
 			throw new Error(
-				"Revert operation failed: Workspace root URI is undefined."
+				"Revert operation failed: Workspace root URI is undefined.",
 			);
 		}
 
@@ -59,18 +58,18 @@ export class RevertService {
 						showErrorNotification(
 							new Error("Operation cancelled by user."),
 							"Revert operation cancelled.",
-							"Revert Cancelled: "
+							"Revert Cancelled: ",
 						);
 						break;
 					}
 
 					const fileUri = vscode.Uri.joinPath(
 						this.workspaceRootUri,
-						change.filePath
+						change.filePath,
 					);
 					const relativePath = path.relative(
 						this.workspaceRootUri.fsPath,
-						fileUri.fsPath
+						fileUri.fsPath,
 					);
 					let revertSummary = "";
 
@@ -88,10 +87,10 @@ export class RevertService {
 
 									if (fileStat.type === vscode.FileType.Directory) {
 										const error = new Error(
-											`Attempted to delete a directory entry during revert (created file log points to a directory). Aborting deletion of: ${relativePath}`
+											`Attempted to delete a directory entry during revert (created file log points to a directory). Aborting deletion of: ${relativePath}`,
 										);
 										console.error(
-											`[RevertService] CRITICAL SAFETY WARNING: ${error.message}`
+											`[RevertService] CRITICAL SAFETY WARNING: ${error.message}`,
 										);
 										// showErrorNotification(
 										// 	error,
@@ -122,7 +121,7 @@ export class RevertService {
 											error.code === "EntryNotFound")
 									) {
 										console.warn(
-											`[RevertService] File not found for deletion (already gone?): ${relativePath}`
+											`[RevertService] File not found for deletion (already gone?): ${relativePath}`,
 										);
 										revertSummary = `Reverted creation: File '${relativePath}' was already gone.`;
 									} else {
@@ -150,16 +149,16 @@ export class RevertService {
 										// If the modified file no longer exists, we must fall back to originalContent.
 										if (!change.originalContent) {
 											console.warn(
-												`[RevertService] Skipping revert for missing modified file '${relativePath}': No 'originalContent' available.`
+												`[RevertService] Skipping revert for missing modified file '${relativePath}': No 'originalContent' available.`,
 											);
 											revertSummary = `Skipped revert for missing modified '${relativePath}': No original content found.`;
 											break;
 										}
 										console.warn(
-											`[RevertService] Modified file '${relativePath}' not found, attempting to recreate with assumed original content.`
+											`[RevertService] Modified file '${relativePath}' not found, attempting to recreate with assumed original content.`,
 										);
 										const parentDir = vscode.Uri.file(
-											path.dirname(fileUri.fsPath)
+											path.dirname(fileUri.fsPath),
 										);
 										try {
 											await vscode.workspace.fs.createDirectory(parentDir);
@@ -175,7 +174,7 @@ export class RevertService {
 										}
 										await vscode.workspace.fs.writeFile(
 											fileUri,
-											Buffer.from(change.originalContent)
+											Buffer.from(change.originalContent),
 										);
 										revertSummary = `Reverted modification: Recreated missing '${relativePath}' with original content.`;
 
@@ -183,7 +182,7 @@ export class RevertService {
 											await generateFileChangeSummary(
 												"",
 												change.originalContent,
-												change.filePath
+												change.filePath,
 											);
 										this.projectChangeLogger.logChange({
 											filePath: change.filePath,
@@ -207,11 +206,11 @@ export class RevertService {
 									try {
 										contentToRestore = applyPatch(
 											currentContent,
-											change.inversePatch
+											change.inversePatch,
 										);
 									} catch (patchError: any) {
 										console.warn(
-											`[RevertService] Failed to apply inverse patch for '${relativePath}'. No content available to restore. Error: ${patchError.message}`
+											`[RevertService] Failed to apply inverse patch for '${relativePath}'. No content available to restore. Error: ${patchError.message}`,
 										);
 										// If patch fails and originalContent was missing, contentToRestore remains undefined.
 										contentToRestore = undefined;
@@ -223,26 +222,30 @@ export class RevertService {
 
 								if (contentToRestore === undefined) {
 									console.warn(
-										`[RevertService] Skipping revert for modified file '${relativePath}': No content available to restore.`
+										`[RevertService] Skipping revert for modified file '${relativePath}': No content available to restore.`,
 									);
 									revertSummary = `Skipped revert for modified '${relativePath}': No original content found.`;
 									break;
 								}
 
-								// Apply the edits to restore content using applyAITextEdits
-								await applyAITextEdits(
-									editor,
-									currentContent,
-									contentToRestore,
-									token
-								);
+								// Apply the edits to restore content INSTANTLY (replacing the entire document)
+								const finalContent = contentToRestore;
+								await editor.edit((editBuilder) => {
+									// Robustly calculate the full range of the document
+									const lastLine = document.lineAt(document.lineCount - 1);
+									const fullRange = new vscode.Range(
+										new vscode.Position(0, 0),
+										lastLine.range.end,
+									);
+									const validatedRange = document.validateRange(fullRange);
+									editBuilder.replace(validatedRange, finalContent);
+								});
 
-								const newContent = editor.document.getText();
 								const { formattedDiff, summary } =
 									await generateFileChangeSummary(
 										currentContent,
-										newContent,
-										change.filePath
+										finalContent,
+										change.filePath,
 									);
 								revertSummary = `Reverted modification: Restored original content for '${relativePath}'`;
 
@@ -254,7 +257,7 @@ export class RevertService {
 									timestamp: Date.now(),
 									diffContent: formattedDiff,
 									originalContent: currentContent, // The state before the revert
-									newContent: newContent, // The state after the revert (restored state)
+									newContent: finalContent, // The state after the revert (restored state)
 								});
 								break;
 							}
@@ -264,7 +267,7 @@ export class RevertService {
 								// We assume `change.originalContent` holds the *entire* content before deletion.
 								if (!change.originalContent) {
 									console.warn(
-										`[RevertService] Skipping revert for deleted file '${relativePath}': No 'originalContent' available to recreate content.`
+										`[RevertService] Skipping revert for deleted file '${relativePath}': No 'originalContent' available to recreate content.`,
 									);
 									revertSummary = `Skipped revert for deleted '${relativePath}': No content found to recreate.`;
 									break;
@@ -275,7 +278,7 @@ export class RevertService {
 									// Check if file already exists to prevent accidental overwrite or conflicts.
 									await vscode.workspace.fs.stat(fileUri);
 									console.warn(
-										`[RevertService] File '${relativePath}' already exists when attempting to revert deletion. Skipping recreation.`
+										`[RevertService] File '${relativePath}' already exists when attempting to revert deletion. Skipping recreation.`,
 									);
 									revertSummary = `Skipped revert for deleted '${relativePath}': File already exists.`;
 									break; // Skip if file already exists
@@ -287,7 +290,7 @@ export class RevertService {
 									) {
 										// File does not exist, proceed with recreation
 										const parentDir = vscode.Uri.file(
-											path.dirname(fileUri.fsPath)
+											path.dirname(fileUri.fsPath),
 										);
 										try {
 											await vscode.workspace.fs.createDirectory(parentDir);
@@ -303,7 +306,7 @@ export class RevertService {
 										}
 										await vscode.workspace.fs.writeFile(
 											fileUri,
-											Buffer.from(contentToRecreate)
+											Buffer.from(contentToRecreate),
 										);
 										revertSummary = `Reverted deletion: Recreated '${relativePath}'.`;
 
@@ -311,7 +314,7 @@ export class RevertService {
 											await generateFileChangeSummary(
 												"",
 												contentToRecreate,
-												change.filePath
+												change.filePath,
 											);
 										this.projectChangeLogger.logChange({
 											filePath: change.filePath,
@@ -328,7 +331,7 @@ export class RevertService {
 							}
 							default:
 								console.warn(
-									`[RevertService] Skipping unknown or unsupported change type: ${change.changeType} for ${relativePath}`
+									`[RevertService] Skipping unknown or unsupported change type: ${change.changeType} for ${relativePath}`,
 								);
 								revertSummary = `Skipped unknown change type '${change.changeType}' for '${relativePath}'.`;
 								break;
@@ -345,7 +348,7 @@ export class RevertService {
 							error,
 							`An error occurred while reverting changes for '${relativePath}'.`,
 							`Revert Error: `,
-							this.workspaceRootUri
+							this.workspaceRootUri,
 						);
 						// Continue to the next change even if one fails
 					}
@@ -355,7 +358,7 @@ export class RevertService {
 					message: "Revert operation complete.",
 					increment: 100,
 				});
-			}
+			},
 		);
 	}
 }

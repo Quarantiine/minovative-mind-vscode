@@ -1,8 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { PlanGenerationContext } from "../sidebar/common/sidebarTypes";
-import { ActiveSymbolDetailedInfo } from "../services/contextService";
-import { DependencyRelation } from "./dependencyGraphBuilder";
 import { AIRequestService } from "../services/aiRequestService";
 import { DEFAULT_FLASH_LITE_MODEL } from "../sidebar/common/sidebarConstants";
 
@@ -40,10 +38,11 @@ export async function getHeuristicRelevantFiles(
 	allScannedFiles: ReadonlyArray<vscode.Uri>,
 	projectRoot: vscode.Uri,
 	activeEditorContext?: PlanGenerationContext["editorContext"],
-	fileDependencies?: Map<string, DependencyRelation[]>,
-	reverseFileDependencies?: Map<string, string[]>,
-	activeSymbolDetailedInfo?: ActiveSymbolDetailedInfo,
-	semanticGraph?: Map<string, { relatedPath: string; score: number }[]>,
+	// Legacy params removed
+	_unused1?: any,
+	_unused2?: any,
+	_unused3?: any,
+	_unused4?: any,
 	cancellationToken?: vscode.CancellationToken,
 	options?: Partial<HeuristicSelectionOptions>,
 	aiRequestService?: AIRequestService,
@@ -93,58 +92,7 @@ export async function getHeuristicRelevantFiles(
 	const fileScores = new Map<string, number>();
 	const uriMap = new Map<string, vscode.Uri>();
 
-	// Pre-process symbol-related URIs for direct lookups
-	const symbolRelatedRelativePaths = new Set<string>(); // General set for any symbol relation
-	const definitionRelativePaths = new Set<string>();
-	const typeDefinitionRelativePaths = new Set<string>();
-	const implementationRelativePaths = new Set<string>();
-	const referencedTypeDefinitionRelativePaths = new Set<string>();
-	const callHierarchyRelativePaths = new Set<string>();
-
-	const addUriToSet = (
-		location: vscode.Uri | vscode.Location | vscode.Location[] | undefined,
-		targetSet: Set<string>,
-	) => {
-		if (!location) {
-			return;
-		}
-		const uris = Array.isArray(location)
-			? location.map((l) => l.uri)
-			: [location instanceof vscode.Uri ? location : location.uri];
-
-		uris.forEach((uri) => {
-			if (uri?.scheme === "file") {
-				const relativePath = path
-					.relative(projectRoot.fsPath, uri.fsPath)
-					.replace(/\\/g, "/");
-				targetSet.add(relativePath);
-				symbolRelatedRelativePaths.add(relativePath);
-			}
-		});
-	};
-
-	if (activeSymbolDetailedInfo) {
-		addUriToSet(activeSymbolDetailedInfo.definition, definitionRelativePaths);
-		addUriToSet(
-			activeSymbolDetailedInfo.typeDefinition,
-			typeDefinitionRelativePaths,
-		);
-		activeSymbolDetailedInfo.implementations?.forEach((loc) =>
-			addUriToSet(loc, implementationRelativePaths),
-		);
-		activeSymbolDetailedInfo.referencedTypeDefinitions?.forEach(
-			(_, relPath) => {
-				referencedTypeDefinitionRelativePaths.add(relPath);
-				symbolRelatedRelativePaths.add(relPath);
-			},
-		);
-		activeSymbolDetailedInfo.incomingCalls?.forEach((call) =>
-			addUriToSet(call.from.uri, callHierarchyRelativePaths),
-		);
-		activeSymbolDetailedInfo.outgoingCalls?.forEach((call) =>
-			addUriToSet(call.to.uri, callHierarchyRelativePaths),
-		);
-	}
+	// Legacy symbol-related logic removed
 
 	const activeFileRelativePath = activeEditorContext?.documentUri
 		? path
@@ -190,50 +138,7 @@ export async function getHeuristicRelevantFiles(
 			score += ACTIVE_FILE_SCORE_BOOST;
 		}
 
-		// Score based on specific symbol relationships
-		if (definitionRelativePaths.has(relativePath)) {
-			score += effectiveOptions.definitionWeight;
-		}
-		if (typeDefinitionRelativePaths.has(relativePath)) {
-			score += effectiveOptions.typeDefinitionWeight;
-		}
-		if (implementationRelativePaths.has(relativePath)) {
-			score += effectiveOptions.implementationWeight;
-		}
-		if (referencedTypeDefinitionRelativePaths.has(relativePath)) {
-			score += effectiveOptions.referencedTypeDefinitionWeight;
-		}
-		if (callHierarchyRelativePaths.has(relativePath)) {
-			score += effectiveOptions.callHierarchyWeight;
-		}
-		if (symbolRelatedRelativePaths.has(relativePath)) {
-			score += effectiveOptions.generalSymbolRelatedBoost;
-		}
-
-		// Score based on dependencies
-		if (activeFileRelativePath) {
-			const dependencies = fileDependencies?.get(activeFileRelativePath);
-			if (dependencies) {
-				for (const dep of dependencies) {
-					if (dep.path === relativePath) {
-						if (dep.relationType === "runtime") {
-							score += effectiveOptions.runtimeDependencyWeight;
-						} else if (dep.relationType === "type") {
-							score += effectiveOptions.typeDependencyWeight;
-						}
-						break;
-					}
-				}
-			}
-
-			if (
-				reverseFileDependencies
-					?.get(activeFileRelativePath)
-					?.includes(relativePath)
-			) {
-				score += effectiveOptions.reverseDependencyWeight;
-			}
-		}
+		// Legacy scoring logic removed - focusing on simple proximity and AI scoring
 
 		// Score based on directory proximity
 		if (activeFileDir) {

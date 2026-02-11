@@ -116,19 +116,21 @@ ${rawTextOutput}
 			token,
 		);
 
-		if (!result) {
+		if (!result || !result.functionCall) {
 			// Model decided not to call the function (returned null/text response instead of tool call)
 			return { blocks: [] };
 		}
 
-		if (result.name !== "extractSearchReplaceBlocks") {
+		const functionCall = result.functionCall;
+
+		if (functionCall.name !== "extractSearchReplaceBlocks") {
 			throw new Error(
-				`AI returned an unexpected function name: ${result.name}`,
+				`AI returned an unexpected function name: ${functionCall.name}`,
 			);
 		}
 
 		// The arguments are returned as a JSON string that needs parsing
-		const argsJson = result.args as unknown as string; // Cast to unknown then string because library types might be fuzzy or generic
+		const argsJson = functionCall.args as unknown as string; // Cast to unknown then string because library types might be fuzzy or generic
 		// Actually, Gemini API types often return args as object already if parsed by library, or string if raw.
 		// Let's assume the library returns it as object based on FunctionCall type definition which usually has args: object.
 		// Wait, the Google Generative AI SDK `FunctionCall` interface has `args: object`.
@@ -136,7 +138,7 @@ ${rawTextOutput}
 		// Let's safe cast.
 
 		const structuredOutput =
-			result.args as unknown as SearchReplaceBlockToolOutput;
+			functionCall.args as unknown as SearchReplaceBlockToolOutput;
 
 		if (!Array.isArray(structuredOutput.blocks)) {
 			// Fallback: sometimes args might be a string JSON if something weird happens, but standard SDK parses it.
@@ -683,7 +685,7 @@ ${rawTextOutput}
 		functionCallingMode?: FunctionCallingMode,
 		token?: vscode.CancellationToken,
 		contextString: string = "function_call", // New parameter with default value
-	): Promise<FunctionCall | null> {
+	): Promise<{ functionCall: FunctionCall | null; thought?: string }> {
 		if (token?.isCancellationRequested) {
 			console.log(
 				"[AIRequestService] Function call generation cancelled at start.",
@@ -694,7 +696,9 @@ ${rawTextOutput}
 		let inputTokensCount = 0;
 		let outputTokensCount = 0;
 		let status: "success" | "failed" | "cancelled" = "failed";
-		let functionCall: FunctionCall | null = null;
+		let result: { functionCall: FunctionCall | null; thought?: string } = {
+			functionCall: null,
+		};
 
 		// Prepare input text for context string and token estimation
 		const contentsText = contents
@@ -730,7 +734,7 @@ ${rawTextOutput}
 			}
 
 			// 2. Generate function call with cancellation support
-			functionCall = await this.raceWithCancellation(
+			result = await this.raceWithCancellation(
 				gemini.generateFunctionCall(
 					apiKey,
 					modelName,
@@ -741,15 +745,16 @@ ${rawTextOutput}
 				token,
 			);
 
-			if (functionCall === null) {
+			if (result.functionCall === null && !result.thought) {
 				status = "success"; // Successfully got a null response (no tool needed)
-				return null;
+				return result;
 			}
 
 			// Convert functionCall to string for output token estimation/counting
 			const functionCallString = JSON.stringify({
-				name: functionCall.name,
-				args: functionCall.args,
+				name: result.functionCall?.name,
+				args: result.functionCall?.args,
+				thought: result.thought,
 			});
 
 			// 3. Count output tokens
@@ -770,7 +775,7 @@ ${rawTextOutput}
 			}
 
 			status = "success";
-			return functionCall;
+			return result;
 		} catch (error: any) {
 			if (error.message === ERROR_OPERATION_CANCELLED) {
 				status = "cancelled";
@@ -803,10 +808,10 @@ ${rawTextOutput}
 		functionCallingMode?: FunctionCallingMode,
 		token?: vscode.CancellationToken,
 		contextString: string = "function_call",
-	): Promise<FunctionCall | null> {
+	): Promise<{ functionCall: FunctionCall | null; thought?: string }> {
 		const apiKey = this.apiKeyManager.getActiveApiKey();
 		if (!apiKey) {
-			throw new Error("No API Key available for function call.");
+			throw new Error("No API Key available.");
 		}
 
 		// We could add retry logic here similar to generateWithRetry if needed in the future

@@ -25,10 +25,7 @@ import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
 import { executeCommand, CommandResult } from "../utils/commandExecution";
 import * as sidebarConstants from "../sidebar/common/sidebarConstants";
 import { DiagnosticService } from "../utils/diagnosticUtils";
-import {
-	SelectRelevantFilesAIOptions,
-	FileSelection,
-} from "../context/smartContextSelector";
+import { FileSelection } from "../context/smartContextSelector";
 import { getSymbolsInDocument } from "./symbolService";
 import { SearchReplaceService } from "./searchReplaceService";
 
@@ -125,6 +122,21 @@ export class PlanExecutorService {
 
 		// 2.b. Prepare steps and send PlanTimelineInitializeMessage
 		const orderedSteps = this._prepareAndOrderSteps(plan.steps!);
+
+		// Populate the provider with all file URIs targeted by this plan.
+		// This is used by the self-correction workflow to check for errors in all intended files.
+		const verifiedTargetUris: vscode.Uri[] = [];
+		for (const s of orderedSteps) {
+			if (
+				isCreateFileStep(s) ||
+				isModifyFileStep(s) ||
+				isCreateDirectoryStep(s)
+			) {
+				const resolved = await this._resolveTargetFileUri(s.step.path);
+				verifiedTargetUris.push(resolved);
+			}
+		}
+		this.provider.lastPlanTargetUris = verifiedTargetUris;
 
 		try {
 			await vscode.window.withProgress(
@@ -531,7 +543,7 @@ export class PlanExecutorService {
 		} else {
 			switch (step.step.action) {
 				case PlanStepAction.CreateDirectory:
-					if (isCreateDirectoryStep(step)) {
+					if (isCreateDirectoryStep(step) && step.step.path) {
 						detailedStepDescription = `Creating directory: \`${path.basename(
 							step.step.path,
 						)}\``;
@@ -540,7 +552,7 @@ export class PlanExecutorService {
 					}
 					break;
 				case PlanStepAction.CreateFile:
-					if (isCreateFileStep(step)) {
+					if (isCreateFileStep(step) && step.step.path) {
 						if (step.step.generate_prompt) {
 							detailedStepDescription = `Creating file: \`${path.basename(
 								step.step.path,
@@ -559,7 +571,7 @@ export class PlanExecutorService {
 					}
 					break;
 				case PlanStepAction.ModifyFile:
-					if (isModifyFileStep(step)) {
+					if (isModifyFileStep(step) && step.step.path) {
 						detailedStepDescription = `Modifying file: ${path.basename(
 							step.step.path,
 						)}`;
@@ -986,17 +998,18 @@ export class PlanExecutorService {
 
 			if (step.step.generate_prompt) {
 				// Runtime Guard: Check for errors before overwriting
-				// Ensure diagnostics are fresh
-				await DiagnosticService.waitForDiagnosticsToStabilize(
-					fileUri,
-					combinedToken,
-				);
-				const diagnostics = DiagnosticService.getDiagnosticsForUri(fileUri);
-				const hasErrors = diagnostics.some(
-					(d) => d.severity === vscode.DiagnosticSeverity.Error,
-				);
-
+				// Only run this check if we are in correction mode (self-correction workflow)
 				if (context.isCorrectionMode) {
+					// Ensure diagnostics are fresh
+					await DiagnosticService.waitForDiagnosticsToStabilize(
+						fileUri,
+						combinedToken,
+					);
+					const diagnostics = DiagnosticService.getDiagnosticsForUri(fileUri);
+					const hasErrors = diagnostics.some(
+						(d) => d.severity === vscode.DiagnosticSeverity.Error,
+					);
+
 					if (!hasErrors) {
 						console.log(
 							`[Runtime Guard] Skipping overwrite for ${path.basename(
@@ -1025,7 +1038,8 @@ export class PlanExecutorService {
 					)}\` already has the desired content. Skipping.`,
 				);
 			} else {
-				const document = await vscode.workspace.openTextDocument(fileUri);
+				const resolvedUri = await this._resolveTargetFileUri(step.step.path);
+				const document = await vscode.workspace.openTextDocument(resolvedUri);
 				const editor = await vscode.window.showTextDocument(document);
 
 				await applyAITextEdits(
@@ -1139,11 +1153,49 @@ export class PlanExecutorService {
 			throw new Error(ERROR_OPERATION_CANCELLED);
 		}
 
-		const fileUri = vscode.Uri.joinPath(rootUri, step.step.path);
+		const fileUri = await this._resolveTargetFileUri(step.step.path);
+		let originalContent: string;
 
-		const originalContent = Buffer.from(
-			await vscode.workspace.fs.readFile(fileUri),
-		).toString("utf-8");
+		try {
+			const contentBuffer = await vscode.workspace.fs.readFile(fileUri);
+			originalContent = Buffer.from(contentBuffer).toString("utf-8");
+		} catch (error: any) {
+			if (
+				error instanceof vscode.FileSystemError &&
+				(error.code === "FileNotFound" || error.code === "EntryNotFound")
+			) {
+				console.log(
+					`Minovative Mind: File ${path.basename(
+						fileUri.fsPath,
+					)} not found for modification. Falling back to creation.`,
+				);
+
+				const createFileStep: CreateFileStep = {
+					step: {
+						action: PlanStepAction.CreateFile,
+						path: step.step.path,
+						generate_prompt: step.step.modification_prompt,
+						description: `Creating missing file \`${path.basename(
+							step.step.path,
+						)}\` before modification.`,
+					},
+				};
+
+				return await this._handleCreateFileStep(
+					createFileStep,
+					currentStepNumber,
+					totalSteps,
+					rootUri,
+					context,
+					relevantSnippets,
+					affectedFileUris,
+					changeLogger,
+					combinedToken,
+				);
+			} else {
+				throw error;
+			}
+		}
 
 		const modificationContext = {
 			projectContext: context.projectContext,
@@ -1155,17 +1207,19 @@ export class PlanExecutorService {
 		// Dynamic Context Selection (Context Agent) removed
 
 		// Runtime Guard: Check for errors before modifying
-		// Ensure diagnostics are fresh
-		await DiagnosticService.waitForDiagnosticsToStabilize(
-			fileUri,
-			combinedToken,
-		);
-		const diagnostics = DiagnosticService.getDiagnosticsForUri(fileUri);
-		const hasErrors = diagnostics.some(
-			(d) => d.severity === vscode.DiagnosticSeverity.Error,
-		);
-
+		// Only run this check if we are in correction mode (self-correction workflow)
+		// Otherwise, trust the plan execution and avoid unnecessary delays.
 		if (context.isCorrectionMode) {
+			// Ensure diagnostics are fresh
+			await DiagnosticService.waitForDiagnosticsToStabilize(
+				fileUri,
+				combinedToken,
+			);
+			const diagnostics = DiagnosticService.getDiagnosticsForUri(fileUri);
+			const hasErrors = diagnostics.some(
+				(d) => d.severity === vscode.DiagnosticSeverity.Error,
+			);
+
 			if (!hasErrors) {
 				console.log(
 					`[Runtime Guard] Skipping modification for ${path.basename(
@@ -1267,7 +1321,8 @@ export class PlanExecutorService {
 				)}\` content is already as desired, no substantial modifications needed.`,
 			);
 		} else {
-			const document = await vscode.workspace.openTextDocument(fileUri);
+			const resolvedUri = await this._resolveTargetFileUri(step.step.path);
+			const document = await vscode.workspace.openTextDocument(resolvedUri);
 			const editor = await vscode.window.showTextDocument(document);
 			await applyAITextEdits(
 				editor,
@@ -1529,9 +1584,11 @@ export class PlanExecutorService {
 
 		// 2. Wait for diagnostics to stabilize
 		// We use a simple sequential wait to avoid overwhelming the LS, or we could use Promise.all
-		for (const uri of uris) {
+		// 2. Wait for diagnostics to stabilize in parallel
+		// We use Promise.all to allow concurrent waiting, significantly speeding up the process
+		const stabilizationPromises = Array.from(uris).map(async (uri) => {
 			if (token.isCancellationRequested) {
-				break;
+				return;
 			}
 			try {
 				await DiagnosticService.waitForDiagnosticsToStabilize(uri, token);
@@ -1540,6 +1597,88 @@ export class PlanExecutorService {
 					`[PlanExecutorService] Diagnostic warm-up: Stability wait failed for ${uri.fsPath}: ${err.message}`,
 				);
 			}
+		});
+
+		await Promise.all(stabilizationPromises);
+	}
+
+	/**
+	 * Resolves a requested relative path to its absolute URI, with fallback logic
+	 * to handle shorthand paths (e.g., just the filename) often used by AI.
+	 *
+	 * @param requestedPath The relative path string from the AI plan.
+	 * @returns The resolved vscode.Uri.
+	 */
+	private async _resolveTargetFileUri(
+		requestedPath: string,
+	): Promise<vscode.Uri> {
+		const normalizedRequested = requestedPath.replace(/\\/g, "/");
+
+		// Priority 1: Exact join and check existence
+		const exactUri = vscode.Uri.joinPath(
+			this.workspaceRootUri,
+			normalizedRequested,
+		);
+		try {
+			await vscode.workspace.fs.stat(exactUri);
+			return exactUri;
+		} catch {
+			// Not found, proceed to fallbacks
 		}
+
+		// Priority 2: Try to find a match in the provider's target URIs from the last plan history.
+		if (this.provider.lastPlanTargetUris.length > 0) {
+			const suffixMatch = this.provider.lastPlanTargetUris.find((uri) => {
+				const uriPath = path
+					.relative(this.workspaceRootUri.fsPath, uri.fsPath)
+					.replace(/\\/g, "/");
+				return (
+					uriPath === normalizedRequested ||
+					uriPath.endsWith(`/${normalizedRequested}`)
+				);
+			});
+
+			if (suffixMatch) {
+				console.log(
+					`[PlanExecutorService] Resolved shorthand path '${requestedPath}' to '${path.relative(
+						this.workspaceRootUri.fsPath,
+						suffixMatch.fsPath,
+					)}' using lastPlanTargetUris.`,
+				);
+				return suffixMatch;
+			}
+		}
+
+		// Priority 3: Search the workspace for a file matching the basename.
+		// This helps if the AI provides just the filename in the initial execution.
+		const basename = path.basename(normalizedRequested);
+		try {
+			const foundFiles = await vscode.workspace.findFiles(
+				`**/${basename}`,
+				"**/node_modules/**",
+				2,
+			);
+			if (foundFiles.length === 1) {
+				console.log(
+					`[PlanExecutorService] Resolved shorthand path '${requestedPath}' to unique workspace match '${path.relative(
+						this.workspaceRootUri.fsPath,
+						foundFiles[0].fsPath,
+					)}'.`,
+				);
+				return foundFiles[0];
+			} else if (foundFiles.length > 1) {
+				console.warn(
+					`[PlanExecutorService] Multiple matches found for '${basename}'. Falling back to default path join.`,
+				);
+			}
+		} catch (searchError) {
+			console.warn(
+				`[PlanExecutorService] Workspace search for ${basename} failed:`,
+				searchError,
+			);
+		}
+
+		// Fallback: Return the exact join (traditional behavior)
+		return exactUri;
 	}
 }

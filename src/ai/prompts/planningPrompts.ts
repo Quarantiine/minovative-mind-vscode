@@ -248,6 +248,7 @@ Crucial Rules for \`generateExecutionPlan\` Tool:
 - All generated code/instructions must be production-ready (complete, functional, no placeholders/TODOs). The best code you can give.
 - **Allowed Command List**: For 'run_command' steps, you are strictly limited to the following commands: [${SafeCommandExecutor.getAllowedCommands().join(", ")}]. Ensure any command you use is in this list.
 - **Robustness**: Use \`find . -iname ...\` for searches to avoid case-sensitivity issues (e.g., \`find src -name "*service.ts"\` will fail to find \`planService.ts\` on many systems).
+- **PATH ACCURACY**: You MUST use the EXACT relative paths provided in the diagnostics or project context. Do not truncate paths or assume files are in the root if they are in subdirectories.
 
 Goal: Ensure all relevant information is passed accurately and comprehensively to the \`generateExecutionPlan\` function. 
 
@@ -312,10 +313,11 @@ Diagnostics: ${editorContext.diagnosticsString || "None"}
 	return `You are an expert software engineer. A previous attempt to fulfill a request has resulted in errors or incomplete implementation. Your task is to analyze the provided context (focused on recently changed files) and the summary of previous changes/errors to propose a fix strategy.
 
 Instructions:
-1. Review the "Summary of Recent Changes/Errors" to understand what went wrong or what remains.
-2. Analyze the "Current Project Context" (focusing on recently changed files) and any "Target File" info.
-3. Propose a clear, high-level, step-by-step textual strategy (using Markdown) to fix the issues and complete the task.
-4. Focus solely on problem-solving. No code or JSON output yet.
+1. Review the "Summary of Recent Changes/Errors" and the "Self-Correction Diagnostic Summary".
+2. Identify which files have ERRORS and which are CLEAN. DO NOT suggest changes for CLEAN files unless they are logically necessary for fixing errors in other files.
+3. Analyze the "Current Project Context" (focusing on files with reported errors) and any "Target File" info.
+4. Propose a clear, high-level, step-by-step textual strategy (using Markdown) to fix the reported ERRORS and complete the task.
+5. Focus solely on problem-solving. No code or JSON output yet.
 
 Summary of Recent Changes/Errors:
 ${summaryOfLastChanges}
@@ -393,6 +395,7 @@ Crucial Rules for \`generateExecutionPlan\` Tool:
 - **Allowed Command List**: For 'run_command' steps, you are strictly limited to the following commands: [${SafeCommandExecutor.getAllowedCommands().join(
 		", ",
 	)}].
+- **PATH ACCURACY**: You MUST use the EXACT relative paths provided in the diagnostics or project context. Do not truncate paths or assume files are in the root if they are in subdirectories.
 
 Summary of Recent Changes/Errors:
 ${summaryOfLastChanges}

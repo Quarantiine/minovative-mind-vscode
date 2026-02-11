@@ -7,14 +7,11 @@ import {
 import { AIRequestService } from "./aiRequestService";
 import { scanWorkspace } from "../context/workspaceScanner";
 import {
-	buildDependencyGraph,
-	DependencyRelation,
-} from "../context/dependencyGraphBuilder";
-import { intelligentlySummarizeFileContent } from "../context/fileContentProcessor";
-import {
 	getHeuristicRelevantFiles,
 	HeuristicSelectionOptions,
 } from "../context/heuristicContextSelector";
+import { intelligentlySummarizeFileContent } from "../context/fileContentProcessor";
+import { DependencyRelation } from "../utils/fileDependencyParser";
 import {
 	selectRelevantFilesAI,
 	SelectRelevantFilesAIOptions,
@@ -62,29 +59,22 @@ export class SequentialContextService {
 	private workspaceRoot: vscode.Uri;
 	private postMessageToWebview: (message: any) => void;
 	private settingsManager: SettingsManager;
-	private fileDependencies: Map<string, DependencyRelation[]>;
-	private reverseFileDependencies: Map<string, DependencyRelation[]>;
-
 	constructor(
 		aiRequestService: AIRequestService,
 		workspaceRoot: vscode.Uri,
 		postMessageToWebview: (message: any) => void,
 		settingsManager: SettingsManager,
-		fileDependencies: Map<string, DependencyRelation[]>,
-		reverseFileDependencies: Map<string, DependencyRelation[]>,
 	) {
 		this.aiRequestService = aiRequestService;
 		this.workspaceRoot = workspaceRoot;
 		this.postMessageToWebview = postMessageToWebview;
 		this.settingsManager = settingsManager;
-		this.fileDependencies = fileDependencies;
-		this.reverseFileDependencies = reverseFileDependencies;
 		this.sequentialProcessor = new SequentialFileProcessor(
 			aiRequestService,
 			workspaceRoot,
 			postMessageToWebview,
-			this.convertDependencyMapToStringMap(this.fileDependencies),
-			this.convertDependencyMapToStringMap(this.reverseFileDependencies),
+			new Map(), // No dependency graph
+			new Map(), // No reverse dependency graph
 		);
 	}
 
@@ -389,8 +379,8 @@ export class SequentialContextService {
 			allFiles,
 			this.workspaceRoot,
 			undefined, // No active editor context for filtering
-			this.fileDependencies, // Pass structured dependency map
-			this.convertDependencyMapToStringMap(this.reverseFileDependencies), // Pass structured reverse dependency map
+			undefined, // Removed: fileDependencies
+			undefined, // Removed: reverseFileDependencies
 			undefined, // No active symbol info for filtering
 			undefined, // No semantic graph
 			undefined, // No cancellation token
@@ -412,7 +402,7 @@ export class SequentialContextService {
 				const fileSummaries = new Map<string, string>();
 				const summaryPromises = heuristicFiles
 					.slice(0, 30)
-					.map(async (fileUri) => {
+					.map(async (fileUri: vscode.Uri) => {
 						try {
 							const contentBytes = await vscode.workspace.fs.readFile(fileUri);
 							const fileContent = Buffer.from(contentBytes).toString("utf-8");
@@ -475,9 +465,7 @@ export class SequentialContextService {
 					addContextAgentLogToHistory: options.addContextAgentLogToHistory,
 					modelName,
 					cancellationToken: undefined,
-					fileDependencies: this.convertDependencyMapToStringMap(
-						this.fileDependencies,
-					), // Pass file dependencies for AI filtering
+					fileDependencies: new Map(), // Removed: fileDependencies
 					preSelectedHeuristicFiles: heuristicFiles,
 					fileSummaries,
 					selectionOptions: {
@@ -662,15 +650,7 @@ export class SequentialContextService {
 			maxFileSize: DEFAULT_SIZE,
 		});
 
-		// Build dependency graph
-		const dependencyGraph = await buildDependencyGraph(
-			allFiles,
-			this.workspaceRoot,
-			{
-				useCache: true,
-				maxConcurrency: 10,
-			},
-		);
+		// Removed: buildDependencyGraph
 
 		// Build basic context string
 		let contextString = `Traditional Context Analysis:\n`;

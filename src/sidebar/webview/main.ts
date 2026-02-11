@@ -128,18 +128,13 @@ export function setJsonLoadingState(
 		const loadingDiv = document.createElement("div");
 		loadingDiv.className = "ai-message loading-message json-processing-message";
 		loadingDiv.id = "json-processing-loading-indicator";
-		loadingDiv.innerHTML = `🤖 Processing output into structured JSON <span class="loading-text"><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>`;
+		loadingDiv.innerHTML = `🤖 Structuring plan... <span class="loading-text"><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>`;
 		elements.chatContainer.appendChild(loadingDiv);
 
 		// Store reference for cleanup
 		appState.currentJsonLoadingElement = loadingDiv;
 
-		updateStatus(
-			elements,
-			"Processing output into structured JSON",
-			false,
-			true,
-		);
+		updateStatus(elements, "Structuring plan", false, true);
 	} else {
 		// Cleanup the loading element from chat history
 		const currentLoadingElement = appState.currentJsonLoadingElement;
@@ -149,11 +144,7 @@ export function setJsonLoadingState(
 		appState.currentJsonLoadingElement = null;
 
 		// Only clear status if it matches our specific processing message
-		if (
-			elements.statusArea.textContent?.includes(
-				"Processing output into structured JSON",
-			)
-		) {
+		if (elements.statusArea.textContent?.includes("Structuring plan")) {
 			elements.statusArea.textContent = "";
 		}
 	}

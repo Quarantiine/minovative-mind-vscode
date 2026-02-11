@@ -152,6 +152,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	public isPlanExecutionActive: boolean = false;
 	/** Unique ID for the current user operation (chat, plan generation, commit generation). Used for concurrency control and tracking streaming responses. */
 	public currentActiveChatOperationId: string | null = null;
+	/** List of URIs targeted in the last plan execution, whether modified or not. */
+	public lastPlanTargetUris: vscode.Uri[] = [];
 	/** List of steps in the currently executing plan. */
 	public currentPlanSteps: string[] = [];
 	/** Index of the currently executing step within the current plan. */

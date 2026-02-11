@@ -31,11 +31,11 @@ export const resetCodeStreams = (): void => {
 
 export function handleCodeFileStreamStart(
 	elements: RequiredDomElements,
-	message: CodeFileStreamStartMessage
+	message: CodeFileStreamStartMessage,
 ): void {
-	const { streamId, filePath, languageId } = message.value;
+	const { streamId, filePath, languageId, status } = message.value;
 	console.log(
-		`[CodeStreamHandler] Code stream start: ${filePath} (Stream ID: ${streamId})`
+		`[CodeStreamHandler] Code stream start/update: ${filePath} (Stream ID: ${streamId}, Status: ${status})`,
 	);
 
 	if (!codeStreamingArea) {
@@ -44,6 +44,20 @@ export function handleCodeFileStreamStart(
 			console.error("[CodeStreamHandler] Code streaming area not found.");
 			return;
 		}
+	}
+
+	let streamInfo = activeCodeStreams.get(streamId);
+
+	if (streamInfo) {
+		// Update existing stream's status
+		const statusIndicator = streamInfo.container.querySelector(
+			".loading-dots",
+		) as HTMLElement | null;
+		if (statusIndicator) {
+			const displayStatus = status || "Generating";
+			statusIndicator.innerHTML = `${displayStatus}<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>`;
+		}
+		return;
 	}
 
 	// Create container for this file's stream
@@ -62,10 +76,11 @@ export function handleCodeFileStreamStart(
 	// Footer for file path and loading dots
 	const footer = document.createElement("div");
 	footer.classList.add("code-file-stream-footer");
+	const displayStatus = status || "Generating";
 	footer.innerHTML = `
         <span class="file-path">${filePath}</span>
         <span class="status-indicator">
-            <span class="loading-dots">Generating<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>
+            <span class="loading-dots">${displayStatus}<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>
         </span>
     `;
 	container.appendChild(footer);
@@ -79,7 +94,7 @@ export function handleCodeFileStreamStart(
 
 export function handleCodeFileStreamChunk(
 	elements: RequiredDomElements, // Kept for consistency, though not directly used here
-	message: CodeFileStreamChunkMessage
+	message: CodeFileStreamChunkMessage,
 ): void {
 	const { streamId, chunk } = message.value;
 	// console.log(`[CodeStreamHandler] Code stream chunk for ${streamId}: ${chunk.length} chars`);
@@ -93,30 +108,30 @@ export function handleCodeFileStreamChunk(
 		}
 	} else {
 		console.warn(
-			`[CodeStreamHandler] Received chunk for unknown stream ID: ${streamId}`
+			`[CodeStreamHandler] Received chunk for unknown stream ID: ${streamId}`,
 		);
 	}
 }
 
 export function handleCodeFileStreamEnd(
 	elements: RequiredDomElements, // Kept for consistency
-	message: CodeFileStreamEndMessage
+	message: CodeFileStreamEndMessage,
 ): void {
 	const { streamId, success, error } = message.value;
 	console.log(
-		`[CodeStreamHandler] Code stream end for ${streamId}. Success: ${success}, Error: ${error}`
+		`[CodeStreamHandler] Code stream end for ${streamId}. Success: ${success}, Error: ${error}`,
 	);
 
 	const streamInfo = activeCodeStreams.get(streamId);
 	if (streamInfo) {
 		const footer = streamInfo.container.querySelector(
-			".code-file-stream-footer"
+			".code-file-stream-footer",
 		);
 		const statusIndicator = footer?.querySelector(
-			".status-indicator"
+			".status-indicator",
 		) as HTMLElement | null;
 		const loadingDots = footer?.querySelector(
-			".loading-dots"
+			".loading-dots",
 		) as HTMLElement | null;
 
 		// Remove loading dots
@@ -159,7 +174,7 @@ export function handleCodeFileStreamEnd(
 		}
 	} else {
 		console.warn(
-			`[CodeStreamHandler] Received end message for unknown stream ID: ${streamId}`
+			`[CodeStreamHandler] Received end message for unknown stream ID: ${streamId}`,
 		);
 	}
 }

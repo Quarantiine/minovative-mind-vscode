@@ -373,7 +373,7 @@ export async function generateFunctionCall(
 	contents: Content[],
 	tools: Tool[],
 	functionCallingMode?: FunctionCallingMode, // Modified function signature
-): Promise<FunctionCall | null> {
+): Promise<{ functionCall: FunctionCall | null; thought?: string }> {
 	geminiLogger.log(modelName, `Attempting to generate function call.`);
 
 	if (!initializeGenerativeAI(apiKey, modelName, tools)) {
@@ -427,8 +427,19 @@ export async function generateFunctionCall(
 			throw new Error(`Request blocked by Gemini (reason: ${blockReason}).`);
 		}
 
-		const functionCall =
-			response.candidates?.[0]?.content?.parts?.[0]?.functionCall;
+		const candidate = response.candidates?.[0];
+		let functionCall: FunctionCall | null = null;
+		let thought = "";
+
+		if (candidate && candidate.content && candidate.content.parts) {
+			for (const part of candidate.content.parts) {
+				if (part.functionCall) {
+					functionCall = part.functionCall;
+				} else if (part.text) {
+					thought += part.text;
+				}
+			}
+		}
 
 		if (functionCall) {
 			geminiLogger.log(
@@ -436,14 +447,18 @@ export async function generateFunctionCall(
 				`Successfully received function call:`,
 				functionCall,
 			);
-			return functionCall;
+			if (thought) {
+				geminiLogger.log(modelName, `Received thought:`, thought);
+			}
+			return { functionCall, thought: thought.trim() };
 		} else {
 			geminiLogger.warn(
 				modelName,
 				`No function call found in the response. Full response:`,
 				response,
 			);
-			return null;
+			// Also return thought if no function call, though less useful for this specific method contract usually
+			return { functionCall: null, thought: thought.trim() };
 		}
 	} catch (error: any) {
 		_handleGeminiError(error, modelName, "function call", true);

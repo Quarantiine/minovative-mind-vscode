@@ -69,14 +69,7 @@ export class EnhancedCodeGenerator {
 		validation: CodeValidationResult;
 		actualPath: string;
 	}> {
-		// Modified return type
-		const languageId = getLanguageId(path.extname(filePath));
 		const streamId = crypto.randomUUID();
-
-		this.postMessageToWebview({
-			type: "codeFileStreamStart",
-			value: { streamId, filePath, languageId },
-		});
 
 		try {
 			const isRewriteOp =
@@ -88,7 +81,6 @@ export class EnhancedCodeGenerator {
 				isRewriteOperation: isRewriteOp,
 			};
 
-			// Fallback for non-real-time generation
 			const initialResult = await this._generateInitialContent(
 				filePath,
 				generatePrompt,
@@ -103,49 +95,44 @@ export class EnhancedCodeGenerator {
 				return {
 					content: initialResult.finalContent,
 					validation: initialResult,
-					actualPath: initialResult.actualPath || filePath, // Return actualPath
+					actualPath: initialResult.actualPath || filePath,
 				};
 			}
 			const validation = await this.codeValidationService.validateCode(
-				initialResult.actualPath || filePath, // Validate with the actual path
+				initialResult.actualPath || filePath,
 				initialResult.finalContent,
 			);
 			const result = {
 				content: validation.finalContent,
 				validation,
 				actualPath: initialResult.actualPath || filePath,
-			}; // Modified return
+			};
 			this.postMessageToWebview({
 				type: "codeFileStreamEnd",
 				value: {
 					streamId,
-					filePath: initialResult.actualPath || filePath,
+					filePath: `/${path.basename(initialResult.actualPath || filePath)}`,
 					success: true,
-				}, // Use actualPath
+				},
 			});
 			return result;
 		} catch (error: any) {
-			// Check if the error message indicates cancellation (case-insensitive)
 			if (
 				error instanceof Error &&
 				error.message === ERROR_OPERATION_CANCELLED
 			) {
-				// If it's a cancellation error, re-throw it immediately.
-				// This prevents sending a redundant codeFileStreamEnd message from this layer.
 				throw error;
 			} else {
-				// For any other type of error, post the codeFileStreamEnd message
-				// to indicate failure for this specific operation, and then re-throw.
 				this.postMessageToWebview({
 					type: "codeFileStreamEnd",
 					value: {
 						streamId,
-						filePath, // Cannot reliably get actualPath here, use initial for error logging
+						filePath: `/${path.basename(filePath)}`,
 						success: false,
 						error: error instanceof Error ? error.message : String(error),
 					},
 				});
-				throw error; // Re-throw the error for higher-level handling
+				throw error;
 			}
 		}
 	}
@@ -161,12 +148,18 @@ export class EnhancedCodeGenerator {
 		modelName: string,
 		token?: vscode.CancellationToken,
 	): Promise<{ content: string; validation: CodeValidationResult }> {
-		const languageId = getLanguageId(path.extname(filePath));
 		const streamId = crypto.randomUUID();
 
+		// Optimization: Signal start immediately with "Analyzing structure" status
+		const languageId = getLanguageId(path.extname(filePath));
 		this.postMessageToWebview({
 			type: "codeFileStreamStart",
-			value: { streamId, filePath, languageId },
+			value: {
+				streamId,
+				filePath: `/${path.basename(filePath)}`,
+				languageId,
+				status: "Analyzing structure",
+			},
 		});
 
 		try {
@@ -190,31 +183,30 @@ export class EnhancedCodeGenerator {
 			);
 			this.postMessageToWebview({
 				type: "codeFileStreamEnd",
-				value: { streamId, filePath, success: true },
+				value: {
+					streamId,
+					filePath: `/${path.basename(filePath)}`,
+					success: true,
+				},
 			});
 			return result;
 		} catch (error: any) {
-			// Check if the error message indicates cancellation (case-insensitive)
 			if (
 				error instanceof Error &&
 				error.message === ERROR_OPERATION_CANCELLED
 			) {
-				// If it's a cancellation error, re-throw it immediately.
-				// This prevents sending a redundant codeFileStreamEnd message from this layer.
 				throw error;
 			} else {
-				// For any other type of error, post the codeFileStreamEnd message
-				// to indicate failure for this specific operation, and then re-throw.
 				this.postMessageToWebview({
 					type: "codeFileStreamEnd",
 					value: {
 						streamId,
-						filePath,
+						filePath: `/${path.basename(filePath)}`,
 						success: false,
 						error: error instanceof Error ? error.message : String(error),
 					},
 				});
-				throw error; // Re-throw the error for higher-level handling
+				throw error;
 			}
 		}
 	}
@@ -279,6 +271,17 @@ export class EnhancedCodeGenerator {
 			context,
 		);
 
+		const languageId = getLanguageId(path.extname(filePath));
+		this.postMessageToWebview({
+			type: "codeFileStreamStart",
+			value: {
+				streamId,
+				filePath: `/${path.basename(filePath)}`,
+				languageId,
+				status: "Generating code",
+			},
+		});
+
 		try {
 			const rawContent = await this.aiRequestService.generateWithRetry(
 				[{ text: userMessage }],
@@ -342,10 +345,24 @@ export class EnhancedCodeGenerator {
 
 			const cleanedExtractedContent = cleanCodeOutput(extractedContent);
 
+			// Optimization: Check for valid code format FIRST to avoid an unnecessary AI call.
+			// If CodeValidationService says it's valid format (even loosely) and it has substantial length,
+			// it is highly likely to be valid code and not a refusal message.
+			const basicFormatCheck = this.codeValidationService.checkPureCodeFormat(
+				cleanedExtractedContent,
+				false,
+			);
+			const seemsLikeValidCode =
+				basicFormatCheck.isValid &&
+				cleanedExtractedContent.length > 50 && // Refusals are usually short
+				!cleanedExtractedContent.trim().toLowerCase().startsWith("sorry") &&
+				!cleanedExtractedContent.trim().toLowerCase().startsWith("i cannot");
+
 			if (
-				await this.lightweightClassificationService.checkIsError(
+				!seemsLikeValidCode &&
+				(await this.lightweightClassificationService.checkIsError(
 					cleanedExtractedContent,
-				)
+				))
 			) {
 				return {
 					isValid: false,
@@ -439,6 +456,17 @@ export class EnhancedCodeGenerator {
 			contextWithAnalysis,
 		);
 
+		const languageId = getLanguageId(path.extname(filePath));
+		this.postMessageToWebview({
+			type: "codeFileStreamStart",
+			value: {
+				streamId,
+				filePath: `/${path.basename(filePath)}`,
+				languageId,
+				status: "Generating code",
+			},
+		});
+
 		const rawContent = await this.aiRequestService.generateWithRetry(
 			[{ text: userMessage }],
 			modelName,
@@ -454,10 +482,41 @@ export class EnhancedCodeGenerator {
 			systemInstruction, // Pass systemInstruction
 		);
 
+		// Optimization: Update status to "Applying changes" immediately after generation finishes
+		this.postMessageToWebview({
+			type: "codeFileStreamStart",
+			value: {
+				streamId,
+				filePath: `/${path.basename(filePath)}`,
+				languageId,
+				status: "Applying changes",
+			},
+		});
+
+		// Optimization: Start extraction in parallel with lightweight format checks
+		const extractionPromise =
+			this.aiRequestService.extractSearchReplaceBlocksViaTool(
+				rawContent,
+				modelName,
+				token,
+			);
+
 		const cleanedContent = cleanCodeOutput(rawContent);
 
+		// Optimization: Check for valid code format FIRST.
+		const basicFormatCheck = this.codeValidationService.checkPureCodeFormat(
+			cleanedContent,
+			false,
+		);
+		const seemsLikeValidCode =
+			basicFormatCheck.isValid &&
+			cleanedContent.length > 50 &&
+			!cleanedContent.trim().toLowerCase().startsWith("sorry") &&
+			!cleanedContent.trim().toLowerCase().startsWith("i cannot");
+
 		if (
-			await this.lightweightClassificationService.checkIsError(cleanedContent)
+			!seemsLikeValidCode &&
+			(await this.lightweightClassificationService.checkIsError(cleanedContent))
 		) {
 			return {
 				content: cleanedContent,
@@ -484,13 +543,8 @@ export class EnhancedCodeGenerator {
 		}
 
 		let finalModifiedContent: string;
-		// Replaced regex parsing with AI tool extraction
-		const extractionResult =
-			await this.aiRequestService.extractSearchReplaceBlocksViaTool(
-				rawContent,
-				modelName,
-				token,
-			);
+		// Wait for the extraction result that was started in parallel
+		const extractionResult = await extractionPromise;
 		const blocks = extractionResult.blocks;
 
 		if (blocks.length > 0) {
@@ -573,7 +627,7 @@ export class EnhancedCodeGenerator {
 	) {
 		this.postMessageToWebview({
 			type: "codeFileStreamChunk",
-			value: { streamId, filePath, chunk },
+			value: { streamId, filePath: `/${path.basename(filePath)}`, chunk },
 		});
 		if (onCodeChunkCallback) {
 			await onCodeChunkCallback(chunk);

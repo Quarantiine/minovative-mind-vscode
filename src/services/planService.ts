@@ -35,6 +35,7 @@ export class PlanService {
 	private urlContextService: UrlContextService;
 	private enhancedCodeGenerator: EnhancedCodeGenerator;
 	private planExecutorService: PlanExecutorService;
+	private isGeneratingPlan = false;
 
 	constructor(
 		private provider: SidebarProvider,
@@ -153,15 +154,47 @@ export class PlanService {
 		}
 
 		try {
-			// Collect diagnostics for changed files to inform the Context Agent
+			// 1. Combine changed URIs with URIs from the last plan's targets.
+			// This ensures we catch files that were supposed to be modified but weren't,
+			// AND files that were modified but didn't have errors before.
+			const allRelevantUrisSet = new Set<string>();
+			changedUris.forEach((u) => allRelevantUrisSet.add(u.toString()));
+			this.provider.lastPlanTargetUris.forEach((u) =>
+				allRelevantUrisSet.add(u.toString()),
+			);
+			const finalUrisToCheck = Array.from(allRelevantUrisSet).map((s) =>
+				vscode.Uri.parse(s),
+			);
+
 			let diagnosticsString = "";
+			const errorFiles: string[] = [];
+			const warningFiles: string[] = [];
+			const cleanFiles: string[] = [];
+
 			const workspaceFolders = vscode.workspace.workspaceFolders;
 			if (workspaceFolders && workspaceFolders.length > 0) {
 				const rootUri = workspaceFolders[0].uri;
 				const optimizationSettings =
 					this.provider.settingsManager.getOptimizationSettings();
 
-				for (const uri of changedUris) {
+				for (const uri of finalUrisToCheck) {
+					const relativePath = path.relative(rootUri.fsPath, uri.fsPath);
+					const diagnostics = DiagnosticService.getDiagnosticsForUri(uri);
+					const hasErrors = diagnostics.some(
+						(d) => d.severity === vscode.DiagnosticSeverity.Error,
+					);
+					const hasWarnings = diagnostics.some(
+						(d) => d.severity === vscode.DiagnosticSeverity.Warning,
+					);
+
+					if (hasErrors) {
+						errorFiles.push(relativePath);
+					} else if (hasWarnings) {
+						warningFiles.push(relativePath);
+					} else {
+						cleanFiles.push(relativePath);
+					}
+
 					try {
 						const fileContentBytes = await vscode.workspace.fs.readFile(uri);
 						const fileContent = Buffer.from(fileContentBytes).toString("utf8");
@@ -186,7 +219,8 @@ export class PlanService {
 							);
 
 						if (formatted) {
-							diagnosticsString += `\n--- Diagnostics for ${path.relative(rootUri.fsPath, uri.fsPath)} ---\n${formatted}\n`;
+							const status = hasErrors ? "HAS ERRORS" : "HAS WARNINGS";
+							diagnosticsString += `\n--- [${status}] ${relativePath} ---\n${formatted}\n`;
 						}
 					} catch (readError) {
 						console.warn(
@@ -195,6 +229,21 @@ export class PlanService {
 						);
 					}
 				}
+
+				// Build a summary section to explicitly tell the AI which files are clean
+				let summarySection = "\n--- Self-Correction Diagnostic Summary ---\n";
+				if (errorFiles.length > 0) {
+					summarySection += `FILES WITH ERRORS: ${errorFiles.join(", ")}\n`;
+				}
+				if (warningFiles.length > 0) {
+					summarySection += `FILES WITH WARNINGS: ${warningFiles.join(", ")}\n`;
+				}
+				if (cleanFiles.length > 0) {
+					summarySection += `CLEAN FILES (No Errors/Warnings): ${cleanFiles.join(", ")}\n`;
+				}
+				summarySection += "--- End Summary ---\n";
+
+				diagnosticsString = summarySection + diagnosticsString;
 			}
 
 			const { contextString, relevantFiles, activeSymbolDetailedInfo } =
@@ -205,7 +254,11 @@ export class PlanService {
 					"Applying self-correction based on recent changes.",
 					undefined,
 					diagnosticsString || undefined,
-					{ changedUris, operationId, correctionMode: true },
+					{
+						changedUris: finalUrisToCheck,
+						operationId,
+						correctionMode: true,
+					},
 				);
 
 			const correctionPrompt = createCorrectionPlanningPrompt(
@@ -687,8 +740,22 @@ export class PlanService {
 		planContext: sidebarTypes.PlanGenerationContext,
 		summaryOfLastChanges: string,
 	): Promise<void> {
+		if (this.isGeneratingPlan) {
+			console.warn(
+				"[PlanService] generateStructuredPlanFromCorrectionAndExecute called while another generation is in progress. Skipping.",
+			);
+			return;
+		}
+
+		console.log(
+			"[PlanService] Starting generateStructuredPlanFromCorrectionAndExecute...",
+		);
+
 		const token = this.provider.activeOperationCancellationTokenSource?.token;
 		if (!token) {
+			console.error(
+				"[PlanService] No active operation token found for structured correction.",
+			);
 			await this.provider.endUserOperation("failed");
 			return;
 		}
@@ -697,6 +764,7 @@ export class PlanService {
 		let lastError: Error | null = null;
 
 		try {
+			this.isGeneratingPlan = true;
 			await this.provider.setPlanExecutionActive(true);
 
 			this.provider.postMessageToWebview({
@@ -726,7 +794,7 @@ export class PlanService {
 			for (let attempt = 1; attempt <= this.MAX_PLAN_PARSE_RETRIES; attempt++) {
 				this.provider.postMessageToWebview({
 					type: "statusUpdate",
-					value: `Generating correction plan - ${attempt}/${this.MAX_PLAN_PARSE_RETRIES} `,
+					value: `Translating strategy into execution steps (Attempt ${attempt}/${this.MAX_PLAN_PARSE_RETRIES})...`,
 					isError: false,
 				});
 
@@ -735,7 +803,7 @@ export class PlanService {
 						type: "updateJsonLoadingState",
 						value: true,
 					});
-					const functionCall: FunctionCall | null =
+					const { functionCall } =
 						await this.provider.aiRequestService.generateFunctionCall(
 							planContext.initialApiKey,
 							planContext.modelName,
@@ -743,7 +811,7 @@ export class PlanService {
 							[{ functionDeclarations: [generateExecutionPlanTool] }],
 							FunctionCallingMode.ANY,
 							token,
-							"correction plan generation",
+							"structured plan generation",
 						);
 
 					if (token.isCancellationRequested) {
@@ -802,12 +870,19 @@ export class PlanService {
 			}
 
 			if (!executablePlan) {
+				console.error(
+					`[PlanService] Failed to generate structured correction plan after ${this.MAX_PLAN_PARSE_RETRIES} attempts.`,
+				);
 				throw (
 					lastError ||
 					new Error("Failed to generate a valid structured correction plan.")
 				);
 			}
 
+			console.log(
+				"[PlanService] Structured correction plan generated successfully. Executing...",
+			);
+			this.isGeneratingPlan = false;
 			await this.planExecutorService.executePlan(
 				executablePlan,
 				planContext,
@@ -841,15 +916,31 @@ export class PlanService {
 				await this.provider.endUserOperation("failed");
 			}
 		} finally {
+			this.isGeneratingPlan = false;
 			await this.provider.setPlanExecutionActive(false);
+			console.log(
+				"[PlanService] Finished generateStructuredPlanFromCorrectionAndExecute.",
+			);
 		}
 	}
 
 	public async generateStructuredPlanAndExecute(
 		planContext: sidebarTypes.PlanGenerationContext,
 	): Promise<void> {
+		if (this.isGeneratingPlan) {
+			console.warn(
+				"[PlanService] generateStructuredPlanAndExecute called while another generation is in progress. Skipping.",
+			);
+			return;
+		}
+
+		console.log("[PlanService] Starting generateStructuredPlanAndExecute...");
+
 		const token = this.provider.activeOperationCancellationTokenSource?.token;
 		if (!token) {
+			console.error(
+				"[PlanService] No active operation token found for structured plan generation.",
+			);
 			await this.provider.endUserOperation("failed");
 			return;
 		}
@@ -858,6 +949,7 @@ export class PlanService {
 		let lastError: Error | null = null;
 
 		try {
+			this.isGeneratingPlan = true;
 			await this.provider.setPlanExecutionActive(true);
 
 			this.provider.postMessageToWebview({
@@ -900,7 +992,7 @@ export class PlanService {
 			for (let attempt = 1; attempt <= this.MAX_PLAN_PARSE_RETRIES; attempt++) {
 				this.provider.postMessageToWebview({
 					type: "statusUpdate",
-					value: `Generating execution plan - ${attempt}/${this.MAX_PLAN_PARSE_RETRIES} `,
+					value: `Translating strategy into execution steps (Attempt ${attempt}/${this.MAX_PLAN_PARSE_RETRIES})...`,
 					isError: false,
 				});
 
@@ -909,7 +1001,7 @@ export class PlanService {
 						type: "updateJsonLoadingState",
 						value: true,
 					});
-					const functionCall: FunctionCall | null =
+					const result =
 						await this.provider.aiRequestService.generateFunctionCall(
 							planContext.initialApiKey,
 							planContext.modelName,
@@ -919,6 +1011,8 @@ export class PlanService {
 							token,
 							"plan generation via function call",
 						);
+
+					const functionCall = result.functionCall;
 
 					if (token.isCancellationRequested) {
 						throw new Error(ERROR_OPERATION_CANCELLED);
@@ -982,6 +1076,9 @@ export class PlanService {
 			}
 
 			if (!executablePlan) {
+				console.error(
+					`[PlanService] Failed to generate structured plan after ${this.MAX_PLAN_PARSE_RETRIES} attempts.`,
+				);
 				throw (
 					lastError ||
 					new Error(
@@ -990,13 +1087,23 @@ export class PlanService {
 				);
 			}
 
+			console.log(
+				"[PlanService] Structured plan generated successfully. Executing...",
+			);
 			this.provider.pendingPlanGenerationContext = null;
+			this.isGeneratingPlan = false;
 			await this.planExecutorService.executePlan(
 				executablePlan,
 				planContext,
 				token,
 			);
 		} catch (error: any) {
+			console.error(
+				"[PlanService] Error in generateStructuredPlanAndExecute:",
+				error,
+			);
+			// ...
+
 			const isCancellation = error.message === ERROR_OPERATION_CANCELLED;
 
 			this.provider.postMessageToWebview({
@@ -1024,7 +1131,9 @@ export class PlanService {
 				await this.provider.endUserOperation("failed");
 			}
 		} finally {
+			this.isGeneratingPlan = false;
 			await this.provider.setPlanExecutionActive(false);
+			console.log("[PlanService] Finished generateStructuredPlanAndExecute.");
 		}
 	}
 

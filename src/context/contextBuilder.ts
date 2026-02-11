@@ -5,8 +5,7 @@ import { FileChangeEntry } from "../types/workflow";
 import { ActiveSymbolDetailedInfo } from "../services/contextService";
 import { intelligentlySummarizeFileContent } from "./fileContentProcessor";
 import { DEFAULT_SIZE } from "../sidebar/common/sidebarConstants";
-import { DependencyRelation } from "./dependencyGraphBuilder";
-import { buildSemanticGraph, SemanticGraph } from "./semanticLinker";
+import { DependencyRelation } from "../utils/fileDependencyParser";
 
 // 1. Define BINARY_FILE_EXTENSIONS
 const BINARY_FILE_EXTENSIONS = new Set([
@@ -100,15 +99,15 @@ export interface HistoricalFile {
  */
 function _initializeBuildContext(
 	workspaceRoot: vscode.Uri,
-	relevantFiles: vscode.Uri[]
+	relevantFiles: vscode.Uri[],
 ): { context: string; currentTotalLength: number } {
 	let context = `Project Context (Workspace: ${path.basename(
-		workspaceRoot.fsPath
+		workspaceRoot.fsPath,
 	)}):\n`;
 	context += `Relevant files identified: ${relevantFiles.length}\n\n`;
 	const currentTotalLength = context.length;
 	console.log(
-		`Context initialized. Current size: ${currentTotalLength} chars.`
+		`Context initialized. Current size: ${currentTotalLength} chars.`,
 	);
 	return { context, currentTotalLength };
 }
@@ -128,14 +127,10 @@ function _initializeBuildContext(
 function _prioritizeFilesForContext(
 	relevantFiles: vscode.Uri[],
 	workspaceRoot: vscode.Uri,
-	dependencyGraph: Map<string, DependencyRelation[]> | undefined,
-	reverseDependencyGraph: Map<string, string[]> | undefined,
 	activeSymbolDetailedInfo: ActiveSymbolDetailedInfo | undefined,
 	documentSymbols: Map<string, vscode.DocumentSymbol[] | undefined> | undefined,
 	config: ContextConfig,
 	historicallyRelevantFiles?: HistoricalFile[],
-	semanticGraph?: SemanticGraph,
-	currentTopic?: string
 ): vscode.Uri[] {
 	let prioritizedFiles: PrioritizedFile[] = relevantFiles.map((uri) => ({
 		uri,
@@ -171,13 +166,13 @@ function _prioritizeFilesForContext(
 					activeSymbolRelatedPaths.add(
 						path
 							.relative(workspaceRoot.fsPath, definitionLoc.uri.fsPath)
-							.replace(/\\/g, "/")
+							.replace(/\\/g, "/"),
 					);
 				}
 			}
 			if (activeSymbolDetailedInfo.typeDefinition) {
 				const typeDefLoc = Array.isArray(
-					activeSymbolDetailedInfo.typeDefinition
+					activeSymbolDetailedInfo.typeDefinition,
 				)
 					? activeSymbolDetailedInfo.typeDefinition[0]
 					: activeSymbolDetailedInfo.typeDefinition;
@@ -185,7 +180,7 @@ function _prioritizeFilesForContext(
 					activeSymbolRelatedPaths.add(
 						path
 							.relative(workspaceRoot.fsPath, typeDefLoc.uri.fsPath)
-							.replace(/\\/g, "/")
+							.replace(/\\/g, "/"),
 					);
 				}
 			}
@@ -193,61 +188,35 @@ function _prioritizeFilesForContext(
 				activeSymbolRelatedPaths.add(
 					path
 						.relative(workspaceRoot.fsPath, loc.uri.fsPath)
-						.replace(/\\/g, "/")
-				)
+						.replace(/\\/g, "/"),
+				),
 			);
 			activeSymbolDetailedInfo.referencedTypeDefinitions?.forEach((_, fp) =>
-				activeSymbolRelatedPaths.add(fp)
+				activeSymbolRelatedPaths.add(fp),
 			);
 			activeSymbolDetailedInfo.incomingCalls?.forEach((call) =>
 				activeSymbolRelatedPaths.add(
 					path
 						.relative(workspaceRoot.fsPath, call.from.uri.fsPath)
-						.replace(/\\/g, "/")
-				)
+						.replace(/\\/g, "/"),
+				),
 			);
 			activeSymbolDetailedInfo.outgoingCalls?.forEach((call) =>
 				activeSymbolRelatedPaths.add(
 					path
 						.relative(workspaceRoot.fsPath, call.to.uri.fsPath)
-						.replace(/\\/g, "/")
-				)
+						.replace(/\\/g, "/"),
+				),
 			);
 		}
 		if (activeSymbolRelatedPaths.has(relativePath)) {
 			pf.score += 500;
 		}
 
-		// Medium-high priority: Direct dependencies
-		const directDependencies = dependencyGraph?.get(relativePath);
-		if (directDependencies) {
-			for (const dep of directDependencies) {
-				switch (dep.relationType) {
-					case "runtime":
-						pf.score += 100;
-						break;
-					case "type":
-						pf.score += 50;
-						break;
-					case "unknown":
-						pf.score += 20;
-						break;
-				}
-			}
-		}
+		// Removed: Direct dependencies and Reverse dependencies scoring
+		// They relied on the deprecated dependency graph.
 
-		// Medium priority: Files that import the active file (reverse dependencies) or are imported by other relevant files
-		const reverseDependencies = reverseDependencyGraph?.get(relativePath);
-		if (reverseDependencies && reverseDependencies.length > 0) {
-			pf.score += 80; // Bonus for files that are imported by others
-		}
-
-		// New scoring: Conceptual Proximity
-		if (semanticGraph && currentTopic) {
-			// Removed conditional scoring based on file summary keyword inclusion.
-			// This logic proved unreliable and was disabled for better performance/accuracy.
-			const fileNode = semanticGraph.get(relativePath);
-		}
+		// Removed: Conceptual Proximity (semantic graph)
 
 		// Low-medium priority: Files with significant symbols, even if not directly related to active symbol
 		if (
@@ -259,22 +228,14 @@ function _prioritizeFilesForContext(
 		}
 	}
 
-	if (
-		historicallyRelevantFiles &&
-		historicallyRelevantFiles.length > 0 &&
-		currentTopic
-	) {
+	if (historicallyRelevantFiles && historicallyRelevantFiles.length > 0) {
 		const historicalFileMap = new Map(
-			historicallyRelevantFiles.map((hf) => [hf.uri.fsPath, hf.topic])
+			historicallyRelevantFiles.map((hf) => [hf.uri.fsPath, hf.topic]),
 		);
 		for (const pf of prioritizedFiles) {
 			if (historicalFileMap.has(pf.uri.fsPath)) {
-				const historicalTopic = historicalFileMap.get(pf.uri.fsPath)!;
-				if (historicalTopic.toLowerCase() === currentTopic.toLowerCase()) {
-					pf.score += 2000; // Topic match
-				} else {
-					pf.score += 200; // Topic mismatch but still historical
-				}
+				// Simplified historical scoring without currentTopic matching if it's not available
+				pf.score += 200;
 			}
 		}
 	}
@@ -329,9 +290,8 @@ async function _processFileContentsForContext(
 	currentContext: string,
 	currentTotalLength: number,
 	filesSkippedForTotalSize: number,
-	dependencyGraph?: Map<string, DependencyRelation[]>,
 	documentSymbols?: Map<string, vscode.DocumentSymbol[] | undefined>,
-	activeSymbolDetailedInfo?: ActiveSymbolDetailedInfo
+	activeSymbolDetailedInfo?: ActiveSymbolDetailedInfo,
 ): Promise<{
 	context: string;
 	currentTotalLength: number;
@@ -352,7 +312,7 @@ async function _processFileContentsForContext(
 			skippedCount =
 				sortedRelevantFiles.length - sortedRelevantFiles.indexOf(fileUri);
 			console.log(
-				`Skipping remaining ${skippedCount} file contents as total limit reached.`
+				`Skipping remaining ${skippedCount} file contents as total limit reached.`,
 			);
 			break; // Stop processing file contents immediately
 		}
@@ -362,27 +322,8 @@ async function _processFileContentsForContext(
 			.replace(/\\/g, "/");
 		const fileHeader = `--- File: ${relativePath} ---\n`;
 
-		let importRelationsDisplay = "";
-		if (dependencyGraph) {
-			const imports = dependencyGraph.get(relativePath);
-			if (imports && imports.length > 0) {
-				const maxImportsToDisplay = 10;
-				const displayedImports = imports
-					.slice(0, maxImportsToDisplay)
-					.map((imp) => `'${imp.path}'`)
-					.join(", ");
-				const remainingImportsCount = imports.length - maxImportsToDisplay;
-				const suffix =
-					remainingImportsCount > 0
-						? ` (and ${remainingImportsCount} more)`
-						: "";
-				importRelationsDisplay = `imports: ${displayedImports}${suffix}\n`;
-			} else {
-				importRelationsDisplay = `imports: No Imports\n`;
-			}
-		} else {
-			importRelationsDisplay = `imports: No Imports (Dependency graph not provided)\n`;
-		}
+		// Removed: importRelationsDisplay (depended on dependencyGraph)
+		const importRelationsDisplay = "";
 
 		// Check for binary files and skip content reading if necessary
 		if (shouldSkipContentForUri(fileUri)) {
@@ -401,7 +342,7 @@ async function _processFileContentsForContext(
 				skippedCount =
 					sortedRelevantFiles.length - sortedRelevantFiles.indexOf(fileUri);
 				console.warn(
-					`Skipping remaining ${skippedCount} file contents (including binary file ${relativePath}) as total limit reached.`
+					`Skipping remaining ${skippedCount} file contents (including binary file ${relativePath}) as total limit reached.`,
 				);
 				break;
 			}
@@ -415,7 +356,7 @@ async function _processFileContentsForContext(
 			length += estimatedLengthIncrease;
 			contentAdded = true;
 			console.log(
-				`Skipped binary file content for ${relativePath}. Current total size: ${length} chars.`
+				`Skipped binary file content for ${relativePath}. Current total size: ${length} chars.`,
 			);
 			continue; // Skip the rest of the text file processing logic
 		}
@@ -441,7 +382,7 @@ async function _processFileContentsForContext(
 				fileContentRaw,
 				symbolsForFile,
 				activeSymbolInfoForCurrentFile,
-				config.maxFileLength
+				config.maxFileLength,
 			);
 
 			if (fileContentForContext.length < fileContentRaw.length) {
@@ -450,7 +391,7 @@ async function _processFileContentsForContext(
 		} catch (error) {
 			console.warn(
 				`Could not read or intelligently summarize file content for ${relativePath}:`,
-				error
+				error,
 			);
 			fileContentForContext = `[Error reading/summarizing file: ${
 				error instanceof Error ? error.message : String(error)
@@ -478,7 +419,7 @@ async function _processFileContentsForContext(
 			config.maxFileLength, // Max per file
 			availableTotalContextSpace -
 				baseContentLength -
-				summaryTruncationMessage.length // Space left in total, considering header/footer/truncation message
+				summaryTruncationMessage.length, // Space left in total, considering header/footer/truncation message
 		);
 
 		if (maxSummarizedContentLength <= 0) {
@@ -486,7 +427,7 @@ async function _processFileContentsForContext(
 			skippedCount =
 				sortedRelevantFiles.length - sortedRelevantFiles.indexOf(fileUri);
 			console.log(
-				`Skipping remaining ${skippedCount} file contents as total limit reached before adding ${relativePath}.`
+				`Skipping remaining ${skippedCount} file contents as total limit reached before adding ${relativePath}.`,
 			);
 			break;
 		}
@@ -497,7 +438,7 @@ async function _processFileContentsForContext(
 		if (fileContentForContext.length > maxSummarizedContentLength) {
 			actualFileContentToAdd = fileContentForContext.substring(
 				0,
-				maxSummarizedContentLength
+				maxSummarizedContentLength,
 			);
 			truncatedForSmartSummary = true; // Mark as truncated, even if originally wasn't (now it is for total size)
 			// Removed: currentFileTruncatedForTotalSize = true;
@@ -540,18 +481,18 @@ async function _processFileContentsForContext(
 				length += contentToAdd.length;
 				context += contentToAdd;
 				console.log(
-					`Added heavily truncated content for ${relativePath} to fit total limit.`
+					`Added heavily truncated content for ${relativePath} to fit total limit.`,
 				);
 				contentAdded = true;
 			} else {
 				console.warn(
-					`Could not fit even a minimal entry for ${relativePath} into total context.`
+					`Could not fit even a minimal entry for ${relativePath} into total context.`,
 				);
 			}
 			skippedCount =
 				sortedRelevantFiles.length - sortedRelevantFiles.indexOf(fileUri);
 			console.log(
-				`Skipping remaining ${skippedCount} file contents as total limit reached.`
+				`Skipping remaining ${skippedCount} file contents as total limit reached.`,
 			);
 			break; // Stop processing further files
 		}
@@ -560,7 +501,7 @@ async function _processFileContentsForContext(
 		length += estimatedLengthIncrease;
 		contentAdded = true;
 		console.log(
-			`Added content for ${relativePath}. Current total size: ${length} chars.`
+			`Added content for ${relativePath}. Current total size: ${length} chars.`,
 		);
 	}
 
@@ -597,16 +538,13 @@ export async function buildContextString(
 	workspaceRoot: vscode.Uri,
 	config: ContextConfig = DEFAULT_CONTEXT_CONFIG,
 	recentChanges?: FileChangeEntry[],
-	dependencyGraph?: Map<string, DependencyRelation[]>,
 	documentSymbols?: Map<string, vscode.DocumentSymbol[] | undefined>,
 	activeSymbolDetailedInfo?: ActiveSymbolDetailedInfo,
-	reverseDependencyGraph?: Map<string, string[]>,
 	historicallyRelevantFiles?: HistoricalFile[],
-	userRequest?: string
 ): Promise<string> {
 	let { context, currentTotalLength } = _initializeBuildContext(
 		workspaceRoot,
-		relevantFiles
+		relevantFiles,
 	);
 	let filesSkippedForTotalSize = 0; // For file *content* skipping
 
@@ -617,7 +555,7 @@ export async function buildContextString(
 			workspaceRoot,
 			context,
 			currentTotalLength,
-			config
+			config,
 		));
 
 	// If maxed out after adding structure, stop
@@ -632,7 +570,7 @@ export async function buildContextString(
 			recentChanges,
 			context,
 			currentTotalLength,
-			config
+			config,
 		));
 
 	if (currentTotalLength >= config.maxTotalLength) {
@@ -647,7 +585,7 @@ export async function buildContextString(
 			workspaceRoot,
 			context,
 			currentTotalLength,
-			config
+			config,
 		));
 
 	if (currentTotalLength >= config.maxTotalLength) {
@@ -662,7 +600,7 @@ export async function buildContextString(
 			workspaceRoot,
 			context,
 			currentTotalLength,
-			config
+			config,
 		));
 
 	if (currentTotalLength >= config.maxTotalLength) {
@@ -677,7 +615,7 @@ export async function buildContextString(
 		workspaceRoot,
 		context,
 		currentTotalLength,
-		config
+		config,
 	));
 
 	if (currentTotalLength >= config.maxTotalLength) {
@@ -692,7 +630,7 @@ export async function buildContextString(
 			workspaceRoot,
 			context,
 			currentTotalLength,
-			config
+			config,
 		));
 
 	if (currentTotalLength >= config.maxTotalLength) {
@@ -700,22 +638,14 @@ export async function buildContextString(
 		return context.trim();
 	}
 
-	// 7. Prioritize Files for Content Inclusion
-	// Assumes file summaries are available for semantic graph construction.
-	const semanticGraph = buildSemanticGraph(new Map<string, string>());
-	const currentTopic = userRequest;
-
+	// 7. PrioritizeFiles for Content Inclusion
 	const sortedRelevantFiles = _prioritizeFilesForContext(
 		relevantFiles,
 		workspaceRoot,
-		dependencyGraph,
-		reverseDependencyGraph,
 		activeSymbolDetailedInfo,
 		documentSymbols,
 		config,
 		historicallyRelevantFiles,
-		semanticGraph,
-		currentTopic
 	);
 
 	// 8. Process File Contents
@@ -727,9 +657,8 @@ export async function buildContextString(
 			context,
 			currentTotalLength,
 			filesSkippedForTotalSize,
-			dependencyGraph,
 			documentSymbols,
-			activeSymbolDetailedInfo
+			activeSymbolDetailedInfo,
 		));
 
 	// Diagnostic log for final size

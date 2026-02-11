@@ -12,11 +12,7 @@ import {
 	HistoryEntry,
 } from "../sidebar/common/sidebarTypes";
 import { scanWorkspace, clearScanCache } from "../context/workspaceScanner";
-import {
-	buildDependencyGraph,
-	buildReverseDependencyGraph,
-	DependencyRelation, // 1. Update the import to include DependencyRelation
-} from "../context/dependencyGraphBuilder";
+import { DependencyRelation } from "../utils/fileDependencyParser";
 import {
 	selectRelevantFilesAI,
 	SelectRelevantFilesAIOptions,
@@ -112,9 +108,6 @@ export class ContextService {
 	private sequentialContextService?: SequentialContextService;
 	private disposables: vscode.Disposable[] = [];
 	// 2. Change class properties types
-	private fileDependencies?: Map<string, DependencyRelation[]>;
-	private reverseFileDependencies?: Map<string, DependencyRelation[]>;
-	private areDependenciesComputed: boolean = false;
 	private lastProcessedOperationId: string | undefined; // Track the last operation ID
 
 	constructor(
@@ -139,7 +132,7 @@ export class ContextService {
 		cancellationToken?: vscode.CancellationToken,
 	): Promise<SequentialContextService> {
 		if (!this.sequentialContextService) {
-			await this._computeWorkspaceDependencies(cancellationToken);
+			// Removed: await this._computeWorkspaceDependencies(cancellationToken);
 			const workspaceFolders = vscode.workspace.workspaceFolders;
 			if (!workspaceFolders || workspaceFolders.length === 0) {
 				throw new Error("No workspace folder open");
@@ -150,9 +143,6 @@ export class ContextService {
 				workspaceRoot,
 				this.postMessageToWebview,
 				this.settingsManager,
-				// 3. Update default Map initialization type
-				this.fileDependencies ?? new Map<string, DependencyRelation[]>(),
-				this.reverseFileDependencies ?? new Map<string, DependencyRelation[]>(),
 			);
 		}
 		return this.sequentialContextService;
@@ -171,7 +161,6 @@ export class ContextService {
 					`[ContextService] Clearing scan cache for workspace: ${workspacePath} due to file change.`,
 				);
 				clearScanCache(workspacePath); // Ensure clearScanCache is imported
-				this.areDependenciesComputed = false; // Invalidate computed dependencies
 				// --- New addition: Clear AI selection cache ---
 				console.log(
 					`[ContextService] Clearing AI selection cache for workspace: ${workspacePath} due to file change.`,
@@ -219,79 +208,7 @@ export class ContextService {
 		console.log("[ContextService] Workspace file system watchers registered.");
 	}
 
-	private async _computeWorkspaceDependencies(
-		cancellationToken?: vscode.CancellationToken,
-	): Promise<void> {
-		if (this.areDependenciesComputed) {
-			return;
-		}
-
-		if (cancellationToken?.isCancellationRequested) {
-			throw new vscode.CancellationError();
-		}
-
-		const workspaceFolders = vscode.workspace.workspaceFolders;
-		if (!workspaceFolders || workspaceFolders.length === 0) {
-			console.warn(
-				"[ContextService] Cannot compute workspace dependencies: No workspace folder open.",
-			);
-			return;
-		}
-		const workspaceRoot = workspaceFolders[0].uri;
-
-		try {
-			console.log("[ContextService] Computing workspace dependencies...");
-
-			if (cancellationToken?.isCancellationRequested) {
-				throw new vscode.CancellationError();
-			}
-
-			// scanWorkspace and buildDependencyGraph are already imported
-			const allScannedFiles = await scanWorkspace({
-				/* default options */
-			});
-
-			if (cancellationToken?.isCancellationRequested) {
-				throw new vscode.CancellationError();
-			}
-
-			if (allScannedFiles.length === 0) {
-				console.warn(
-					"[ContextService] No files found to compute dependencies.",
-				);
-				this.areDependenciesComputed = true;
-				return;
-			}
-
-			const fileDependencies = await buildDependencyGraph(
-				allScannedFiles,
-				workspaceRoot,
-				{
-					/* default options */
-				},
-			);
-
-			if (cancellationToken?.isCancellationRequested) {
-				throw new vscode.CancellationError();
-			}
-
-			this.fileDependencies = fileDependencies;
-
-			this.reverseFileDependencies = buildReverseDependencyGraph(
-				fileDependencies,
-				workspaceRoot,
-			);
-
-			console.log(
-				`[ContextService] Workspace dependencies computed (${fileDependencies.size} files processed).`,
-			);
-			this.areDependenciesComputed = true;
-		} catch (error: any) {
-			console.error(
-				`[ContextService] Error computing workspace dependencies: ${error.message}`,
-			);
-		}
-	}
+	// Removed _computeWorkspaceDependencies as it depended on deprecated graph builder
 
 	private _deduplicateUris(uris: vscode.Uri[]): vscode.Uri[] {
 		const uniquePaths = new Set<string>();
@@ -417,22 +334,7 @@ export class ContextService {
 	 * @param dependencyMap The input map of path -> DependencyRelation[]
 	 * @returns The output map of path -> string[]
 	 */
-	private _convertDependencyMapToStringMap(
-		dependencyMap?: Map<string, DependencyRelation[]>,
-	): Map<string, string[]> {
-		if (!dependencyMap) {
-			return new Map<string, string[]>();
-		}
-
-		const stringMap = new Map<string, string[]>();
-
-		for (const [importerPath, relations] of dependencyMap.entries()) {
-			const paths = relations.map((rel) => rel.path);
-			stringMap.set(importerPath, paths);
-		}
-
-		return stringMap;
-	}
+	// Removed: _convertDependencyMapToStringMap
 
 	/**
 	 * Scans the workspace for files, using the default settings.
@@ -595,8 +497,9 @@ export class ContextService {
 			}
 
 			// Optimized dependency graph building
-			let fileDependencies = new Map<string, DependencyRelation[]>();
-			let reverseFileDependencies = new Map<string, DependencyRelation[]>();
+			// Removed: fileDependencies, reverseFileDependencies building
+			// let fileDependencies = new Map<string, DependencyRelation[]>();
+			// let reverseFileDependencies = new Map<string, DependencyRelation[]>();
 			let dependencyBuildTime = 0;
 
 			if (cancellationToken?.isCancellationRequested) {
@@ -604,48 +507,9 @@ export class ContextService {
 			}
 
 			// 2. Gate the entire Dependency Graph building block
-			if (shouldRunHeuristicPreSelection) {
-				const dependencyStartTime = Date.now();
-				this.postMessageToWebview({
-					type: "statusUpdate",
-					value: "Analyzing file dependencies",
-					showLoadingDots: true, // ADDED
-				});
-
-				fileDependencies = await buildDependencyGraph(
-					allScannedFiles,
-					rootFolder.uri,
-					{
-						useCache: options?.useDependencyCache ?? true,
-						maxConcurrency: options?.maxConcurrency ?? 15,
-						skipLargeFiles: options?.skipLargeFiles ?? true,
-						maxFileSizeForParsing: options?.maxFileSize ?? DEFAULT_SIZE,
-						retryFailedFiles: true,
-						maxRetries: 3,
-					},
-				);
-
-				dependencyBuildTime = Date.now() - dependencyStartTime;
-				if (
-					enablePerformanceMonitoring &&
-					dependencyBuildTime >
-						PERFORMANCE_THRESHOLDS.DEPENDENCY_BUILD_TIME_WARNING
-				) {
-					console.warn(
-						`[ContextService] Dependency graph build took ${dependencyBuildTime}ms (threshold: ${PERFORMANCE_THRESHOLDS.DEPENDENCY_BUILD_TIME_WARNING}ms)`,
-					);
-				}
-
-				reverseFileDependencies = buildReverseDependencyGraph(
-					fileDependencies,
-					rootFolder.uri,
-				);
-
-				this.postMessageToWebview({
-					type: "statusUpdate",
-					value: `Analyzed ${fileDependencies.size} file dependencies in ${dependencyBuildTime}ms.`,
-				});
-			}
+			// if (shouldRunHeuristicPreSelection) {
+			// 	... (Removed dependency building logic)
+			// }
 
 			// Optimized symbol processing with limits
 			const documentSymbolsMap = new Map<string, vscode.DocumentSymbol[]>();
@@ -945,8 +809,8 @@ export class ContextService {
 						allScannedFiles,
 						rootFolder.uri,
 						editorContext,
-						fileDependencies,
-						this._convertDependencyMapToStringMap(reverseFileDependencies),
+						undefined, // Removed: fileDependencies
+						undefined, // Removed: reverseFileDependencies
 						activeSymbolDetailedInfo,
 						undefined, // semanticGraph
 						cancellationToken,
@@ -1136,11 +1000,8 @@ export class ContextService {
 						},
 						modelName: DEFAULT_FLASH_LITE_MODEL, // Use the default model for selection
 						cancellationToken,
-						fileDependencies:
-							this._convertDependencyMapToStringMap(fileDependencies),
-						reverseDependencies: this._convertDependencyMapToStringMap(
-							reverseFileDependencies,
-						),
+						fileDependencies: new Map(),
+						reverseDependencies: new Map(),
 						preSelectedHeuristicFiles: heuristicSelectedFiles, // Pass heuristicSelectedFiles
 						fileSummaries: fileSummariesForAI, // Pass the generated file summaries
 						selectionOptions: {
@@ -1318,10 +1179,8 @@ export class ContextService {
 				rootFolder.uri,
 				DEFAULT_CONTEXT_CONFIG,
 				this.changeLogger.getChangeLog(),
-				fileDependencies,
 				documentSymbolsMap,
 				activeSymbolDetailedInfo, // Pass the new argument
-				activeSymbolDetailedInfo?.referencedTypeDefinitions ?? undefined, // Corrected argument
 			);
 
 			// --- New logic to prepend project type preamble ---

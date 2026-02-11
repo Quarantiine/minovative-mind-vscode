@@ -223,7 +223,12 @@ export interface UpdateOptimizationSettingsMessage {
 
 export interface CodeFileStreamStartMessage {
 	type: "codeFileStreamStart";
-	value: { streamId: string; filePath: string; languageId: string };
+	value: {
+		streamId: string;
+		filePath: string;
+		languageId: string;
+		status?: string;
+	};
 }
 
 export interface CodeFileStreamChunkMessage {

@@ -75,6 +75,11 @@
 				"command": "minovative-mind.explainSelection",
 				"title": "Generate Explanation",
 				"category": "Minovative Mind"
+			},
+			{
+				"command": "antigravity.getChromeDevtoolsMcpUrl",
+				"title": "Get Chrome DevTools MCP URL",
+				"category": "Minovative Mind"
 			}
 		],
 		"menus": {

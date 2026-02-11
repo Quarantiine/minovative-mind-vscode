@@ -65,7 +65,7 @@ export class DiagnosticService {
 	public static async formatContextualDiagnostics(
 		documentUri: vscode.Uri,
 		workspaceRoot: vscode.Uri,
-		options: FormatDiagnosticsOptions
+		options: FormatDiagnosticsOptions,
 	): Promise<string | undefined> {
 		const allDiagnostics = DiagnosticService.getDiagnosticsForUri(documentUri);
 		if (!allDiagnostics || allDiagnostics.length === 0) {
@@ -91,7 +91,7 @@ export class DiagnosticService {
 			// Focus on Information and Hints, potentially with higher limits for them.
 			effectiveIncludeSeverities = new Set([
 				...(options.includeSeverities.includes(
-					vscode.DiagnosticSeverity.Information
+					vscode.DiagnosticSeverity.Information,
 				)
 					? [vscode.DiagnosticSeverity.Information]
 					: []),
@@ -117,25 +117,25 @@ export class DiagnosticService {
 			filteredDiagnostics = allDiagnostics.filter(
 				(d) =>
 					options.selection?.intersection(d.range) &&
-					effectiveIncludeSeverities.has(d.severity)
+					effectiveIncludeSeverities.has(d.severity),
 			);
 		} else {
 			// Scenario 2: No selection (whole file) - filter by effectiveIncludeSeverities
 			const relevantDiagnostics = allDiagnostics.filter((d) =>
-				effectiveIncludeSeverities.has(d.severity)
+				effectiveIncludeSeverities.has(d.severity),
 			);
 
 			const errors = relevantDiagnostics.filter(
-				(d) => d.severity === vscode.DiagnosticSeverity.Error
+				(d) => d.severity === vscode.DiagnosticSeverity.Error,
 			);
 			const warnings = relevantDiagnostics.filter(
-				(d) => d.severity === vscode.DiagnosticSeverity.Warning
+				(d) => d.severity === vscode.DiagnosticSeverity.Warning,
 			);
 			const infos = relevantDiagnostics.filter(
-				(d) => d.severity === vscode.DiagnosticSeverity.Information
+				(d) => d.severity === vscode.DiagnosticSeverity.Information,
 			);
 			const hints = relevantDiagnostics.filter(
-				(d) => d.severity === vscode.DiagnosticSeverity.Hint
+				(d) => d.severity === vscode.DiagnosticSeverity.Hint,
 			);
 
 			// Sort each group by line number, then character position
@@ -160,12 +160,12 @@ export class DiagnosticService {
 				effectiveIncludeSeverities.has(vscode.DiagnosticSeverity.Information)
 			) {
 				filteredDiagnostics.push(
-					...infos.slice(0, effectiveMaxPerSeverityInfo)
+					...infos.slice(0, effectiveMaxPerSeverityInfo),
 				);
 			}
 			if (effectiveIncludeSeverities.has(vscode.DiagnosticSeverity.Hint)) {
 				filteredDiagnostics.push(
-					...hints.slice(0, effectiveMaxPerSeverityHint)
+					...hints.slice(0, effectiveMaxPerSeverityHint),
 				);
 			}
 		}
@@ -230,18 +230,18 @@ export class DiagnosticService {
 
 				const snippetStartLine = Math.max(
 					0,
-					diag.range.start.line - linesBefore
+					diag.range.start.line - linesBefore,
 				);
 				const snippetEndLine = Math.min(
 					fileContentLines.length - 1,
-					diag.range.end.line + linesAfter
+					diag.range.end.line + linesAfter,
 				);
 
 				const actualSnippetEndLine = Math.max(snippetStartLine, snippetEndLine);
 
 				const snippetLines = fileContentLines.slice(
 					snippetStartLine,
-					actualSnippetEndLine + 1
+					actualSnippetEndLine + 1,
 				);
 
 				let languageId = path
@@ -305,7 +305,7 @@ export class DiagnosticService {
 					const lineContent = snippetLines[i];
 					const paddedLineNum = String(displayLineNum).padStart(
 						maxLineNumLength,
-						" "
+						" ",
 					);
 
 					let highlightedLine = `${paddedLineNum}: ${lineContent}`;
@@ -334,7 +334,7 @@ export class DiagnosticService {
 						// Create a marker line if there's an actual range to highlight on this line
 						if (endChar > startChar) {
 							const markerPadding = " ".repeat(
-								maxLineNumLength + 2 + startChar
+								maxLineNumLength + 2 + startChar,
 							); // +2 for ": "
 							const marker = "^".repeat(endChar - startChar);
 							markerLine = `${markerPadding}${marker} <-- ISSUE\n`;
@@ -381,13 +381,13 @@ export class DiagnosticService {
 		uri: vscode.Uri,
 		token?: vscode.CancellationToken,
 		timeoutMs: number = 10000,
-		checkIntervalMs: number = 500,
-		requiredStableChecks: number = 10
+		checkIntervalMs: number = 200,
+		requiredStableChecks: number = 5,
 	): Promise<void> {
 		console.log(
 			`[DiagnosticService] Waiting for diagnostics to stabilize for ${uri.fsPath} ` +
 				`with timeoutMs=${timeoutMs}, baseCheckIntervalMs=${checkIntervalMs}, ` +
-				`requiredStableChecks=${requiredStableChecks}...`
+				`requiredStableChecks=${requiredStableChecks}...`,
 		);
 		const startTime = Date.now();
 		let lastDiagnosticsString: string | undefined;
@@ -399,7 +399,7 @@ export class DiagnosticService {
 		while (Date.now() - startTime < timeoutMs) {
 			if (token?.isCancellationRequested) {
 				console.log(
-					`[DiagnosticService] Waiting for diagnostics cancelled for ${uri.fsPath}.`
+					`[DiagnosticService] Waiting for diagnostics cancelled for ${uri.fsPath}.`,
 				);
 				return;
 			}
@@ -429,26 +429,26 @@ export class DiagnosticService {
 					range: d.range,
 					code: d.code,
 					source: d.source, // Include source for more robust comparison
-				}))
+				})),
 			);
 
 			if (lastDiagnosticsString === currentDiagnosticsString) {
 				stableCount++;
 				console.log(
-					`[DiagnosticService] Diagnostics stable (${stableCount}/${requiredStableChecks}) for ${uri.fsPath}.`
+					`[DiagnosticService] Diagnostics stable (${stableCount}/${requiredStableChecks}) for ${uri.fsPath}.`,
 				);
 				if (stableCount >= requiredStableChecks) {
 					console.log(
 						`[DiagnosticService] Diagnostics stabilized for ${
 							uri.fsPath
-						} after ${Date.now() - startTime}ms.`
+						} after ${Date.now() - startTime}ms.`,
 					);
 					return;
 				}
 				consecutiveUnstableChecks = 0; // Reset unstable counter on stability
 			} else {
 				console.log(
-					`[DiagnosticService] Diagnostics changed for ${uri.fsPath}. Resetting stability counter.`
+					`[DiagnosticService] Diagnostics changed for ${uri.fsPath}. Resetting stability counter.`,
 				);
 				stableCount = 0;
 				consecutiveUnstableChecks++;
@@ -464,20 +464,20 @@ export class DiagnosticService {
 				const jitter = Math.random() * maxJitter;
 				actualCheckInterval = Math.min(
 					checkIntervalMs * backoffFactor + jitter,
-					checkIntervalMs + maxBackoffDelay // Cap the total backoff
+					checkIntervalMs + maxBackoffDelay, // Cap the total backoff
 				);
 			}
 
 			console.log(
 				`[DiagnosticService] Next check for ${
 					uri.fsPath
-				} in ${actualCheckInterval.toFixed(0)}ms.`
+				} in ${actualCheckInterval.toFixed(0)}ms.`,
 			);
 			await sleep(actualCheckInterval);
 		}
 
 		console.warn(
-			`[DiagnosticService] Timeout (${timeoutMs}ms) waiting for diagnostics to stabilize for ${uri.fsPath}. Diagnostics might not be fully up-to-date.`
+			`[DiagnosticService] Timeout (${timeoutMs}ms) waiting for diagnostics to stabilize for ${uri.fsPath}. Diagnostics might not be fully up-to-date.`,
 		);
 	}
 }

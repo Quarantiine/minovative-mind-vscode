@@ -61,6 +61,9 @@ Response (YES/NO):`;
 	/**
 	 * Checks if the user's prompt implies a request to rewrite the file entirely.
 	 */
+	/**
+	 * Checks if the user's prompt implies a request to rewrite the file entirely.
+	 */
 	public async checkRewriteIntent(
 		promptText: string,
 		token?: vscode.CancellationToken,
@@ -68,6 +71,74 @@ Response (YES/NO):`;
 		if (!promptText || promptText.trim().length === 0) {
 			return false;
 		}
+
+		const lowerPrompt = promptText.toLowerCase();
+
+		// Heuristic 1: explicit rewrite keywords
+		// Words that strongly suggest replacement/rewrite
+		const rewriteKeywords = [
+			"rewrite",
+			"replace the entire",
+			"replace the whole",
+			"overhaul",
+			"regenerate",
+			"rewrite the file",
+			"rewrite this file",
+		];
+
+		// Heuristic 2: explicit modification keywords
+		// Words that strongly suggest partial editing
+		const editKeywords = [
+			"add function",
+			"add method",
+			"update function",
+			"modify",
+			"change",
+			"fix",
+			"edit",
+			"append",
+			"insert",
+			"line", // "change line X"
+		];
+
+		// Check for strong rewrite signals
+		if (rewriteKeywords.some((keyword) => lowerPrompt.includes(keyword))) {
+			console.log(
+				`[LightweightClassificationService] Heuristic detected rewrite intent for prompt: "${promptText.substring(
+					0,
+					50,
+				)}..."`,
+			);
+			return true;
+		}
+
+		// Check for strong edit signals
+		// If specific edit signals are present and NO rewrite signals, assume edit.
+		if (editKeywords.some((keyword) => lowerPrompt.includes(keyword))) {
+			console.log(
+				`[LightweightClassificationService] Heuristic detected edit intent for prompt: "${promptText.substring(
+					0,
+					50,
+				)}..."`,
+			);
+			return false;
+		}
+
+		// If ambiguous (no strong keywords), falling back to AI check is safer but slower.
+		// However, for speed, we might bias towards "False" (Edit) if the prompt is short,
+		// as most user interactions are edits.
+		// Let's keep the AI check for now but only if the prompt is long enough to be complex.
+		if (promptText.length < 50) {
+			// Short prompts without keywords -> likely just "fix this" or "add x" which are edits.
+			return false;
+		}
+
+		console.log(
+			`[LightweightClassificationService] Heuristics ambiguous. Falling back to AI check for prompt: "${promptText.substring(
+				0,
+				50,
+			)}..."`,
+		);
 
 		const prompt = `
 Analyze the following user prompt and determine if the user intends to completely rewrite, replace, or overhaul an existing file/codebase, as opposed to just editing or modifying a part of it.

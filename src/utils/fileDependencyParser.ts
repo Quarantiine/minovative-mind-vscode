@@ -2,21 +2,24 @@ import * as ts from "typescript";
 import * as vscode from "vscode";
 import * as path from "path";
 import { TextDecoder } from "util";
-import { DependencyRelation } from "../context/dependencyGraphBuilder";
+export interface DependencyRelation {
+	path: string;
+	relationType: "runtime" | "type" | "unknown";
+}
 
 export async function parseFileImports(
 	filePath: string,
 	projectRoot: vscode.Uri,
 	compilerOptions: ts.CompilerOptions,
 	compilerHost: ts.CompilerHost,
-	moduleResolutionCache: ts.ModuleResolutionCache
+	moduleResolutionCache: ts.ModuleResolutionCache,
 ): Promise<DependencyRelation[]> {
 	const importedRelationsMap = new Map<string, "runtime" | "type">();
 
 	try {
 		// Read the file content
 		const fileContentUint8 = await vscode.workspace.fs.readFile(
-			vscode.Uri.file(filePath)
+			vscode.Uri.file(filePath),
 		);
 		const fileContent = new TextDecoder("utf-8").decode(fileContentUint8);
 
@@ -26,7 +29,7 @@ export async function parseFileImports(
 			fileContent,
 			ts.ScriptTarget.Latest,
 			true,
-			ts.ScriptKind.TS
+			ts.ScriptKind.TS,
 		);
 
 		const projectRootFsPath = projectRoot.fsPath;
@@ -59,7 +62,7 @@ export async function parseFileImports(
 					filePath,
 					compilerOptions,
 					compilerHost,
-					moduleResolutionCache
+					moduleResolutionCache,
 				);
 
 				if (
@@ -77,14 +80,14 @@ export async function parseFileImports(
 				try {
 					let relativeToProjectRoot = path.relative(
 						projectRootFsPath,
-						resolvedModule.resolvedModule.resolvedFileName
+						resolvedModule.resolvedModule.resolvedFileName,
 					);
 
 					// Normalize the resulting relative path to use forward slashes (`/`) consistently
 					relativeToProjectRoot = relativeToProjectRoot.replace(/\\/g, "/");
 
 					const existingRelation = importedRelationsMap.get(
-						relativeToProjectRoot
+						relativeToProjectRoot,
 					);
 					// If it's already a runtime import, don't downgrade it to a type import.
 					if (existingRelation !== "runtime") {
@@ -94,7 +97,7 @@ export async function parseFileImports(
 					// Log error if path conversion to relative fails for a specific specifier
 					console.error(
 						`Failed to make resolved path relative for specifier '${moduleSpecifierText}' in file '${filePath}':`,
-						pathResolutionError
+						pathResolutionError,
 					);
 				}
 			}
@@ -110,6 +113,6 @@ export async function parseFileImports(
 		([path, relationType]) => ({
 			path,
 			relationType,
-		})
+		}),
 	);
 }

@@ -161,40 +161,28 @@ export class PlanExecutionService {
 		token: vscode.CancellationToken,
 		progress?: vscode.Progress<{ message?: string; increment?: number }>,
 	): Promise<void> {
-		const chunkSize = 5; // Characters per chunk
-		const delayMs = 0; // Delay between chunks
-
-		for (let i = 0; i < content.length; i += chunkSize) {
-			if (token.isCancellationRequested) {
-				console.log("Typing animation cancelled.");
-				throw new Error("Operation cancelled by user."); // Standard cancellation error
-			}
-			const chunk = content.substring(
-				i,
-				Math.min(i + chunkSize, content.length),
-			);
-
-			await editor.edit((editBuilder) => {
-				const endPosition = editor.document.positionAt(
-					editor.document.getText().length,
-				);
-				editBuilder.insert(endPosition, chunk);
-			});
-
-			const lastLine = editor.document.lineAt(editor.document.lineCount - 1);
-			editor.revealRange(lastLine.range, vscode.TextEditorRevealType.Default);
-
-			if (progress) {
-				progress.report({
-					message: `Typing content into ${path.basename(
-						editor.document.fileName,
-					)}...`,
-				});
-			}
-			if (!token.isCancellationRequested) {
-				await new Promise((resolve) => setTimeout(resolve, delayMs));
-			}
+		if (token.isCancellationRequested) {
+			throw new Error(ERROR_OPERATION_CANCELLED);
 		}
+
+		if (progress) {
+			progress.report({
+				message: `Inserting content into ${path.basename(
+					editor.document.fileName,
+				)}...`,
+			});
+		}
+
+		// Insert entire content instantly
+		await editor.edit((editBuilder) => {
+			const endPosition = editor.document.positionAt(
+				editor.document.getText().length,
+			);
+			editBuilder.insert(endPosition, content);
+		});
+
+		const lastLine = editor.document.lineAt(editor.document.lineCount - 1);
+		editor.revealRange(lastLine.range, vscode.TextEditorRevealType.Default);
 	}
 
 	private async _handleTypeContentAction(
@@ -405,7 +393,11 @@ export class PlanExecutionService {
 				const languageId = getLanguageId(path.extname(step.file));
 				this.postMessageToWebview({
 					type: "codeFileStreamStart",
-					value: { streamId, filePath: step.file, languageId },
+					value: {
+						streamId,
+						filePath: `/${path.basename(step.file)}`,
+						languageId,
+					},
 				});
 
 				const generatedContentResult =
@@ -421,14 +413,18 @@ export class PlanExecutionService {
 
 				this.postMessageToWebview({
 					type: "codeFileStreamEnd",
-					value: { streamId, filePath: step.file, success: true },
+					value: {
+						streamId,
+						filePath: `/${path.basename(step.file)}`,
+						success: true,
+					},
 				});
 			} catch (aiError: any) {
 				this.postMessageToWebview({
 					type: "codeFileStreamEnd",
 					value: {
 						streamId,
-						filePath: step.file,
+						filePath: `/${path.basename(step.file)}`,
 						success: false,
 						error: aiError instanceof Error ? aiError.message : String(aiError),
 					},

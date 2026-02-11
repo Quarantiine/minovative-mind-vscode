@@ -27,7 +27,7 @@ async function sleep(ms: number): Promise<void> {
 // --- Helper Function for Predefined Actions (Explain Action Only) ---
 // This is now ONLY used for the 'explain' command directly.
 async function executeExplainAction(
-	sidebarProvider: SidebarProvider // Pass the provider instance
+	sidebarProvider: SidebarProvider, // Pass the provider instance
 ): Promise<ActionResult> {
 	const editor = vscode.window.activeTextEditor;
 	if (!editor) {
@@ -89,7 +89,7 @@ async function executeExplainAction(
 `;
 
 	console.log(
-		`--- Sending explain Action Prompt (Model: ${selectedModel}) ---`
+		`--- Sending explain Action Prompt (Model: ${selectedModel}) ---`,
 	);
 	console.log(`--- End explain Action Prompt ---`);
 
@@ -102,7 +102,7 @@ async function executeExplainAction(
 			// activeApiKey, // Removed 2nd arg: apiKey
 			selectedModel, // Now 2nd arg: modelName (was 3rd)
 			undefined, // Now 3rd arg: history (not needed for explain) (was 4th)
-			"explain selection" // Now 4th arg: requestType (was 5th)
+			"explain selection", // Now 4th arg: requestType (was 5th)
 		);
 
 		if (
@@ -135,7 +135,7 @@ async function executeExplainAction(
 function findActiveSymbolDetailedInfo(
 	position: vscode.Position,
 	symbols: vscode.DocumentSymbol[] | undefined,
-	displayFileName: string
+	displayFileName: string,
 ): string | undefined {
 	if (!symbols || symbols.length === 0) {
 		return undefined;
@@ -145,7 +145,7 @@ function findActiveSymbolDetailedInfo(
 
 	// Helper to find the deepest symbol encompassing the position recursively
 	function findDeepest(
-		currentSymbols: vscode.DocumentSymbol[]
+		currentSymbols: vscode.DocumentSymbol[],
 	): vscode.DocumentSymbol | undefined {
 		let bestMatch: vscode.DocumentSymbol | undefined = undefined;
 
@@ -176,7 +176,7 @@ function findActiveSymbolDetailedInfo(
 			deepestSymbol,
 			displayFileName,
 			0, // currentDepth (start at 0 for the deepest symbol found)
-			4 // maxDepth
+			4, // maxDepth
 		);
 		return `\n\n--- Active Symbol Context ---\n${symbolHierarchy}\n\n--- End Active Symbol Context ---\n`;
 	}
@@ -190,7 +190,7 @@ function findActiveSymbolDetailedInfo(
 // --- Activate Function ---
 export async function activate(context: vscode.ExtensionContext) {
 	console.log(
-		'Congratulations, your extension "minovative-mind-vscode" is now active!'
+		'Congratulations, your extension "minovative-mind-vscode" is now active!',
 	);
 
 	// --- Sidebar Setup ---
@@ -208,7 +208,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const sidebarProvider = new SidebarProvider(
 		context.extensionUri,
 		context,
-		workspaceRootUri
+		workspaceRootUri,
 	);
 
 	// --- Initialize Provider (Await Key & Settings Loading) ---
@@ -218,8 +218,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(
 			SidebarProvider.viewType,
-			sidebarProvider
-		)
+			sidebarProvider,
+		),
 	);
 
 	// Modify Selection Command
@@ -268,7 +268,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			activeSymbolContext = findActiveSymbolDetailedInfo(
 				cursorPosition,
 				symbols,
-				displayFileName
+				displayFileName,
 			);
 
 			// 2. Implement Action Selection:
@@ -298,7 +298,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				{
 					placeHolder: "Select a command or type a custom prompt...",
 					title: "Minovative Mind: Modify Code",
-				}
+				},
 			);
 
 			if (!selectedCommand) {
@@ -332,7 +332,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				userProvidedMessage = input.trim();
 				if (userProvidedMessage.length === 0) {
 					vscode.window.showInformationMessage(
-						"Modification cancelled. No instruction/message provided."
+						"Modification cancelled. No instruction/message provided.",
 					);
 					return;
 				}
@@ -346,16 +346,16 @@ export async function activate(context: vscode.ExtensionContext) {
 			} else {
 				// originalSelection.isEmpty: Apply auto-selection logic
 				console.log(
-					"[Minovative Mind] No explicit user selection. Attempting automatic selection cascade."
+					"[Minovative Mind] No explicit user selection. Attempting automatic selection cascade.",
 				);
 
 				if (instruction === "chat" || instruction === "custom prompt") {
 					console.log(
-						"[Minovative Mind] No selection detected for chat/custom prompt. Will use file path reference."
+						"[Minovative Mind] No selection detected for chat/custom prompt. Will use file path reference.",
 					);
 				} else if (instruction === "/fix") {
 					const errorDiagnostics = allDiagnostics.filter(
-						(d) => d.severity === vscode.DiagnosticSeverity.Error
+						(d) => d.severity === vscode.DiagnosticSeverity.Error,
 					);
 
 					if (errorDiagnostics.length > 0) {
@@ -387,38 +387,38 @@ export async function activate(context: vscode.ExtensionContext) {
 						if (isFinite(minStartLine) && isFinite(maxEndLine)) {
 							const allErrorsRange = new vscode.Range(
 								new vscode.Position(minStartLine, minStartChar),
-								new vscode.Position(maxEndLine, maxEndChar)
+								new vscode.Position(maxEndLine, maxEndChar),
 							);
 							selectedText = editor.document.getText(allErrorsRange);
 							effectiveRange = allErrorsRange;
 						} else {
 							console.warn(
-								"[Minovative Mind] Could not determine valid range for all errors. Falling back to intelligent /fix logic."
+								"[Minovative Mind] Could not determine valid range for all errors. Falling back to intelligent /fix logic.",
 							);
 							const relevantSymbol =
 								await CodeSelectionService.findRelevantSymbolForFix(
 									editor.document,
 									cursorPosition,
 									allDiagnostics,
-									symbols
+									symbols,
 								);
 							if (relevantSymbol) {
 								selectedText = editor.document.getText(relevantSymbol.range);
 								effectiveRange = relevantSymbol.range;
 								vscode.window.showInformationMessage(
-									"Minovative Mind: Automatically selected relevant code block for /fix."
+									"Minovative Mind: Automatically selected relevant code block for /fix.",
 								);
 							} else {
 								console.log(
-									`[Minovative Mind] Intelligent selection for '/fix' failed. Falling back to full file selection.`
+									`[Minovative Mind] Intelligent selection for '/fix' failed. Falling back to full file selection.`,
 								);
 								selectedText = fullText;
 								effectiveRange = new vscode.Range(
 									editor.document.positionAt(0),
-									editor.document.positionAt(fullText.length)
+									editor.document.positionAt(fullText.length),
 								);
 								vscode.window.showInformationMessage(
-									"Minovative Mind: Falling back to full file selection for /fix as no specific code unit was found."
+									"Minovative Mind: Falling back to full file selection for /fix as no specific code unit was found.",
 								);
 							}
 						}
@@ -429,19 +429,19 @@ export async function activate(context: vscode.ExtensionContext) {
 								editor.document,
 								cursorPosition,
 								allDiagnostics,
-								symbols
+								symbols,
 							);
 						if (relevantSymbol) {
 							selectedText = editor.document.getText(relevantSymbol.range);
 							effectiveRange = relevantSymbol.range;
 						} else {
 							console.log(
-								`[Minovative Mind] Intelligent selection for '/fix' failed. Falling back to full file selection.`
+								`[Minovative Mind] Intelligent selection for '/fix' failed. Falling back to full file selection.`,
 							);
 							selectedText = fullText;
 							effectiveRange = new vscode.Range(
 								editor.document.positionAt(0),
-								editor.document.positionAt(fullText.length)
+								editor.document.positionAt(fullText.length),
 							);
 						}
 					}
@@ -451,21 +451,20 @@ export async function activate(context: vscode.ExtensionContext) {
 			if (!effectiveRange.isEqual(originalSelection)) {
 				const newSelection = new vscode.Selection(
 					effectiveRange.start,
-					effectiveRange.end
+					effectiveRange.end,
 				);
 				editor.selection = newSelection;
 				editor.revealRange(
 					effectiveRange,
-					vscode.TextEditorRevealType.InCenterIfOutsideViewport
+					vscode.TextEditorRevealType.InCenterIfOutsideViewport,
 				);
 			}
 
 			// 5. Implement Context Gathering and Formatting:
 			if (instruction === "/fix") {
 				// Read the active editor's file content
-				const fileContentBytes = await vscode.workspace.fs.readFile(
-					documentUri
-				);
+				const fileContentBytes =
+					await vscode.workspace.fs.readFile(documentUri);
 				const fileContent = Buffer.from(fileContentBytes).toString("utf-8");
 
 				// Retrieve optimization settings
@@ -500,7 +499,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				diagnosticsString = await DiagnosticService.formatContextualDiagnostics(
 					documentUri,
 					sidebarProvider.workspaceRootUri!,
-					formatOptions
+					formatOptions,
 				);
 			}
 
@@ -513,8 +512,8 @@ export async function activate(context: vscode.ExtensionContext) {
 				effectiveRange.isEqual(
 					new vscode.Range(
 						editor.document.positionAt(0),
-						editor.document.positionAt(fullText.length)
-					)
+						editor.document.positionAt(fullText.length),
+					),
 				)
 			) {
 				contextDescription = `the entire file`;
@@ -531,9 +530,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 				const symbolContextBlock = activeSymbolContext || "";
 
-				const instructionRefined = `/plan ONLY fix the issues described in the 'Relevant Diagnostics' section within the context of file \`${displayFileName}\` and related files (if needed) and more.`;
-
-				composedMessage = `${instructionRefined}\n\n\n${diagnosticsBlock}${symbolContextBlock}\n\nHighlevel thinking first. No coding snippets yet.`;
+				composedMessage = `/plan Fix the issues described in the 'Relevant Diagnostics' section. Explore the project as needed to identify root causes and implement a production-ready fix.\n\n${diagnosticsBlock}${symbolContextBlock}`;
 			} else if (instruction === "/docs") {
 				const docsInstruction = `/plan Document and Clean Code. Instruction: For the context provided below, perform two simultaneous actions: 
 				\n\n1. **Documentation**: Generate comprehensive, high-quality documentation. 
@@ -555,27 +552,15 @@ export async function activate(context: vscode.ExtensionContext) {
 				}
 			} else if (instruction === "chat") {
 				if (originalSelection.isEmpty) {
-					composedMessage =
-						`My message: ${userProvidedMessage} \n\nInstruction: Right now, in this project, focus on the conversation within the context of file \`${displayFileName}\` and related files (if needed) and more. \n\n` +
-						"\n\nNo coding snippets yet.";
+					composedMessage = userProvidedMessage || "";
 				} else {
-					composedMessage =
-						`Message: ${userProvidedMessage}\n\n` +
-						`Instruction: Right now, in this project \`${displayFileName}\`, focus on the conversation and use related files if you have to and more. I've provided ${contextDescription}.\n\n` +
-						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`` +
-						"\n\nNo coding snippets yet.";
+					composedMessage = `${userProvidedMessage || ""}\n\n--- Context: ${displayFileName} (${contextDescription}) ---\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\``;
 				}
 			} else if (instruction === "custom prompt") {
 				if (originalSelection.isEmpty) {
-					composedMessage =
-						`/plan My message: ${userProvidedMessage} \n\nInstruction: Right now, in this project, focus on the conversation within the context of file \`${displayFileName}\` and use related files if you have to and more. \n\n` +
-						"\n\nNo coding snippets yet.";
+					composedMessage = `/plan ${userProvidedMessage || ""}`;
 				} else {
-					composedMessage =
-						`/plan Message: ${userProvidedMessage}\n\n` +
-						`Instruction: In this project, \`${displayFileName}\`, focus on the conversation and use related files if you have to and more. I've provided ${contextDescription}.\n\n` +
-						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`` +
-						"\n\nNo coding snippets yet.";
+					composedMessage = `/plan ${userProvidedMessage || ""}\n\n--- Context: ${displayFileName} (${contextDescription}) ---\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\``;
 				}
 			} else {
 				vscode.window.showErrorMessage("Unknown instruction received.");
@@ -585,7 +570,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			// 7. Prefill Chat Input:
 			await vscode.commands.executeCommand("minovative-mind.activitybar.focus"); // Ensure sidebar is open
 			// Wait for the sidebar webview to become visible and ready after opening
-			await sleep(100);
+			await sleep(150);
 			sidebarProvider.postMessageToWebview({
 				type: "PrefillChatInput",
 				payload: { text: composedMessage },
@@ -593,7 +578,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 			// 8. Exit Command:
 			return;
-		}
+		},
 	);
 	context.subscriptions.push(modifySelectionDisposable);
 
@@ -604,7 +589,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			const selectedModel = DEFAULT_FLASH_LITE_MODEL; // Use default model for explain action
 			if (!selectedModel) {
 				vscode.window.showErrorMessage(
-					"Minovative Mind: No AI model selected. Please check the sidebar."
+					"Minovative Mind: No AI model selected. Please check the sidebar.",
 				);
 				return;
 			}
@@ -635,25 +620,35 @@ export async function activate(context: vscode.ExtensionContext) {
 							{
 								modal: true, // Show in a modal dialog
 								detail: result.content, // Use 'detail' for longer content
-							}
+							},
 						);
 					} else {
 						vscode.window.showErrorMessage(`Minovative Mind: ${result.error}`);
 					}
 					progress.report({ increment: 100, message: "Done." });
-				}
+				},
 			);
-		}
+		},
 	);
 	context.subscriptions.push(explainDisposable);
+
+	// Silence the Chrome DevTools MCP URL warning from Antigravity IDE
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			"antigravity.getChromeDevtoolsMcpUrl",
+			() => {
+				return undefined;
+			},
+		),
+	);
 
 	// Command to focus the activity bar container (NO CHANGE HERE)
 	context.subscriptions.push(
 		vscode.commands.registerCommand("minovative-mind.activitybar.focus", () => {
 			vscode.commands.executeCommand(
-				"workbench.view.extension.minovative-mind"
+				"workbench.view.extension.minovative-mind",
 			);
-		})
+		}),
 	);
 } // End activate function
 

@@ -1,6 +1,7 @@
 import { EnhancedCodeGenerator } from "../../ai/enhancedCodeGeneration";
 import * as sidebarTypes from "../common/sidebarTypes";
 import * as vscode from "vscode";
+import * as path from "path";
 import { TEMPERATURE } from "../common/sidebarConstants";
 import { AIRequestService } from "../../services/aiRequestService";
 import * as crypto from "crypto";
@@ -15,9 +16,9 @@ export async function _performModification(
 	enhancedCodeGenerator: EnhancedCodeGenerator,
 	token: vscode.CancellationToken,
 	postMessageToWebview: (
-		message: sidebarTypes.ExtensionToWebviewMessages
+		message: sidebarTypes.ExtensionToWebviewMessages,
 	) => void,
-	isMergeOperation: boolean = false // isMergeOperation parameter
+	isMergeOperation: boolean = false, // isMergeOperation parameter
 ): Promise<string> {
 	const streamId = crypto.randomUUID(); // Added as per instruction 1
 
@@ -72,7 +73,11 @@ export async function _performModification(
 		// Send codeFileStreamStart message immediately before content generation
 		postMessageToWebview({
 			type: "codeFileStreamStart",
-			value: { streamId: streamId, filePath: filePath, languageId: languageId }, // Modified as per instruction 2
+			value: {
+				streamId: streamId,
+				filePath: `/${path.basename(filePath)}`,
+				languageId: languageId,
+			}, // Modified as per instruction 2
 		});
 
 		const generationContext = {
@@ -87,14 +92,18 @@ export async function _performModification(
 			generationContext,
 			modelName,
 			token,
-			generationConfig
+			generationConfig,
 		);
 		modifiedContent = genResult.content;
 
 		// Send `codeFileStreamEnd` on success
 		postMessageToWebview({
 			type: "codeFileStreamEnd",
-			value: { streamId: streamId, filePath: filePath, success: true }, // Modified as per instruction 4
+			value: {
+				streamId: streamId,
+				filePath: `/${path.basename(filePath)}`,
+				success: true,
+			}, // Modified as per instruction 4
 		});
 	} catch (error) {
 		console.error("Error during AI file", error); // Log any caught errors
@@ -103,7 +112,7 @@ export async function _performModification(
 			type: "codeFileStreamEnd",
 			value: {
 				streamId: streamId, // Modified as per instruction 4 (use the declared streamId)
-				filePath: filePath,
+				filePath: `/${path.basename(filePath)}`,
 				success: false,
 				error: error instanceof Error ? error.message : String(error),
 			},

@@ -13,7 +13,7 @@ import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import { ContextBuildOptions } from "../types/context";
 
 const AI_CHAT_PROMPT =
-	"Lets discuss and do not code yet. You should only focus on high level thinking in this project, using the project context given to you. Only respone helpfully with production-ready explainations, no placeholders, no TODOs for the user. Make sure to mention what files are being changed or created if any. Most importantly, only focus on the User's message and the project context, do not make assumptions outside of that. If the User's message is not clear, ask for clarification.";
+	"Lets discuss and do not code yet. Focus on high-level thinking and project context to explain production-ready solutions. If the User's message is not clear, ask for clarification.";
 
 export class ChatService {
 	private urlContextService: UrlContextService;
