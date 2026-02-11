@@ -16,99 +16,102 @@ import { RequiredDomElements } from "../types/webviewTypes";
  */
 export function initializeDomElements(): RequiredDomElements | null {
 	const chatContainer = document.getElementById(
-		"chat-container"
+		"chat-container",
 	) as HTMLDivElement;
 	const chatInput = document.getElementById(
-		"chat-input"
+		"chat-input",
 	) as HTMLTextAreaElement;
 	const sendButton = document.getElementById(
-		"send-button"
+		"send-button",
 	) as HTMLButtonElement;
 	const statusArea = document.getElementById("status-area") as HTMLDivElement;
 	const modelSelect = document.getElementById(
-		"model-select"
+		"model-select",
 	) as HTMLSelectElement;
 	const currentKeyDisplay = document.getElementById(
-		"current-key-display"
+		"current-key-display",
 	) as HTMLSpanElement;
 	const prevKeyButton = document.getElementById(
-		"prev-key-button"
+		"prev-key-button",
 	) as HTMLButtonElement;
 	const nextKeyButton = document.getElementById(
-		"next-key-button"
+		"next-key-button",
 	) as HTMLButtonElement;
 	const deleteKeyButton = document.getElementById(
-		"delete-key-button"
+		"delete-key-button",
 	) as HTMLButtonElement;
 	const addKeyInput = document.getElementById(
-		"add-key-input"
+		"add-key-input",
 	) as HTMLInputElement;
 	const addKeyButton = document.getElementById(
-		"add-key-button"
+		"add-key-button",
 	) as HTMLButtonElement;
 	const apiKeyStatusDiv = document.getElementById(
-		"api-key-status"
+		"api-key-status",
 	) as HTMLDivElement;
 	const clearChatButton = document.getElementById(
-		"clear-chat-button"
+		"clear-chat-button",
 	) as HTMLButtonElement;
 	const saveChatButton = document.getElementById(
-		"save-chat-button"
+		"save-chat-button",
 	) as HTMLButtonElement;
 	const loadChatButton = document.getElementById(
-		"load-chat-button"
+		"load-chat-button",
 	) as HTMLButtonElement;
 	const cancelGenerationButton = document.getElementById(
-		"cancel-generation-button"
+		"cancel-generation-button",
 	) as HTMLButtonElement;
 	const planParseErrorContainer = document.getElementById(
-		"plan-parse-error-container"
+		"plan-parse-error-container",
 	) as HTMLDivElement;
 	const planParseErrorDisplay = document.getElementById(
-		"plan-parse-error-display"
+		"plan-parse-error-display",
 	) as HTMLParagraphElement;
 	const failedJsonDisplay = document.getElementById(
-		"failed-json-display"
+		"failed-json-display",
 	) as HTMLElement; // Can be any HTML element
 	const retryGenerationButton = document.getElementById(
-		"retry-generation-button"
+		"retry-generation-button",
 	) as HTMLButtonElement;
 	const cancelParseErrorButton = document.getElementById(
-		"cancel-parse-error-button"
+		"cancel-parse-error-button",
 	) as HTMLButtonElement;
 	const commitReviewContainer = document.getElementById(
-		"commit-review-container"
+		"commit-review-container",
 	) as HTMLDivElement;
 	const commitMessageTextarea = document.getElementById(
-		"commit-message-textarea"
+		"commit-message-textarea",
 	) as HTMLTextAreaElement;
 	const stagedFilesList = document.getElementById(
-		"staged-files-list"
+		"staged-files-list",
 	) as HTMLUListElement;
 	const confirmCommitButton = document.getElementById(
-		"confirm-commit-button"
+		"confirm-commit-button",
 	) as HTMLButtonElement;
 	const cancelCommitButton = document.getElementById(
-		"cancel-commit-button"
+		"cancel-commit-button",
 	) as HTMLButtonElement;
 	const emptyChatPlaceholder = document.getElementById(
-		"empty-chat-placeholder"
+		"empty-chat-placeholder",
 	) as HTMLDivElement;
 	const revertChangesButton = document.getElementById(
-		"revert-changes-button"
+		"revert-changes-button",
 	) as HTMLButtonElement;
 
 	const chatInputControlsWrapper = document.getElementById(
-		"chat-input-controls-wrapper"
+		"chat-input-controls-wrapper",
 	) as HTMLDivElement;
 	const commandSuggestionsContainer = document.getElementById(
-		"command-suggestions-container"
+		"command-suggestions-container",
 	) as HTMLDivElement;
 	const openFileListButton = document.getElementById(
-		"openFileListButton"
+		"openFileListButton",
 	) as HTMLButtonElement;
 	const heuristicContextToggle = document.getElementById(
-		"heuristic-context-toggle"
+		"heuristic-context-toggle",
+	) as HTMLButtonElement;
+	const skipPlanConfirmationToggle = document.getElementById(
+		"skip-plan-confirmation-toggle",
 	) as HTMLButtonElement;
 	// const groundingToggle = document.getElementById(
 	// 	"grounding-toggle"
@@ -116,13 +119,13 @@ export function initializeDomElements(): RequiredDomElements | null {
 
 	// Token usage elements
 	const tokenUsageContainer = document.getElementById(
-		"token-usage-container"
+		"token-usage-container",
 	) as HTMLDivElement;
 	const tokenUsageDisplay = document.getElementById(
-		"token-usage-display"
+		"token-usage-display",
 	) as HTMLDivElement;
 	const tokenUsageToggle = document.getElementById(
-		"token-usage-toggle"
+		"token-usage-toggle",
 	) as HTMLButtonElement;
 
 	const modelUsagePercentagesList = document.createElement("div");
@@ -139,16 +142,16 @@ export function initializeDomElements(): RequiredDomElements | null {
 
 	// Image upload elements
 	const imageUploadInput = document.getElementById(
-		"image-upload-input"
+		"image-upload-input",
 	) as HTMLInputElement;
 	const attachImageButton = document.getElementById(
-		"attach-image-button"
+		"attach-image-button",
 	) as HTMLButtonElement;
 	const imagePreviewsContainer = document.getElementById(
-		"image-previews-container"
+		"image-previews-container",
 	) as HTMLDivElement;
 	const clearImagesButton = document.getElementById(
-		"clear-images-button"
+		"clear-images-button",
 	) as HTMLButtonElement;
 
 	// The current implementation of main.ts does not retrieve planConfirmationContainer,
@@ -157,11 +160,11 @@ export function initializeDomElements(): RequiredDomElements | null {
 	// if they are null. Therefore, they are not part of the initial fatal validation here.
 
 	const editingIndicator = document.getElementById(
-		"editing-indicator"
+		"editing-indicator",
 	) as HTMLElement | null;
 
 	const editMessageHelpText = document.getElementById(
-		"edit-message-help-text"
+		"edit-message-help-text",
 	) as HTMLElement | null;
 
 	const requiredElements = {
@@ -198,6 +201,7 @@ export function initializeDomElements(): RequiredDomElements | null {
 		commandSuggestionsContainer,
 		openFileListButton,
 		heuristicContextToggle,
+		skipPlanConfirmationToggle,
 
 		// Token usage elements
 		tokenUsageContainer,
@@ -226,7 +230,7 @@ export function initializeDomElements(): RequiredDomElements | null {
 
 	if (missingElements.length > 0) {
 		const errorMessage = `Critical Error: Required DOM elements not found. Webview UI cannot be initialized. Missing: ${missingElements.join(
-			", "
+			", ",
 		)}. Please check the extension's 'index.html' file and the webview JavaScript.`;
 		console.error(errorMessage);
 

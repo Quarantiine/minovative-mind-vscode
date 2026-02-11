@@ -34,7 +34,7 @@ let _chatRendererStylesInjected: boolean = false;
 
 // Function to set the global setLoadingState reference
 export function setGlobalSetLoadingState(
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	globalSetLoadingState = setLoadingState;
 	// Instruction 6: Inject conceptual CSS rules upon initialization
@@ -56,7 +56,7 @@ export function injectChatRendererStyles(): void {
 	document.head.appendChild(style);
 	_chatRendererStylesInjected = true;
 	console.log(
-		"[ChatMessageRenderer] Injected default CSS for editing state elements."
+		"[ChatMessageRenderer] Injected default CSS for editing state elements.",
 	);
 }
 
@@ -72,7 +72,7 @@ export function finalizeStreamingMessage(elements: RequiredDomElements): void {
 
 		// 1. Get parent message container
 		const messageContainer = appState.currentAiMessageContentElement.closest(
-			".message"
+			".message",
 		) as HTMLDivElement | null;
 
 		// 2. Ensure any remaining text in the buffer is added to accumulated text and trim it
@@ -88,7 +88,7 @@ export function finalizeStreamingMessage(elements: RequiredDomElements): void {
 
 			// Render the final accumulated content
 			appState.currentAiMessageContentElement.innerHTML = md.render(
-				appState.currentAccumulatedText
+				appState.currentAccumulatedText,
 			);
 			// Store the original markdown text for copy functionality
 			appState.currentAiMessageContentElement.dataset.originalMarkdown =
@@ -108,7 +108,7 @@ export function finalizeStreamingMessage(elements: RequiredDomElements): void {
 		clearEditingState(elements);
 	} else {
 		console.log(
-			"[ChatMessageRenderer] No active AI streaming message to finalize."
+			"[ChatMessageRenderer] No active AI streaming message to finalize.",
 		);
 	}
 }
@@ -125,7 +125,7 @@ export function appendMessage(
 	isRelevantFilesExpandedForHistory?: boolean,
 	isPlanExplanationForRender: boolean = false,
 	isPlanStepUpdateForRender: boolean = false,
-	imageParts?: ImageInlineData[]
+	imageParts?: ImageInlineData[],
 ): void {
 	// Instruction 4.1: Return immediately if it's a plan progress update.
 	if (isPlanStepUpdateForRender) {
@@ -161,7 +161,7 @@ export function appendMessage(
 	// Handle loading-message deduplication
 	if (className === "loading-message") {
 		const existingLoadingMsg = elements.chatContainer.querySelector(
-			".loading-message"
+			".loading-message",
 		) as HTMLDivElement;
 		if (existingLoadingMsg) {
 			if (existingLoadingMsg.textContent !== text) {
@@ -207,7 +207,7 @@ export function appendMessage(
 			lastMessage.querySelector(".context-agent-details")
 		) {
 			detailsElement = lastMessage.querySelector(
-				".context-agent-details"
+				".context-agent-details",
 			) as HTMLDetailsElement;
 		}
 
@@ -216,7 +216,7 @@ export function appendMessage(
 			const logEntryContainer = document.createElement("div");
 			logEntryContainer.classList.add(
 				"message-text-content",
-				"context-agent-content"
+				"context-agent-content",
 			);
 			logEntryContainer.innerHTML = md.render(text);
 			logEntryContainer.dataset.originalMarkdown = text;
@@ -250,7 +250,7 @@ export function appendMessage(
 		const textElementNew = document.createElement("div");
 		textElementNew.classList.add(
 			"message-text-content",
-			"context-agent-content"
+			"context-agent-content",
 		);
 		textElementNew.innerHTML = md.render(text);
 		textElementNew.dataset.originalMarkdown = text;
@@ -273,6 +273,14 @@ export function appendMessage(
 	senderElement.appendChild(document.createTextNode(`${sender}:\u00A0`));
 	messageElement.appendChild(senderElement);
 
+	// Add "Generated Plan" label for plan explanation messages
+	if (isPlanExplanationForRender) {
+		const planLabel = document.createElement("span");
+		planLabel.classList.add("generated-plan-label");
+		planLabel.textContent = "Generated Plan";
+		messageElement.appendChild(planLabel);
+	}
+
 	// Add error icon if it's an error message
 	if (className.includes("error-message")) {
 		const errorIconContainer = document.createElement("span");
@@ -280,7 +288,7 @@ export function appendMessage(
 		errorIconContainer.title = "Error";
 		setIconForButton(
 			errorIconContainer as HTMLButtonElement,
-			faExclamationTriangle
+			faExclamationTriangle,
 		); // Casting to HTMLButtonElement as setIconForButton expects it, but it's just setting innerHTML
 		messageElement.appendChild(errorIconContainer);
 	}
@@ -345,7 +353,7 @@ export function appendMessage(
 				const hunkContainer = document.createElement("div");
 				hunkContainer.classList.add("diff-hunk-container");
 				hunk.forEach((lineWrapper: HTMLDivElement) =>
-					hunkContainer.appendChild(lineWrapper)
+					hunkContainer.appendChild(lineWrapper),
 				);
 				codeElement.appendChild(hunkContainer);
 			}
@@ -458,12 +466,12 @@ export function appendMessage(
 			contextFilesDiv.classList.toggle("expanded", newIsExpanded);
 
 			const parentMessageElement = filesHeader.closest(
-				'.message[data-is-history="true"]'
+				'.message[data-is-history="true"]',
 			) as HTMLElement | null;
 			if (parentMessageElement && parentMessageElement.dataset.messageIndex) {
 				const messageIdx = parseInt(
 					parentMessageElement.dataset.messageIndex,
-					10
+					10,
 				);
 				if (!isNaN(messageIdx)) {
 					postMessageToExtension({
@@ -473,12 +481,12 @@ export function appendMessage(
 					});
 				} else {
 					console.warn(
-						"Failed to parse messageIndex from dataset for relevant files toggle."
+						"Failed to parse messageIndex from dataset for relevant files toggle.",
 					);
 				}
 			} else {
 				console.warn(
-					"Parent message element or messageIndex dataset not found for relevant files toggle."
+					"Parent message element or messageIndex dataset not found for relevant files toggle.",
 				);
 			}
 		});
@@ -560,7 +568,7 @@ export function appendMessage(
 				generatePlanButton = document.createElement("button");
 				generatePlanButton.classList.add(
 					"action-button",
-					"generate-plan-button"
+					"generate-plan-button",
 				);
 				setIconForButton(generatePlanButton, faLightbulb);
 				generatePlanButton.title = "Generate a /plan prompt from this message";
@@ -646,18 +654,18 @@ export function appendMessage(
 					if (isNaN(messageIndex) || messageIndex < 0) {
 						console.error(
 							"[ChatMessageRenderer] Invalid message index for editing:",
-							messageIndexStr
+							messageIndexStr,
 						);
 						updateStatus(
 							elements,
 							"Error: Cannot edit message. Please try again or refresh.",
-							true
+							true,
 						);
 						return;
 					}
 
 					const currentTextElement = messageElement.querySelector(
-						".message-text-content"
+						".message-text-content",
 					) as HTMLSpanElement;
 					// Use the stored original markdown to preserve formatting
 					const originalText =
@@ -690,7 +698,7 @@ export function appendMessage(
 					elements.sendButton.disabled = false;
 
 					console.log(
-						`[ChatMessageRenderer] Editing message at index: ${messageIndex}`
+						`[ChatMessageRenderer] Editing message at index: ${messageIndex}`,
 					);
 				});
 			}
@@ -810,10 +818,10 @@ export function appendMessage(
 }
 
 export function disableAllMessageActionButtons(
-	elements: RequiredDomElements
+	elements: RequiredDomElements,
 ): void {
 	const allHistoryMessages = elements.chatContainer.querySelectorAll(
-		".message[data-is-history='true']"
+		".message[data-is-history='true']",
 	);
 
 	allHistoryMessages.forEach((messageElement) => {
@@ -822,22 +830,22 @@ export function disableAllMessageActionButtons(
 		}
 
 		const copyButton = messageElement.querySelector(
-			".copy-button"
+			".copy-button",
 		) as HTMLButtonElement | null;
 		const deleteButton = messageElement.querySelector(
-			".delete-button"
+			".delete-button",
 		) as HTMLButtonElement | null;
 		const editButton = messageElement.querySelector(
-			".edit-button"
+			".edit-button",
 		) as HTMLButtonElement | null;
 		const copyContextButton = messageElement.querySelector(
-			".copy-context-button"
+			".copy-context-button",
 		) as HTMLButtonElement | null; // Get the new button
 		const generatePlanButton = messageElement.querySelector(
-			".generate-plan-button"
+			".generate-plan-button",
 		) as HTMLButtonElement | null;
 		const messageActions = messageElement.querySelector(
-			".message-actions"
+			".message-actions",
 		) as HTMLDivElement | null;
 
 		const buttonsToDisable = [
@@ -866,10 +874,10 @@ export function disableAllMessageActionButtons(
 }
 
 export function reenableAllMessageActionButtons(
-	elements: RequiredDomElements
+	elements: RequiredDomElements,
 ): void {
 	const allHistoryMessages = elements.chatContainer.querySelectorAll(
-		".message[data-is-history='true']"
+		".message[data-is-history='true']",
 	);
 
 	allHistoryMessages.forEach((messageElement) => {
@@ -880,7 +888,7 @@ export function reenableAllMessageActionButtons(
 
 		// CRITICAL CHECK: Prevent re-enabling buttons on the currently streaming AI message
 		const messageTextContentElement = messageElement.querySelector(
-			".message-text-content"
+			".message-text-content",
 		) as HTMLSpanElement | null;
 		if (
 			appState.currentAiMessageContentElement &&
@@ -891,22 +899,22 @@ export function reenableAllMessageActionButtons(
 		}
 
 		const copyButton = messageElement.querySelector(
-			".copy-button"
+			".copy-button",
 		) as HTMLButtonElement | null;
 		const deleteButton = messageElement.querySelector(
-			".delete-button"
+			".delete-button",
 		) as HTMLButtonElement | null;
 		const editButton = messageElement.querySelector(
-			".edit-button"
+			".edit-button",
 		) as HTMLButtonElement | null;
 		const copyContextButton = messageElement.querySelector(
-			".copy-context-button"
+			".copy-context-button",
 		) as HTMLButtonElement | null; // Get the new button
 		const generatePlanButton = messageElement.querySelector(
-			".generate-plan-button"
+			".generate-plan-button",
 		) as HTMLButtonElement | null;
 		const messageActions = messageElement.querySelector(
-			".message-actions"
+			".message-actions",
 		) as HTMLDivElement | null; // Get the message actions container
 
 		// Re-enable copy, delete, and edit buttons
@@ -978,7 +986,7 @@ export function clearEditingState(elements: RequiredDomElements): void {
 // Instruction 4: Refactor sendEditedMessageToExtension
 export function sendEditedMessageToExtension(
 	messageIndex: number,
-	newContent: string
+	newContent: string,
 ): void {
 	postMessageToExtension({
 		type: "editChatMessage",
@@ -986,7 +994,7 @@ export function sendEditedMessageToExtension(
 		newContent: newContent,
 	});
 	console.log(
-		`[ChatMessageRenderer] Sent editChatMessage for index ${messageIndex}`
+		`[ChatMessageRenderer] Sent editChatMessage for index ${messageIndex}`,
 	);
 }
 
@@ -996,10 +1004,10 @@ export function sendEditedMessageToExtension(
  * @returns The plan timeline wrapper element.
  */
 export function buildPlanTimeline(
-	elements: RequiredDomElements
+	elements: RequiredDomElements,
 ): HTMLDivElement {
 	let wrapper = elements.chatContainer.querySelector(
-		"#plan-timeline-wrapper"
+		"#plan-timeline-wrapper",
 	) as HTMLDivElement | null;
 
 	if (!wrapper) {
@@ -1010,7 +1018,7 @@ export function buildPlanTimeline(
 		if (elements.chatContainer.firstChild) {
 			elements.chatContainer.insertBefore(
 				wrapper,
-				elements.chatContainer.firstChild
+				elements.chatContainer.firstChild,
 			);
 		} else {
 			elements.chatContainer.appendChild(wrapper);
@@ -1054,10 +1062,10 @@ export function renderPlanTimeline(
 	stepIndex: number,
 	stepContent: string,
 	diffContent?: string,
-	isError: boolean = false
+	isError: boolean = false,
 ): void {
 	const wrapper = elements.chatContainer.querySelector(
-		"#plan-timeline-wrapper"
+		"#plan-timeline-wrapper",
 	) as HTMLDivElement | null;
 
 	if (!wrapper) {
@@ -1066,7 +1074,7 @@ export function renderPlanTimeline(
 	}
 
 	const stepContainers = wrapper.querySelectorAll(
-		".plan-step-container"
+		".plan-step-container",
 	) as NodeListOf<HTMLDivElement>;
 
 	if (stepContainers.length === 0) {
@@ -1080,7 +1088,7 @@ export function renderPlanTimeline(
 			"completed-step",
 			"active-step",
 			"future-step",
-			"error-step"
+			"error-step",
 		);
 
 		const isCurrentStep = index === stepIndex;
@@ -1131,7 +1139,7 @@ export function renderPlanTimeline(
 
 	// Scroll the active step into view horizontally
 	const activeStep = wrapper.querySelector(
-		".active-step, .error-step"
+		".active-step, .error-step",
 	) as HTMLDivElement | null;
 	if (activeStep) {
 		activeStep.scrollIntoView({
@@ -1144,7 +1152,7 @@ export function renderPlanTimeline(
 
 export function setContextAgentLoadingState(
 	elements: RequiredDomElements,
-	isLoading: boolean
+	isLoading: boolean,
 ): void {
 	// Update global state
 	appState.isContextAgentLoading = isLoading;
@@ -1157,11 +1165,11 @@ export function setContextAgentLoadingState(
 		lastMessage.classList.contains("message")
 	) {
 		const detailsElement = lastMessage.querySelector(
-			".context-agent-details"
+			".context-agent-details",
 		) as HTMLDetailsElement | null;
 		if (detailsElement) {
 			const summaryElement = detailsElement.querySelector(
-				".context-agent-summary"
+				".context-agent-summary",
 			);
 			if (summaryElement) {
 				if (isLoading) {

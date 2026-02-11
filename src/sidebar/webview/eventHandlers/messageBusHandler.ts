@@ -522,7 +522,8 @@ export function initializeMessageBusHandler(
 				if (
 					endMessage.success &&
 					endMessage.isPlanResponse &&
-					endMessage.planData
+					endMessage.planData &&
+					endMessage.requiresConfirmation !== false
 				) {
 					console.log("aiResponseEnd indicates confirmable plan.");
 					createPlanConfirmationUI(

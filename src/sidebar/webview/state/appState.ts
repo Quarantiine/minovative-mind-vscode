@@ -70,6 +70,11 @@ export const appState: WebviewAppState = {
 	isHeuristicContextEnabled: true,
 
 	/**
+	 * Flag indicating whether to skip plan confirmation and execute immediately.
+	 */
+	isSkipPlanConfirmationEnabled: false,
+
+	/**
 	 * Reference to the DOM element for the plan confirmation container.
 	 */
 	planConfirmationContainer: null,

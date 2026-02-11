@@ -101,10 +101,21 @@ export class PlanService {
 	}
 
 	public async handleInitialPlanRequest(userRequest: string): Promise<void> {
-		await this._executePlanExplanationWorkflow({
+		const result = await this._executePlanExplanationWorkflow({
 			type: "chat",
 			userRequest,
 		});
+
+		if (
+			result.success &&
+			result.context &&
+			this.provider.settingsManager.getOptimizationSettings()
+				.skipPlanConfirmation
+		) {
+			await this.provider.startUserOperation("planExecution");
+			this.provider.pendingPlanGenerationContext = null;
+			await this.generateStructuredPlanAndExecute(result.context);
+		}
 	}
 
 	public async triggerSelfCorrectionWorkflow(): Promise<void> {
@@ -165,6 +176,16 @@ export class PlanService {
 			const finalUrisToCheck = Array.from(allRelevantUrisSet).map((s) =>
 				vscode.Uri.parse(s),
 			);
+
+			// Diagnostic stabilization: Wait for diagnostics for each relevant file
+			this.provider.postMessageToWebview({
+				type: "statusUpdate",
+				value: "Waiting for diagnostics to stabilize...",
+			});
+			for (const uri of finalUrisToCheck) {
+				if (freshToken.isCancellationRequested) break;
+				await DiagnosticService.waitForDiagnosticsToStabilize(uri, freshToken);
+			}
 
 			let diagnosticsString = "";
 			const errorFiles: string[] = [];
@@ -232,12 +253,20 @@ export class PlanService {
 
 				// Build a summary section to explicitly tell the AI which files are clean
 				let summarySection = "\n--- Self-Correction Diagnostic Summary ---\n";
+				summarySection +=
+					"CRITICAL: Prioritize fixing files in the 'FILES WITH ERRORS' list below.\n";
 				if (errorFiles.length > 0) {
 					summarySection += `FILES WITH ERRORS: ${errorFiles.join(", ")}\n`;
 				}
 				if (warningFiles.length > 0) {
 					summarySection += `FILES WITH WARNINGS: ${warningFiles.join(", ")}\n`;
 				}
+				if (cleanFiles.length > 0) {
+					summarySection += `CLEAN FILES (Verify but no changes expected unless necessary): ${cleanFiles.join(
+						", ",
+					)}\n`;
+				}
+				summarySection += "--- End Summary ---\n";
 				if (cleanFiles.length > 0) {
 					summarySection += `CLEAN FILES (No Errors/Warnings): ${cleanFiles.join(", ")}\n`;
 				}
@@ -304,41 +333,37 @@ export class PlanService {
 				type: "chat",
 				projectContext: contextString,
 				relevantFiles,
+				activeSymbolDetailedInfo,
+				diagnosticsString: diagnosticsString || undefined,
 				initialApiKey: apiKey || "",
 				modelName,
 				chatHistory: [...this.provider.chatHistoryManager.getChatHistory()],
 				textualPlanExplanation: textualResponse,
 				workspaceRootUri: this.workspaceRootUri!,
+				originalUserRequest: "Self Correction",
 				isCorrectionMode: true,
 			};
 
 			this.provider.pendingPlanGenerationContext = planContext;
-
-			this.provider.postMessageToWebview({
-				type: "aiResponseEnd",
-				success: true,
-				operationId: operationId as string,
-				error: null,
-			});
-
 			await this.generateStructuredPlanFromCorrectionAndExecute(
 				planContext,
-				formattedRecentChanges,
+				"Apply self-correction.",
 			);
 		} catch (error: any) {
 			const isCancellation = error.message === ERROR_OPERATION_CANCELLED;
+			console.error(
+				`[PlanService] Self-correction failed: ${error.message}`,
+				error,
+			);
 			this.provider.postMessageToWebview({
-				type: "aiResponseEnd",
-				success: false,
-				operationId: operationId as string,
-				error: isCancellation
-					? "Correction planning cancelled."
-					: formatUserFacingErrorMessage(
-							error,
-							"An error occurred during self-correction planning.",
-							"Error: ",
-							this.workspaceRootUri,
-						),
+				type: "statusUpdate",
+				value: formatUserFacingErrorMessage(
+					error,
+					"Self-correction workflow failed.",
+					"Error: ",
+					this.workspaceRootUri,
+				),
+				isError: true,
 			});
 			await this.provider.endUserOperation(
 				isCancellation ? "cancelled" : "failed",
@@ -646,7 +671,9 @@ export class PlanService {
 				...(isConfirmablePlanResponse &&
 					this.provider.pendingPlanGenerationContext && {
 						isPlanResponse: true,
-						requiresConfirmation: true,
+						requiresConfirmation:
+							!this.provider.settingsManager.getOptimizationSettings()
+								.skipPlanConfirmation,
 						planData: {
 							type: "textualPlanPending",
 							originalRequest:

@@ -19,6 +19,7 @@ import {
 	faImage,
 	faProjectDiagram, // Import faProjectDiagram for heuristic context toggle button
 	faTerminal, // Added for Context Agent UI
+	faFastForward, // Added for Skip Plan Confirmation toggle
 } from "@fortawesome/free-solid-svg-icons";
 
 // Add the imported icons to the Font Awesome library for use in the webview.
@@ -42,7 +43,8 @@ library.add(
 	faLightbulb,
 	faImage,
 	faProjectDiagram, // Add faProjectDiagram to the library for heuristic context toggle button
-	faTerminal // Add faTerminal to the library
+	faTerminal, // Add faTerminal to the library
+	faFastForward, // Add faFastForward to the library
 );
 
 /**
@@ -56,7 +58,7 @@ library.add(
  */
 export function setIconForButton(
 	button: HTMLButtonElement | null,
-	iconDefinition: any
+	iconDefinition: any,
 ): void {
 	if (button) {
 		try {
@@ -73,7 +75,7 @@ export function setIconForButton(
 				button.innerHTML = "?"; // Placeholder for visibility
 				console.error(
 					"Failed to generate Font Awesome icon HTML for:",
-					iconDefinition.iconName
+					iconDefinition.iconName,
 				);
 			}
 		} catch (e) {
@@ -82,7 +84,7 @@ export function setIconForButton(
 				`Error setting Font Awesome icon '${
 					iconDefinition?.iconName || "unknown"
 				}'`,
-				e
+				e,
 			);
 			button.innerHTML = "!"; // Visual indicator of an error
 		}
@@ -104,4 +106,5 @@ export {
 	faLightbulb,
 	faProjectDiagram, // Export faProjectDiagram for heuristic context toggle button
 	faTerminal, // Export faTerminal
+	faFastForward, // Export faFastForward
 };

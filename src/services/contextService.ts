@@ -30,7 +30,6 @@ import {
 	FormatDiagnosticsOptions,
 } from "../utils/diagnosticUtils";
 import { intelligentlySummarizeFileContent } from "../context/fileContentProcessor"; // Import for file content summarization
-import { getHeuristicRelevantFiles } from "../context/heuristicContextSelector";
 import { SequentialContextService } from "./sequentialContextService"; // Import sequential context service
 import {
 	detectProjectType,
@@ -42,6 +41,7 @@ import {
 	DEFAULT_SIZE,
 } from "../sidebar/common/sidebarConstants";
 import { SUPPORTED_CODE_EXTENSIONS } from "../utils/languageUtils";
+import { getGitAllUncommittedFiles } from "../sidebar/services/gitService";
 
 // Constants for symbol processing
 export const MAX_REFERENCED_TYPE_CONTENT_CHARS_CONSTANT = 20000;
@@ -791,58 +791,90 @@ export class ContextService {
 				}
 			}
 
-			let filesForContextBuilding = options?.correctionMode
-				? editorContext?.documentUri
-					? [editorContext.documentUri]
-					: []
-				: allScannedFiles;
-			let heuristicSelectedFiles: vscode.Uri[] = []; // Declare heuristicSelectedFiles
+			let filesForContextBuilding: vscode.Uri[] = [];
 
+			const correctionUris = new Set<string>();
+			if (options?.correctionMode) {
+				// Include active editor file if it exists
+				if (editorContext?.documentUri) {
+					correctionUris.add(editorContext.documentUri.toString());
+				}
+				// Include explicitly passed changedUris if provided
+				if (options?.changedUris && options.changedUris.length > 0) {
+					options.changedUris.forEach((u) => correctionUris.add(u.toString()));
+				}
+			}
+
+			// Also include any files with reported diagnostics (even if not in correctionMode)
+			// This catches cases where a side effect introduced an error in a non-targeted file.
+			const workspaceDiagnostics = vscode.languages.getDiagnostics();
+			for (const [uri, diags] of workspaceDiagnostics) {
+				const hasSeverity = diags.some(
+					(d) =>
+						d.severity === vscode.DiagnosticSeverity.Error ||
+						d.severity === vscode.DiagnosticSeverity.Warning,
+				);
+				if (hasSeverity && uri.fsPath.startsWith(rootFolder.uri.fsPath)) {
+					correctionUris.add(uri.toString());
+				}
+			}
+
+			if (options?.correctionMode) {
+				filesForContextBuilding = Array.from(correctionUris).map((s) =>
+					vscode.Uri.parse(s),
+				);
+			} else {
+				filesForContextBuilding = allScannedFiles;
+			}
 			if (cancellationToken?.isCancellationRequested) {
 				throw new vscode.CancellationError();
 			}
 
-			// Populate heuristicSelectedFiles by awaiting a call to getHeuristicRelevantFiles
-			if (shouldRunHeuristicPreSelection) {
-				try {
-					heuristicSelectedFiles = await getHeuristicRelevantFiles(
-						allScannedFiles,
-						rootFolder.uri,
-						editorContext,
-						undefined, // Removed: fileDependencies
-						undefined, // Removed: reverseFileDependencies
-						activeSymbolDetailedInfo,
-						undefined, // semanticGraph
-						cancellationToken,
-						this.settingsManager.getOptimizationSettings(),
-						this.aiRequestService,
-						userRequest || editorContext?.instruction,
-						DEFAULT_FLASH_LITE_MODEL,
-					);
+			// --- Priority Files Model ---
+			// Priority files are always shown to the AI, even in truncated view.
+			// This includes: Active File, Uncommitted Changes, and Diagnostic Files.
+			const priorityFilesSet = new Set<string>();
 
-					if (heuristicSelectedFiles.length > 0) {
-						this.postMessageToWebview({
-							type: "statusUpdate",
-							value: `Identified ${heuristicSelectedFiles.length} heuristically relevant file(s).`,
-						});
-					}
-				} catch (heuristicError: any) {
-					console.error(
-						`[ContextService] Error during heuristic file selection: ${heuristicError.message}`,
-					);
-					this.postMessageToWebview({
-						type: "statusUpdate",
-						value: `Warning: Heuristic file selection failed. Reason: ${heuristicError.message}`,
-						isError: true,
-					});
-					// Continue without heuristic files if an error occurs
-				}
+			// 1. Add Active File
+			if (editorContext?.documentUri) {
+				priorityFilesSet.add(editorContext.documentUri.fsPath);
 			}
+
+			// 2. Add Uncommitted Files (Staged & Unstaged)
+			try {
+				const uncommittedPaths = await getGitAllUncommittedFiles(
+					rootFolder.uri.fsPath,
+				);
+				for (const p of uncommittedPaths) {
+					priorityFilesSet.add(path.join(rootFolder.uri.fsPath, p));
+				}
+			} catch (e) {
+				console.warn(
+					`[ContextService] Failed to get uncommitted files: ${
+						(e as any).message
+					}`,
+				);
+			}
+
+			// 3. Add Diagnostic Files (Errors/Warnings)
+			correctionUris.forEach((uriStr) => {
+				try {
+					priorityFilesSet.add(vscode.Uri.parse(uriStr).fsPath);
+				} catch (e) {
+					// Ignore invalid URIs
+				}
+			});
+
+			const priorityFiles = await BPromise.map(
+				Array.from(priorityFilesSet),
+				async (fsPath) => vscode.Uri.file(fsPath),
+			);
 
 			// Summary generation logic with optimization
 			const alwaysRunInvestigation =
 				this.settingsManager.getOptimizationSettings().alwaysRunInvestigation;
 			const fileSummariesForAI = new Map<string, string>();
+			const fileLineCountsForAI = new Map<string, number>();
 
 			// Skip expensive file summary generation when investigation mode is enabled
 			// since the AI will dynamically discover context via terminal commands
@@ -862,29 +894,39 @@ export class ContextService {
 				} else {
 					this.postMessageToWebview({
 						type: "statusUpdate",
-						value: `Summarizing ${heuristicSelectedFiles.length} heuristically relevant files for AI selection prompt...`,
+						value: `Summarizing ${priorityFiles.length} priority files for AI selection prompt...`,
 					});
-					filesToSummarizeForSelectionPrompt = Array.from(
-						heuristicSelectedFiles,
-					);
+					filesToSummarizeForSelectionPrompt = priorityFiles;
 				}
 
-				const summaryGenerationPromises =
-					filesToSummarizeForSelectionPrompt.map(
-						async (fileUri: vscode.Uri) => {
-							if (cancellationToken?.isCancellationRequested) {
-								throw new vscode.CancellationError();
-							}
-							const relativePath = path
-								.relative(rootFolder.uri.fsPath, fileUri.fsPath)
-								.replace(/\\/g, "/");
-							try {
-								const contentBytes =
-									await vscode.workspace.fs.readFile(fileUri);
-								const fileContentRaw =
-									Buffer.from(contentBytes).toString("utf-8");
-								const symbolsForFile = documentSymbolsMap.get(relativePath);
+				// Always gather line counts for files being considered, even if summaries are skipped
+				// Actually, we need to gather line counts for ALL files that might be in the prompt
+				// (either allScannedFiles or heuristicSelectedFiles depending on the list shown)
+				const filesForMetadata =
+					allScannedFiles.length <=
+					MAX_FILES_TO_SUMMARIZE_ALL_FOR_SELECTION_PROMPT
+						? allScannedFiles
+						: priorityFiles;
 
+				const summaryGenerationPromises = filesForMetadata.map(
+					async (fileUri: vscode.Uri) => {
+						if (cancellationToken?.isCancellationRequested) {
+							throw new vscode.CancellationError();
+						}
+						const relativePath = path
+							.relative(rootFolder.uri.fsPath, fileUri.fsPath)
+							.replace(/\\/g, "/");
+						try {
+							const contentBytes = await vscode.workspace.fs.readFile(fileUri);
+							const fileContentRaw =
+								Buffer.from(contentBytes).toString("utf-8");
+
+							// Calculate line count
+							const lineCount = fileContentRaw.split(/\r?\n/).length;
+							fileLineCountsForAI.set(relativePath, lineCount);
+
+							if (!alwaysRunInvestigation) {
+								const symbolsForFile = documentSymbolsMap.get(relativePath);
 								const summary = intelligentlySummarizeFileContent(
 									fileContentRaw,
 									symbolsForFile,
@@ -892,15 +934,18 @@ export class ContextService {
 									MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION,
 								);
 								fileSummariesForAI.set(relativePath, summary);
-							} catch (error: any) {
-								console.warn(
-									`[ContextService] Could not generate summary for ${relativePath}: ${error.message}`,
-								);
 							}
-						},
-					);
+						} catch (error: any) {
+							console.warn(
+								`[ContextService] Could not process metadata for ${relativePath}: ${error.message}`,
+							);
+						}
+					},
+				);
 				await BPromise.allSettled(summaryGenerationPromises);
-			} else {
+			}
+
+			if (alwaysRunInvestigation) {
 				console.log(
 					`[ContextService] Skipping file summary generation (alwaysRunInvestigation enabled)`,
 				);
@@ -962,6 +1007,7 @@ export class ContextService {
 						projectRoot: rootFolder.uri,
 						activeEditorContext: editorContext,
 						diagnostics: effectiveDiagnosticsString,
+						priorityFiles: priorityFiles,
 						activeEditorSymbols: editorContext?.documentUri
 							? documentSymbolsMap.get(
 									path
@@ -1002,8 +1048,8 @@ export class ContextService {
 						cancellationToken,
 						fileDependencies: new Map(),
 						reverseDependencies: new Map(),
-						preSelectedHeuristicFiles: heuristicSelectedFiles, // Pass heuristicSelectedFiles
 						fileSummaries: fileSummariesForAI, // Pass the generated file summaries
+						fileLineCounts: fileLineCountsForAI, // Pass the line counts
 						selectionOptions: {
 							useCache: shouldUseAISelectionCache, // Use the dynamically determined cache option
 							cacheTimeout: 5 * 60 * 1000, // 5 minutes

@@ -61,6 +61,7 @@ export interface RequiredDomElements {
 	clearImagesButton: HTMLButtonElement;
 	openFileListButton: HTMLButtonElement;
 	heuristicContextToggle: HTMLButtonElement;
+	skipPlanConfirmationToggle: HTMLButtonElement;
 	imagePreviewsContainer: HTMLDivElement;
 }
 
@@ -146,6 +147,7 @@ export interface WebviewAppState {
 	isEditingMessage: boolean;
 	currentActiveOperationId: string | null;
 	isHeuristicContextEnabled: boolean;
+	isSkipPlanConfirmationEnabled: boolean;
 	isContextAgentLoading: boolean;
 	isJsonGenerationLoading: boolean;
 	currentJsonLoadingElement: HTMLDivElement | null;

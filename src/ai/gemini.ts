@@ -11,13 +11,13 @@ import {
 import { MINO_SYSTEM_INSTRUCTION } from "./prompts/systemInstructions";
 import { geminiLogger } from "../utils/logger";
 
-export const ERROR_QUOTA_EXCEEDED = "ERROR_GEMINI_QUOTA_EXCEEDED";
+export const ERROR_QUOTA_EXCEEDED = "429_GEMINI_QUOTA_EXCEEDED";
 // Define a specific error message constant for cancellation
 export const ERROR_OPERATION_CANCELLED = "Operation cancelled by user.";
 // Add a new error constant for service unavailability
-export const ERROR_SERVICE_UNAVAILABLE = "ERROR_GEMINI_SERVICE_UNAVAILABLE";
+export const ERROR_SERVICE_UNAVAILABLE = "503_GEMINI_SERVICE_UNAVAILABLE";
 // Add a new error constant for stream parsing failures
-export const ERROR_STREAM_PARSING_FAILED = "ERROR_GEMINI_STREAM_PARSING_FAILED";
+export const ERROR_STREAM_PARSING_FAILED = "GEMINI_STREAM_PARSING_FAILED";
 
 let generativeAI: GoogleGenerativeAI | null = null;
 let model: GenerativeModel | null = null;

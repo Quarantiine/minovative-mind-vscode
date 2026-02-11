@@ -2,7 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.51.0] - February 11, 2026
+## [2.52.0] - February 11, 2026
+
+### Skip Plan Confirmation & Priority Files Model
+
+This release introduces a streamlined workflow toggle, replaces the legacy heuristic file selector with a smarter Priority Files model, and adds several quality-of-life improvements across the plan execution and self-correction pipelines.
+
+- **Skip Plan Toggle**: Added a persistent "Fast Forward" toggle to the sidebar. When enabled, AI-generated plans are executed automatically without requiring manual confirmation, significantly speeding up autonomous workflows for trusted tasks.
+- **Priority Files Model**: Replaced the legacy `heuristicContextSelector.ts` with a git-based Priority Files model. `SequentialContextService` now automatically discovers uncommitted files and passes them as priority context to the AI, ensuring the most relevant working-set files are always included.
+- **Plan Labels**: AI-generated plan explanations now display a "Generated Plan" badge in the chat interface, making them easily distinguishable from regular AI responses.
+- **Improved Error Recovery**: Ambiguous match and `SearchBlockNotFoundError` errors during `modify_file` steps are now retried autonomously within the execution loop with clarification context, eliminating the need for separate recursive calls and improving reliability.
+- **Diagnostic Stabilization**: The self-correction workflow now actively waits for per-file diagnostic stabilization (`waitForDiagnosticsToStabilize`) before collecting error status, reducing false positives from stale language server data.
+- **File Line Counts**: Project structure views (both optimized and full listing modes) now include line counts for each file, giving the AI better awareness of file complexity during context selection.
+
+## [2.51.1] - February 11, 2026
 
 ### Core Simplification and Legacy Cleanup
 

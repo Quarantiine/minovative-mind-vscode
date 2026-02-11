@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import { GenerationConfig } from "@google/generative-ai";
 import {
 	SequentialFileProcessor,
@@ -6,10 +7,6 @@ import {
 } from "./sequentialFileProcessor";
 import { AIRequestService } from "./aiRequestService";
 import { scanWorkspace } from "../context/workspaceScanner";
-import {
-	getHeuristicRelevantFiles,
-	HeuristicSelectionOptions,
-} from "../context/heuristicContextSelector";
 import { intelligentlySummarizeFileContent } from "../context/fileContentProcessor";
 import { DependencyRelation } from "../utils/fileDependencyParser";
 import {
@@ -22,6 +19,7 @@ import {
 	DEFAULT_FLASH_LITE_MODEL,
 	DEFAULT_SIZE,
 } from "../sidebar/common/sidebarConstants";
+import { getGitAllUncommittedFiles } from "../sidebar/services/gitService";
 
 export interface SequentialContextOptions {
 	enableSequentialProcessing?: boolean;
@@ -345,162 +343,79 @@ export class SequentialContextService {
 			value: "Identifying relevant files",
 		});
 
-		// Retrieve optimization settings
-		const optimizationSettings =
-			this.settingsManager.getOptimizationSettings() as any;
+		// --- Priority Files Model ---
+		const priorityFilesSet = new Set<string>();
 
-		// Create a heuristicOptions object
-		const heuristicOptions: HeuristicSelectionOptions = {
-			maxHeuristicFilesTotal: optimizationSettings.maxHeuristicFilesTotal,
-			maxSameDirectoryFiles: optimizationSettings.maxSameDirectoryFiles,
-			maxDirectDependencies: optimizationSettings.maxDirectDependencies,
-			maxReverseDependencies: optimizationSettings.maxReverseDependencies,
-			maxCallHierarchyFiles: optimizationSettings.maxCallHierarchyFiles,
-			sameDirectoryWeight: optimizationSettings.sameDirectoryWeight,
-			runtimeDependencyWeight: optimizationSettings.runtimeDependencyWeight,
-			typeDependencyWeight: optimizationSettings.typeDependencyWeight,
-			conceptualProximityWeight: optimizationSettings.conceptualProximityWeight,
-			reverseDependencyWeight: optimizationSettings.reverseDependencyWeight,
-			callHierarchyWeight: optimizationSettings.callHierarchyWeight,
-			definitionWeight: optimizationSettings.definitionWeight,
-			implementationWeight: optimizationSettings.implementationWeight,
-			typeDefinitionWeight: optimizationSettings.typeDefinitionWeight,
-			referencedTypeDefinitionWeight:
-				optimizationSettings.referencedTypeDefinitionWeight,
-			generalSymbolRelatedBoost: optimizationSettings.generalSymbolRelatedBoost,
-			dependencyWeight: optimizationSettings.dependencyWeight,
-			directoryWeight: optimizationSettings.directoryWeight,
-			neighborDirectoryWeight: optimizationSettings.neighborDirectoryWeight,
-			sharedAncestorWeight: optimizationSettings.sharedAncestorWeight,
-		};
-
-		// First, use heuristic selection to get initial relevant files
-		const heuristicFiles = await getHeuristicRelevantFiles(
-			allFiles,
-			this.workspaceRoot,
-			undefined, // No active editor context for filtering
-			undefined, // Removed: fileDependencies
-			undefined, // Removed: reverseFileDependencies
-			undefined, // No active symbol info for filtering
-			undefined, // No semantic graph
-			undefined, // No cancellation token
-			heuristicOptions, // Pass heuristicOptions as options parameter
-			this.aiRequestService,
-			userRequest,
-			modelName,
-		);
-
-		// If we have a reasonable number of files, use AI to refine the selection
-		if (heuristicFiles.length > 0 && heuristicFiles.length <= 100) {
-			try {
-				this.postMessageToWebview({
-					type: "statusUpdate",
-					value: "Using AI to refine file selection...",
-				});
-
-				// Generate quick summaries for AI selection
-				const fileSummaries = new Map<string, string>();
-				const summaryPromises = heuristicFiles
-					.slice(0, 30)
-					.map(async (fileUri: vscode.Uri) => {
-						try {
-							const contentBytes = await vscode.workspace.fs.readFile(fileUri);
-							const fileContent = Buffer.from(contentBytes).toString("utf-8");
-							const relativePath = vscode.workspace.asRelativePath(fileUri);
-
-							// Generate a quick summary
-							const summary = intelligentlySummarizeFileContent(
-								fileContent,
-								undefined, // No symbols for quick filtering
-								undefined,
-								500, // Shorter summary for filtering
-							);
-
-							fileSummaries.set(relativePath, summary);
-						} catch (error) {
-							console.warn(`Failed to read file ${fileUri.fsPath}:`, error);
-						}
-					});
-
-				await Promise.all(summaryPromises);
-
-				// Use AI to select the most relevant files
-				const aiSelectionOptions: SelectRelevantFilesAIOptions = {
-					userRequest,
-					chatHistory: [], // No chat history for filtering
-					allScannedFiles: heuristicFiles,
-					projectRoot: this.workspaceRoot,
-					activeEditorContext: undefined,
-					diagnostics: undefined,
-					// The aiModelCall in SelectRelevantFilesAIOptions expects (prompt: HistoryEntryPart[], options: AIGenerateOptions) => Promise<string>
-					// If this.aiRequestService.generateWithRetry still takes a string, an adapter is needed.
-					// This resolves TS2322 at line 404 by conforming to the expected type.
-					aiModelCall: async (
-						prompt: string,
-						modelName: string,
-						history: HistoryEntry[] | undefined,
-						requestType: string,
-						generationConfig: GenerationConfig | undefined,
-						streamCallbacks:
-							| {
-									onChunk: (chunk: string) => Promise<void> | void;
-									onComplete?: () => void;
-							  }
-							| undefined,
-						token: vscode.CancellationToken | undefined,
-					) => {
-						const userContentParts: HistoryEntryPart[] = [{ text: prompt }];
-						return await this.aiRequestService.generateWithRetry(
-							userContentParts,
-							modelName,
-							history,
-							requestType,
-							generationConfig,
-							streamCallbacks,
-							token,
-						);
-					},
-					aiRequestService: this.aiRequestService,
-					postMessageToWebview: this.postMessageToWebview,
-					addContextAgentLogToHistory: options.addContextAgentLogToHistory,
-					modelName,
-					cancellationToken: undefined,
-					fileDependencies: new Map(), // Removed: fileDependencies
-					preSelectedHeuristicFiles: heuristicFiles,
-					fileSummaries,
-					selectionOptions: {
-						useCache: true,
-						cacheTimeout: 5 * 60 * 1000,
-						maxPromptLength: 30000,
-						enableStreaming: false,
-						fallbackToHeuristics: true,
-					},
-				};
-
-				const aiSelectedFiles = await selectRelevantFilesAI(aiSelectionOptions);
-
-				if (aiSelectedFiles.length > 0) {
-					this.postMessageToWebview({
-						type: "statusUpdate",
-						value: `AI selected ${aiSelectedFiles.length} most relevant files.`,
-					});
-					// Map FileSelection to Uri for compatibility with SequentialContextService
-					return aiSelectedFiles.map((selection) => selection.uri);
-				}
-			} catch (error) {
-				console.warn(
-					"AI file selection failed, falling back to heuristic selection:",
-					error,
-				);
+		// 1. Add Uncommitted Files
+		try {
+			const uncommittedPaths = await getGitAllUncommittedFiles(
+				this.workspaceRoot.fsPath,
+			);
+			for (const p of uncommittedPaths) {
+				priorityFilesSet.add(path.join(this.workspaceRoot.fsPath, p));
 			}
+		} catch (e) {
+			console.warn(
+				`[SequentialContextService] Failed to get uncommitted files: ${
+					(e as any).message
+				}`,
+			);
 		}
 
-		// Fallback to heuristic selection
-		this.postMessageToWebview({
-			type: "statusUpdate",
-			value: `Using heuristic selection: ${heuristicFiles.length} relevant files found.`,
-		});
-		return heuristicFiles;
+		const priorityFiles = Array.from(priorityFilesSet).map((fsPath) =>
+			vscode.Uri.file(fsPath),
+		);
+
+		try {
+			// Use the agentic selection directly
+			const selectedFiles = await selectRelevantFilesAI({
+				userRequest,
+				chatHistory: [], // Batch filtering usually doesn't need history
+				allScannedFiles: allFiles,
+				projectRoot: this.workspaceRoot,
+				aiModelCall: async (
+					prompt: string,
+					modelName: string,
+					history: HistoryEntry[] | undefined,
+					requestType: string,
+					generationConfig: GenerationConfig | undefined,
+					streamCallbacks: any,
+					token: vscode.CancellationToken | undefined,
+				) => {
+					return await this.aiRequestService.generateWithRetry(
+						[{ text: prompt }],
+						modelName,
+						history,
+						requestType,
+						generationConfig,
+						streamCallbacks,
+						token,
+						false,
+						"You are an expert AI developer assistant. Select the most relevant files based on the context provided.",
+					);
+				},
+				modelName,
+				priorityFiles,
+				aiRequestService: this.aiRequestService,
+				postMessageToWebview: (msg) => this.postMessageToWebview(msg),
+			});
+
+			if (selectedFiles.length > 0) {
+				this.postMessageToWebview({
+					type: "statusUpdate",
+					value: `AI selected ${selectedFiles.length} relevant files.`,
+				});
+				return selectedFiles.map((s) => s.uri);
+			}
+		} catch (error) {
+			console.error(
+				"[SequentialContextService] AI file selection failed:",
+				error,
+			);
+		}
+
+		// Fallback to priority files if AI selection fails
+		return priorityFiles.length > 0 ? priorityFiles : allFiles.slice(0, 5);
 	}
 
 	/**

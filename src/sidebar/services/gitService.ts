@@ -70,15 +70,15 @@ export async function getGitStagedDiff(rootPath: string): Promise<string> {
 					new Error(
 						`Failed to execute 'git diff --staged': ${error.message}${
 							stderr ? `\nStderr: ${stderr}` : ""
-						}`
-					)
+						}`,
+					),
 				);
 				return;
 			}
 			if (stderr) {
 				// Stderr from 'git diff --staged' is not always an error (e.g., warnings about line endings)
 				console.warn(
-					`stderr from 'git diff --staged' (command successful): ${stderr}`
+					`stderr from 'git diff --staged' (command successful): ${stderr}`,
 				);
 			}
 			resolve(stdout.trim());
@@ -94,8 +94,8 @@ export function stageAllChanges(
 	onOutput: (
 		type: "stdout" | "stderr" | "status",
 		data: string,
-		isError?: boolean
-	) => void
+		isError?: boolean,
+	) => void,
 ): Promise<void> {
 	return new Promise<void>((resolve, reject) => {
 		const gitAddProcess = exec(
@@ -114,7 +114,7 @@ export function stageAllChanges(
 					}`;
 					onOutput("stderr", errorMessage, true);
 					reject(
-						new Error(`Failed to stage changes (git add .): ${error.message}`)
+						new Error(`Failed to stage changes (git add .): ${error.message}`),
 					);
 					return;
 				}
@@ -124,12 +124,12 @@ export function stageAllChanges(
 				if (stderr) {
 					onOutput(
 						"stderr",
-						`'git add .' stderr (non-fatal):\n${stderr.trim()}`
+						`'git add .' stderr (non-fatal):\n${stderr.trim()}`,
 					);
 				} // Treat as warning
 				onOutput("status", "Changes staged successfully.");
 				resolve();
-			}
+			},
 		);
 		onProcess(gitAddProcess); // Register the process
 
@@ -170,7 +170,7 @@ export function constructGitCommitCommand(commitMessage: string): {
 	) {
 		cleanedCommitMessage = cleanedCommitMessage.substring(
 			1,
-			cleanedCommitMessage.length - 1
+			cleanedCommitMessage.length - 1,
 		);
 	}
 
@@ -187,7 +187,7 @@ export function constructGitCommitCommand(commitMessage: string): {
 
 	if (!subject) {
 		throw new Error(
-			"AI generated an empty commit message subject after cleaning and processing."
+			"AI generated an empty commit message subject after cleaning and processing.",
 		);
 	}
 
@@ -217,11 +217,11 @@ export function constructGitCommitCommand(commitMessage: string): {
  */
 export async function getGitFileContentFromIndex(
 	rootPath: string,
-	filePath: string
+	filePath: string,
 ): Promise<string> {
 	if (shouldSkipContentForPath(filePath)) {
 		console.log(
-			`[GitService] Skipping content fetch for staged binary file: ${filePath}`
+			`[GitService] Skipping content fetch for staged binary file: ${filePath}`,
 		);
 		return "";
 	}
@@ -234,7 +234,7 @@ export async function getGitFileContentFromIndex(
 		if (stderr && stdout.trim().length > 0) {
 			// Log stderr as a warning if we successfully got content
 			console.warn(
-				`[GitService] stderr from 'git show index :"${filePath}"' (non-fatal): ${stderr.trim()}`
+				`[GitService] stderr from 'git show index :"${filePath}"' (non-fatal): ${stderr.trim()}`,
 			);
 		}
 
@@ -248,16 +248,16 @@ export async function getGitFileContentFromIndex(
 		if (deletedFileInIndexErrorRegex.test(errorOutput)) {
 			// If the file is deleted and thus not in the index, return an empty string.
 			console.log(
-				`[GitService] File '${filePath}' is marked as deleted in the index. Returning empty string for staged content.`
+				`[GitService] File '${filePath}' is marked as deleted in the index. Returning empty string for staged content.`,
 			);
 			return "";
 		} else {
 			// For any other error, re-throw it as it indicates a genuine problem.
 			console.error(
-				`[GitService] Failed to get file content from index for '${filePath}' in '${rootPath}': ${errorOutput}`
+				`[GitService] Failed to get file content from index for '${filePath}' in '${rootPath}': ${errorOutput}`,
 			);
 			throw new Error(
-				`Failed to get staged file content for '${filePath}': ${errorOutput}`
+				`Failed to get staged file content for '${filePath}': ${errorOutput}`,
 			);
 		}
 	}
@@ -274,11 +274,11 @@ export async function getGitFileContentFromIndex(
  */
 export async function getGitFileContentFromHead(
 	rootPath: string,
-	filePath: string
+	filePath: string,
 ): Promise<string> {
 	if (shouldSkipContentForPath(filePath)) {
 		console.log(
-			`[GitService] Skipping content fetch for HEAD binary file: ${filePath}`
+			`[GitService] Skipping content fetch for HEAD binary file: ${filePath}`,
 		);
 		return "";
 	}
@@ -291,7 +291,7 @@ export async function getGitFileContentFromHead(
 		if (stderr && stdout.trim().length > 0) {
 			// Log stderr as a warning if we successfully got content
 			console.warn(
-				`[GitService] stderr from 'git show HEAD:"${filePath}"' (non-fatal): ${stderr.trim()}`
+				`[GitService] stderr from 'git show HEAD:"${filePath}"' (non-fatal): ${stderr.trim()}`,
 			);
 		}
 
@@ -307,16 +307,16 @@ export async function getGitFileContentFromHead(
 
 		if (gitHeadFileNotFoundRegex.test(lowerErrorMessage)) {
 			console.log(
-				`[GitService] File '${filePath}' not found in HEAD or not tracked by HEAD. Returning empty string.`
+				`[GitService] File '${filePath}' not found in HEAD or not tracked by HEAD. Returning empty string.`,
 			);
 			return ""; // File is new, no old content to compare against
 		} else {
 			// Re-throw other errors
 			console.error(
-				`[GitService] Failed to get file content from HEAD for '${filePath}' in '${rootPath}': ${errorOutput}`
+				`[GitService] Failed to get file content from HEAD for '${filePath}' in '${rootPath}': ${errorOutput}`,
 			);
 			throw new Error(
-				`Failed to get HEAD file content for '${filePath}': ${errorOutput}`
+				`Failed to get HEAD file content for '${filePath}': ${errorOutput}`,
 			);
 		}
 	}
@@ -333,7 +333,44 @@ export async function getGitStagedFiles(rootPath: string): Promise<string[]> {
 			.filter((line) => line.length > 0);
 	} catch (error: any) {
 		console.error(
-			`Error getting staged files for ${rootPath}: ${error.message || error}`
+			`Error getting staged files for ${rootPath}: ${error.message || error}`,
+		);
+		return [];
+	}
+}
+
+export async function getGitUnstagedFiles(rootPath: string): Promise<string[]> {
+	try {
+		const { stdout } = await execPromise("git diff --name-only", {
+			cwd: rootPath,
+		});
+		return stdout
+			.trim()
+			.split("\n")
+			.filter((line) => line.length > 0);
+	} catch (error: any) {
+		console.error(
+			`Error getting unstaged files for ${rootPath}: ${error.message || error}`,
+		);
+		return [];
+	}
+}
+
+export async function getGitAllUncommittedFiles(
+	rootPath: string,
+): Promise<string[]> {
+	try {
+		const [staged, unstaged] = await Promise.all([
+			getGitStagedFiles(rootPath),
+			getGitUnstagedFiles(rootPath),
+		]);
+		// Combine and deduplicate
+		return Array.from(new Set([...staged, ...unstaged]));
+	} catch (error: any) {
+		console.error(
+			`Error getting all uncommitted files for ${rootPath}: ${
+				error.message || error
+			}`,
 		);
 		return [];
 	}

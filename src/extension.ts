@@ -542,13 +542,13 @@ export async function activate(context: vscode.ExtensionContext) {
 						`${docsInstruction}\n\n` +
 						`In file \`${displayFileName}\`, apply the documentation and cleanup instruction to ${contextDescription}. The relevant code snippet is provided below.\n\n` +
 						`(Language: ${languageId}):\n\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\`\n\n` +
-						"Highlevel thinking first, No coding snippets yet.";
+						"Highlevel thinking first";
 				} else {
 					// No selection (auto-selection handled setting up contextDescription and effectiveRange to full file)
 					composedMessage =
 						`${docsInstruction}\n\n` +
 						`In file \`${displayFileName}\`, apply the documentation and cleanup instruction to the entire file content.\n\n` +
-						"Highlevel thinking first, No coding snippets yet.";
+						"Highlevel thinking first";
 				}
 			} else if (instruction === "chat") {
 				if (originalSelection.isEmpty) {

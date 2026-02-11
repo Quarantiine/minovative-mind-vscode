@@ -412,6 +412,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		webviewView: vscode.WebviewView,
 	): Promise<void> {
 		this._view = webviewView;
+		this.settingsManager.resetWebviewReady();
 		webviewView.webview.options = {
 			enableScripts: true,
 			localResourceRoots: [
@@ -661,8 +662,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	public async handleWebviewReady(): Promise<void> {
 		// Always load essential data first, regardless of active operations
 		this.apiKeyManager.loadKeysFromStorage();
-		this.settingsManager.updateWebviewModelList();
-		this.settingsManager.updateWebviewOptimizationSettings();
+		this.settingsManager.handleWebviewReady();
 		this.chatHistoryManager.restoreChatHistoryToWebview();
 
 		// Restore UI state based on potential ongoing operations

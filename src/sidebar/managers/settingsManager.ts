@@ -55,6 +55,7 @@ const OPTIMIZATION_SETTINGS_KEYS = {
 		"optimization.enableEnhancedDiagnosticContext",
 	HEURISTIC_SELECTION_ENABLED: HEURISTIC_SELECTION_ENABLED_KEY,
 	ALWAYS_RUN_INVESTIGATION: ALWAYS_RUN_INVESTIGATION_KEY,
+	SKIP_PLAN_CONFIRMATION: "optimization.skipPlanConfirmation", // Added skip plan confirmation setting key
 };
 
 const DEFAULT_OPTIMIZATION_SETTINGS = {
@@ -95,6 +96,7 @@ const DEFAULT_OPTIMIZATION_SETTINGS = {
 	enableEnhancedDiagnosticContext: true,
 	heuristicSelectionEnabled: true,
 	alwaysRunInvestigation: true,
+	skipPlanConfirmation: false, // Added default value for skip plan confirmation
 };
 
 export class SettingsManager {
@@ -103,11 +105,15 @@ export class SettingsManager {
 
 	constructor(
 		private readonly workspaceState: vscode.Memento,
-		private readonly postMessageToWebview: (message: any) => void
+		private readonly postMessageToWebview: (message: any) => void,
 	) {}
 
 	public initialize(): void {
 		this.loadSettingsFromStorage();
+	}
+
+	public resetWebviewReady(): void {
+		this._isWebviewReady = false;
 	}
 
 	public handleWebviewReady(): void {
@@ -128,162 +134,166 @@ export class SettingsManager {
 		return {
 			useScanCache: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.USE_SCAN_CACHE,
-				DEFAULT_OPTIMIZATION_SETTINGS.useScanCache
+				DEFAULT_OPTIMIZATION_SETTINGS.useScanCache,
 			),
 			useDependencyCache: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.USE_DEPENDENCY_CACHE,
-				DEFAULT_OPTIMIZATION_SETTINGS.useDependencyCache
+				DEFAULT_OPTIMIZATION_SETTINGS.useDependencyCache,
 			),
 			useAISelectionCache: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.USE_AI_SELECTION_CACHE,
-				DEFAULT_OPTIMIZATION_SETTINGS.useAISelectionCache
+				DEFAULT_OPTIMIZATION_SETTINGS.useAISelectionCache,
 			),
 			maxConcurrency: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.MAX_CONCURRENCY,
-				DEFAULT_OPTIMIZATION_SETTINGS.maxConcurrency
+				DEFAULT_OPTIMIZATION_SETTINGS.maxConcurrency,
 			),
 			enablePerformanceMonitoring: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.ENABLE_PERFORMANCE_MONITORING,
-				DEFAULT_OPTIMIZATION_SETTINGS.enablePerformanceMonitoring
+				DEFAULT_OPTIMIZATION_SETTINGS.enablePerformanceMonitoring,
 			),
 			skipLargeFiles: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.SKIP_LARGE_FILES,
-				DEFAULT_OPTIMIZATION_SETTINGS.skipLargeFiles
+				DEFAULT_OPTIMIZATION_SETTINGS.skipLargeFiles,
 			),
 			maxFileSize: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.MAX_FILE_SIZE,
-				DEFAULT_OPTIMIZATION_SETTINGS.maxFileSize
+				DEFAULT_OPTIMIZATION_SETTINGS.maxFileSize,
 			),
 			scanCacheTimeout: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.SCAN_CACHE_TIMEOUT,
-				DEFAULT_OPTIMIZATION_SETTINGS.scanCacheTimeout
+				DEFAULT_OPTIMIZATION_SETTINGS.scanCacheTimeout,
 			),
 			dependencyCacheTimeout: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.DEPENDENCY_CACHE_TIMEOUT,
-				DEFAULT_OPTIMIZATION_SETTINGS.dependencyCacheTimeout
+				DEFAULT_OPTIMIZATION_SETTINGS.dependencyCacheTimeout,
 			),
 			aiSelectionCacheTimeout: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.AI_SELECTION_CACHE_TIMEOUT,
-				DEFAULT_OPTIMIZATION_SETTINGS.aiSelectionCacheTimeout
+				DEFAULT_OPTIMIZATION_SETTINGS.aiSelectionCacheTimeout,
 			),
 			maxFilesForSymbolProcessing: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.MAX_FILES_FOR_SYMBOL_PROCESSING,
-				DEFAULT_OPTIMIZATION_SETTINGS.maxFilesForSymbolProcessing
+				DEFAULT_OPTIMIZATION_SETTINGS.maxFilesForSymbolProcessing,
 			),
 			maxFilesForDetailedProcessing: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.MAX_FILES_FOR_DETAILED_PROCESSING,
-				DEFAULT_OPTIMIZATION_SETTINGS.maxFilesForDetailedProcessing
+				DEFAULT_OPTIMIZATION_SETTINGS.maxFilesForDetailedProcessing,
 			),
 			enableSmartContext: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.ENABLE_SMART_CONTEXT,
-				DEFAULT_OPTIMIZATION_SETTINGS.enableSmartContext
+				DEFAULT_OPTIMIZATION_SETTINGS.enableSmartContext,
 			),
 			maxPromptLength: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.MAX_PROMPT_LENGTH,
-				DEFAULT_OPTIMIZATION_SETTINGS.maxPromptLength
+				DEFAULT_OPTIMIZATION_SETTINGS.maxPromptLength,
 			),
 			enableStreaming: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.ENABLE_STREAMING,
-				DEFAULT_OPTIMIZATION_SETTINGS.enableStreaming
+				DEFAULT_OPTIMIZATION_SETTINGS.enableStreaming,
 			),
 			fallbackToHeuristics: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.FALLBACK_TO_HEURISTICS,
-				DEFAULT_OPTIMIZATION_SETTINGS.fallbackToHeuristics
+				DEFAULT_OPTIMIZATION_SETTINGS.fallbackToHeuristics,
 			),
 			maxHeuristicFilesTotal: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.MAX_HEURISTIC_FILES_TOTAL,
-				DEFAULT_OPTIMIZATION_SETTINGS.maxHeuristicFilesTotal
+				DEFAULT_OPTIMIZATION_SETTINGS.maxHeuristicFilesTotal,
 			),
 			maxSameDirectoryFiles: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.MAX_SAME_DIRECTORY_FILES,
-				DEFAULT_OPTIMIZATION_SETTINGS.maxSameDirectoryFiles
+				DEFAULT_OPTIMIZATION_SETTINGS.maxSameDirectoryFiles,
 			),
 			maxDirectDependencies: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.MAX_DIRECT_DEPENDENCIES,
-				DEFAULT_OPTIMIZATION_SETTINGS.maxDirectDependencies
+				DEFAULT_OPTIMIZATION_SETTINGS.maxDirectDependencies,
 			),
 			maxReverseDependencies: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.MAX_REVERSE_DEPENDENCIES,
-				DEFAULT_OPTIMIZATION_SETTINGS.maxReverseDependencies
+				DEFAULT_OPTIMIZATION_SETTINGS.maxReverseDependencies,
 			),
 			maxCallHierarchyFiles: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.MAX_CALL_HIERARCHY_FILES,
-				DEFAULT_OPTIMIZATION_SETTINGS.maxCallHierarchyFiles
+				DEFAULT_OPTIMIZATION_SETTINGS.maxCallHierarchyFiles,
 			),
 			sameDirectoryWeight: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.SAME_DIRECTORY_WEIGHT,
-				DEFAULT_OPTIMIZATION_SETTINGS.sameDirectoryWeight
+				DEFAULT_OPTIMIZATION_SETTINGS.sameDirectoryWeight,
 			),
 			directDependencyWeight: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.DIRECT_DEPENDENCY_WEIGHT,
-				DEFAULT_OPTIMIZATION_SETTINGS.directDependencyWeight
+				DEFAULT_OPTIMIZATION_SETTINGS.directDependencyWeight,
 			),
 			reverseDependencyWeight: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.REVERSE_DEPENDENCY_WEIGHT,
-				DEFAULT_OPTIMIZATION_SETTINGS.reverseDependencyWeight
+				DEFAULT_OPTIMIZATION_SETTINGS.reverseDependencyWeight,
 			),
 			callHierarchyWeight: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.CALL_HIERARCHY_WEIGHT,
-				DEFAULT_OPTIMIZATION_SETTINGS.callHierarchyWeight
+				DEFAULT_OPTIMIZATION_SETTINGS.callHierarchyWeight,
 			),
 			definitionWeight: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.DEFINITION_WEIGHT,
-				DEFAULT_OPTIMIZATION_SETTINGS.definitionWeight
+				DEFAULT_OPTIMIZATION_SETTINGS.definitionWeight,
 			),
 			implementationWeight: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.IMPLEMENTATION_WEIGHT,
-				DEFAULT_OPTIMIZATION_SETTINGS.implementationWeight
+				DEFAULT_OPTIMIZATION_SETTINGS.implementationWeight,
 			),
 			typeDefinitionWeight: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.TYPE_DEFINITION_WEIGHT,
-				DEFAULT_OPTIMIZATION_SETTINGS.typeDefinitionWeight
+				DEFAULT_OPTIMIZATION_SETTINGS.typeDefinitionWeight,
 			),
 			neighborDirectoryWeight: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.NEIGHBOR_DIRECTORY_WEIGHT,
-				DEFAULT_OPTIMIZATION_SETTINGS.neighborDirectoryWeight
+				DEFAULT_OPTIMIZATION_SETTINGS.neighborDirectoryWeight,
 			),
 			sharedAncestorWeight: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.SHARED_ANCESTOR_WEIGHT,
-				DEFAULT_OPTIMIZATION_SETTINGS.sharedAncestorWeight
+				DEFAULT_OPTIMIZATION_SETTINGS.sharedAncestorWeight,
 			),
 			referencedTypeDefinitionWeight: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.REFERENCED_TYPE_DEFINITION_WEIGHT,
-				DEFAULT_OPTIMIZATION_SETTINGS.referencedTypeDefinitionWeight
+				DEFAULT_OPTIMIZATION_SETTINGS.referencedTypeDefinitionWeight,
 			),
 			generalSymbolRelatedBoost: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.GENERAL_SYMBOL_RELATED_BOOST,
-				DEFAULT_OPTIMIZATION_SETTINGS.generalSymbolRelatedBoost
+				DEFAULT_OPTIMIZATION_SETTINGS.generalSymbolRelatedBoost,
 			),
 			dependencyWeight: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.DEPENDENCY_WEIGHT,
-				DEFAULT_OPTIMIZATION_SETTINGS.dependencyWeight
+				DEFAULT_OPTIMIZATION_SETTINGS.dependencyWeight,
 			),
 			directoryWeight: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.DIRECTORY_WEIGHT,
-				DEFAULT_OPTIMIZATION_SETTINGS.directoryWeight
+				DEFAULT_OPTIMIZATION_SETTINGS.directoryWeight,
 			),
 			enableEnhancedDiagnosticContext: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.ENABLE_ENHANCED_DIAGNOSTIC_CONTEXT,
-				DEFAULT_OPTIMIZATION_SETTINGS.enableEnhancedDiagnosticContext
+				DEFAULT_OPTIMIZATION_SETTINGS.enableEnhancedDiagnosticContext,
 			),
 			heuristicSelectionEnabled: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.HEURISTIC_SELECTION_ENABLED,
-				DEFAULT_OPTIMIZATION_SETTINGS.heuristicSelectionEnabled
+				DEFAULT_OPTIMIZATION_SETTINGS.heuristicSelectionEnabled,
 			),
 			alwaysRunInvestigation: this.getSetting(
 				OPTIMIZATION_SETTINGS_KEYS.ALWAYS_RUN_INVESTIGATION,
-				DEFAULT_OPTIMIZATION_SETTINGS.alwaysRunInvestigation
+				DEFAULT_OPTIMIZATION_SETTINGS.alwaysRunInvestigation,
+			),
+			skipPlanConfirmation: this.getSetting(
+				OPTIMIZATION_SETTINGS_KEYS.SKIP_PLAN_CONFIRMATION,
+				DEFAULT_OPTIMIZATION_SETTINGS.skipPlanConfirmation,
 			),
 		};
 	}
 
 	public async updateHeuristicSelectionEnabled(
-		isEnabled: boolean
+		isEnabled: boolean,
 	): Promise<void> {
 		try {
 			await this.workspaceState.update(
 				HEURISTIC_SELECTION_ENABLED_KEY,
-				isEnabled
+				isEnabled,
 			);
 			this.updateWebviewOptimizationSettings();
 		} catch (error) {
@@ -296,8 +306,23 @@ export class SettingsManager {
 		}
 	}
 
+	public async updateSkipPlanConfirmation(isEnabled: boolean): Promise<void> {
+		try {
+			const key = OPTIMIZATION_SETTINGS_KEYS.SKIP_PLAN_CONFIRMATION;
+			await this.workspaceState.update(key, isEnabled);
+			this.updateWebviewOptimizationSettings();
+		} catch (error) {
+			console.error("Error updating skip plan confirmation setting:", error);
+			this.postMessageToWebview({
+				type: "statusUpdate",
+				value: "Error updating skip plan confirmation setting.",
+				isError: true,
+			});
+		}
+	}
+
 	public async updateOptimizationSettings(
-		settings: Partial<typeof DEFAULT_OPTIMIZATION_SETTINGS>
+		settings: Partial<typeof DEFAULT_OPTIMIZATION_SETTINGS>,
 	): Promise<void> {
 		try {
 			for (const [key, value] of Object.entries(settings)) {
@@ -327,7 +352,7 @@ export class SettingsManager {
 	public async resetOptimizationSettings(): Promise<void> {
 		try {
 			for (const [key, defaultValue] of Object.entries(
-				DEFAULT_OPTIMIZATION_SETTINGS
+				DEFAULT_OPTIMIZATION_SETTINGS,
 			)) {
 				const settingKey =
 					OPTIMIZATION_SETTINGS_KEYS[
@@ -380,7 +405,7 @@ export class SettingsManager {
 	private loadSettingsFromStorage(): void {
 		try {
 			const savedModel = this.workspaceState.get<string>(
-				MODEL_SELECTION_STORAGE_KEY
+				MODEL_SELECTION_STORAGE_KEY,
 			);
 			if (savedModel && AVAILABLE_GEMINI_MODELS.includes(savedModel)) {
 				this._selectedModelName = savedModel;
@@ -398,7 +423,7 @@ export class SettingsManager {
 		try {
 			await this.workspaceState.update(
 				MODEL_SELECTION_STORAGE_KEY,
-				this._selectedModelName
+				this._selectedModelName,
 			);
 			resetClient();
 			this.updateWebviewModelList();

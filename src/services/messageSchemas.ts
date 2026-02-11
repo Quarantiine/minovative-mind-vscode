@@ -184,6 +184,11 @@ const cancelContextAgentSchema = z.object({
 	type: z.literal("cancelContextAgent"),
 });
 
+const toggleSkipPlanConfirmationSchema = z.object({
+	type: z.literal("toggleSkipPlanConfirmation"),
+	isEnabled: z.boolean(),
+});
+
 export const allMessageSchemas = z.discriminatedUnion("type", [
 	planRequestSchema,
 	chatMessageSchema,
@@ -228,6 +233,7 @@ export const allMessageSchemas = z.discriminatedUnion("type", [
 	toggleHeuristicContextUsageSchema, // New schema added here
 	rebuildProjectContextSchema,
 	cancelContextAgentSchema,
+	toggleSkipPlanConfirmationSchema, // Added new schema
 ]);
 
 // Export individual schemas if they are needed for more granular error reporting
@@ -241,4 +247,5 @@ export {
 	commitReviewSchema,
 	aiRetryNotificationSchema,
 	toggleHeuristicContextUsageSchema,
+	toggleSkipPlanConfirmationSchema, // Export new schema
 };

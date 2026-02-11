@@ -75,7 +75,9 @@ If you are a developer looking to build from source or contribute, please refer 
   - Start a plan by typing `/plan [your request]` in the chat interface.
   - Alternatively, use commands like `/fix` or custom prompts via `Ctrl/Cmd+M` to initiate a plan from the editor in a file.
 - **Executing a Plan**:
-  - You will be prompted for confirmation before the AI executes a generated plan.
+  - **Confirmation**: By default, you will be prompted to confirm execution.
+  - **Skip Confirmation**: Use the "Fast Forward" toggle in the sidebar to bypass this step and execute plans automatically.
+  - **Plan Labels**: AI-generated plan explanations are labeled with a "Generated Plan" badge in the chat, so you can easily identify them.
   - Monitor execution progress through VS Code notifications.
   - **Smart Context**: The AI will automatically find and read relevant code snippets for each step of the plan using agentic investigation and symbol intelligence, ensuring it has the full picture before writing code.
   - Plans can be cancelled if needed during execution.

@@ -37,7 +37,9 @@
 	display: inline-flex; /* Use flexbox to center icon */
 	align-items: center; /* Vertically center icon */
 	justify-content: center;
-	transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out,
+	transition:
+		background-color 0.1s ease-in-out,
+		color 0.1s ease-in-out,
 		border-color 0.1s ease-in-out; /* Smooth transitions */
 	user-select: none; /* Prevent text selection interference */
 	font-size: 0.8em; /* Make icon slightly smaller if needed */
@@ -62,7 +64,9 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out,
+	transition:
+		background-color 0.1s ease-in-out,
+		color 0.1s ease-in-out,
 		border-color 0.1s ease-in-out; /* Added color to transition */
 	user-select: none;
 	font-size: 0.8em;
@@ -101,7 +105,9 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out,
+	transition:
+		background-color 0.1s ease-in-out,
+		color 0.1s ease-in-out,
 		border-color 0.1s ease-in-out;
 	user-select: none;
 	font-size: 0.8em;
@@ -128,7 +134,9 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out,
+	transition:
+		background-color 0.1s ease-in-out,
+		color 0.1s ease-in-out,
 		border-color 0.1s ease-in-out;
 	user-select: none;
 	font-size: 0.8em;
@@ -163,7 +171,9 @@
 	justify-content: center;
 	/* font-size: 0.85em; REMOVED */
 	cursor: pointer;
-	transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out,
+	transition:
+		background-color 0.1s ease-in-out,
+		color 0.1s ease-in-out,
 		border-color 0.1s ease-in-out;
 	user-select: none;
 }
@@ -205,7 +215,9 @@
 	display: inline-flex; /* Use flexbox to center icon */
 	align-items: center; /* Vertically center icon */
 	justify-content: center;
-	transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out,
+	transition:
+		background-color 0.1s ease-in-out,
+		color 0.1s ease-in-out,
 		border-color 0.1s ease-in-out; /* Smooth transitions */
 	user-select: none; /* Prevent text selection interference */
 	font-size: 0.8em; /* Make icon slightly smaller if needed */
@@ -266,7 +278,9 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out,
+	transition:
+		background-color 0.1s ease-in-out,
+		color 0.1s ease-in-out,
 		border-color 0.1s ease-in-out;
 	user-select: none;
 	font-size: 0.9em; /* Adjust icon size slightly if needed */
@@ -305,7 +319,9 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out,
+	transition:
+		background-color 0.1s ease-in-out,
+		color 0.1s ease-in-out,
 		border-color 0.1s ease-in-out;
 	user-select: none;
 	font-size: 0.9em;
@@ -337,4 +353,57 @@
 #heuristic-context-toggle.inactive:active {
 	background-color: #a33c3c;
 	border-color: #a33c3c;
+}
+
+/* Styling for the Skip Plan Confirmation Toggle Button */
+#skip-plan-confirmation-toggle {
+	padding: 0;
+	width: var(--icon-button-size);
+	min-width: var(--icon-button-size);
+	height: var(--icon-button-size);
+	background-color: var(--vscode-button-secondaryBackground);
+	border: 1px solid var(--vscode-button-border);
+	color: var(--vscode-button-secondaryForeground);
+	border-radius: var(--border-radius);
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	transition:
+		background-color 0.1s ease-in-out,
+		color 0.1s ease-in-out,
+		border-color 0.1s ease-in-out;
+	user-select: none;
+	font-size: 0.9em;
+}
+
+#skip-plan-confirmation-toggle.active {
+	background-color: #3a8e43; /* Distinct Green */
+	border-color: #3a8e43;
+	color: var(--vscode-button-foreground);
+}
+#skip-plan-confirmation-toggle.active:hover {
+	background-color: #4a9e53;
+	border-color: #4a9e53;
+}
+#skip-plan-confirmation-toggle.active:active {
+	background-color: #317f3a;
+	border-color: #317f3a;
+}
+
+#skip-plan-confirmation-toggle.inactive {
+	background-color: var(
+		--vscode-button-secondaryBackground
+	); /* Neutral when inactive */
+	border-color: var(--vscode-button-border);
+	color: var(--vscode-button-secondaryForeground);
+}
+#skip-plan-confirmation-toggle.inactive:hover {
+	background-color: var(--vscode-button-secondaryHoverBackground);
+	border-color: var(--vscode-focusBorder);
+	color: var(--vscode-button-hoverForeground);
+}
+#skip-plan-confirmation-toggle.inactive:active {
+	background-color: rgba(128, 128, 128, 0.3);
+	border-color: var(--vscode-focusBorder);
 }

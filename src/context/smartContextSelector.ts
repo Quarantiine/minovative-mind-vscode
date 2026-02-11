@@ -33,11 +33,7 @@ export { MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION };
 
 /**
  * Represents a file selection with optional line range constraints.
- * Used for chunked/targeted file reading to reduce context size.
- */
-/**
- * Represents a file selection with optional line range constraints.
- * Used for chunked/targeted file reading to reduce context size.
+ * Used for targeted file reading to reduce context size.
  */
 export interface FileSelection {
 	uri: vscode.Uri;
@@ -95,7 +91,7 @@ interface AISelectionCache {
 	userRequest: string;
 	activeFile?: string;
 	fileCount: number;
-	heuristicFilesCount: number;
+	priorityFilesCount: number;
 }
 
 // Cache storage
@@ -104,6 +100,7 @@ const aiSelectionCache = new Map<string, AISelectionCache>();
 // Configuration for AI selection
 interface AISelectionOptions {
 	useCache?: boolean;
+	useAISelectionCache?: boolean; // New: Standardized name
 	cacheTimeout?: number;
 	maxPromptLength?: number;
 	enableStreaming?: boolean;
@@ -113,16 +110,17 @@ interface AISelectionOptions {
 
 export interface SelectRelevantFilesAIOptions {
 	userRequest: string;
-	chatHistory: ReadonlyArray<HistoryEntry>;
-	allScannedFiles: ReadonlyArray<vscode.Uri>;
+	chatHistory: readonly HistoryEntry[];
+	allScannedFiles: readonly vscode.Uri[];
 	projectRoot: vscode.Uri;
 	activeEditorContext?: PlanGenerationContext["editorContext"];
-	diagnostics?: string;
-	fileDependencies?: Map<string, string[]>;
-	reverseDependencies?: Map<string, string[]>; // Files that import each file
-	activeEditorSymbols?: vscode.DocumentSymbol[];
-	preSelectedHeuristicFiles?: vscode.Uri[];
+	priorityFiles?: vscode.Uri[]; // Files to show even in truncated view (e.g. active, modified, error)
 	fileSummaries?: Map<string, string>;
+	fileDependencies?: Map<string, string[]>;
+	reverseDependencies?: Map<string, string[]>;
+	fileLineCounts?: Map<string, number>; // New: Line counts for files
+	diagnostics?: string;
+	activeEditorSymbols?: any;
 	activeSymbolDetailedInfo?: ActiveSymbolDetailedInfo;
 	aiModelCall?: (
 		prompt: string,
@@ -138,12 +136,13 @@ export interface SelectRelevantFilesAIOptions {
 			| undefined,
 		token: vscode.CancellationToken | undefined,
 	) => Promise<string>;
-	aiRequestService?: AIRequestService; // New: Pass service for tool calls
-	postMessageToWebview?: (message: any) => void; // New: For logging to chat
+	aiRequestService?: AIRequestService; // Pass service for tool calls
+	postMessageToWebview?: (message: any) => void; // For logging to chat
 	addContextAgentLogToHistory?: (logText: string) => void; // For persisting logs to history
 	modelName: string;
 	cancellationToken?: vscode.CancellationToken;
 	selectionOptions?: AISelectionOptions; // Selection options
+	alwaysRunInvestigation?: boolean;
 }
 
 /**
@@ -153,11 +152,11 @@ function generateAISelectionCacheKey(
 	userRequest: string,
 	allScannedFiles: ReadonlyArray<vscode.Uri>,
 	activeEditorContext?: PlanGenerationContext["editorContext"],
-	preSelectedHeuristicFiles?: vscode.Uri[],
+	priorityFiles?: vscode.Uri[],
 ): string {
 	const activeFile = activeEditorContext?.filePath || "";
-	const heuristicFiles =
-		preSelectedHeuristicFiles
+	const priorityFilePaths =
+		priorityFiles
 			?.map((f) => f.fsPath)
 			.sort()
 			.join("|") || "";
@@ -167,7 +166,7 @@ function generateAISelectionCacheKey(
 	const keyComponents = [
 		userRequest.substring(0, 100), // First 100 chars of request
 		activeFile,
-		heuristicFiles,
+		priorityFilePaths,
 		fileCount.toString(),
 	];
 
@@ -239,22 +238,23 @@ function optimizePrompt(
 function buildOptimizedProjectStructure(
 	relativeFilePaths: string[],
 	fileSummaries: Map<string, string> | undefined,
-	heuristicPathSet: Set<string>,
+	priorityPathSet: Set<string>,
 	fileDependencies: Map<string, string[]> | undefined,
 	reverseDependencies: Map<string, string[]> | undefined,
 	forceOptimization: boolean,
+	fileLineCounts?: Map<string, number>,
 ): { fileListString: string; isTruncated: boolean } {
 	const fileCount = relativeFilePaths.length;
-	const FILE_LIST_THRESHOLD = 10; // Threshold to switch to optimized view
+	const FILE_LIST_THRESHOLD = 500; // Increased threshold to avoid unnecessary truncation
 
 	if (forceOptimization || fileCount > FILE_LIST_THRESHOLD) {
-		// Optimized Mode: Show top-level structure + heuristic/root files
+		// Optimized Mode: Show top-level structure + priority/root files
 		const topLevelDirs = new Set<string>();
 		const importantFiles = new Set<string>();
 
 		relativeFilePaths.forEach((p) => {
-			// Always include pre-selected heuristic files
-			if (heuristicPathSet.has(p)) {
+			// Always include priority files (active, modified, errors)
+			if (priorityPathSet.has(p)) {
 				importantFiles.add(p);
 				return;
 			}
@@ -295,7 +295,11 @@ function buildOptimizedProjectStructure(
 				.map((p) => {
 					// Add summary if available
 					const summary = fileSummaries?.get(p);
+					const lineCount = fileLineCounts?.get(p);
 					let fileEntry = `- "${p}"`;
+					if (lineCount !== undefined) {
+						fileEntry += ` (${lineCount} lines)`;
+					}
 					if (summary) {
 						fileEntry += ` (${summary
 							.substring(0, 100)
@@ -303,7 +307,7 @@ function buildOptimizedProjectStructure(
 					}
 
 					// Add relationships only for relevant files to reduce noise
-					if (heuristicPathSet.has(p)) {
+					if (priorityPathSet.has(p)) {
 						const imports = fileDependencies?.get(p);
 						const importedBy = reverseDependencies?.get(p);
 
@@ -338,7 +342,12 @@ function buildOptimizedProjectStructure(
 			relativeFilePaths
 				.map((p) => {
 					const summary = fileSummaries?.get(p);
+					const lineCount = fileLineCounts?.get(p);
 					let fileEntry = `- "${p}"`;
+
+					if (lineCount !== undefined) {
+						fileEntry += ` (${lineCount} lines)`;
+					}
 
 					// Add summary if available
 					if (summary) {
@@ -347,8 +356,8 @@ function buildOptimizedProjectStructure(
 							.replace(/\s+/g, " ")}...)`;
 					}
 
-					// Add relationship info for heuristic files (most relevant)
-					if (heuristicPathSet.has(p)) {
+					// Add relationship info for priority files (most relevant)
+					if (priorityPathSet.has(p)) {
 						const imports = fileDependencies?.get(p);
 						const importedBy = reverseDependencies?.get(p);
 
@@ -394,7 +403,7 @@ export async function selectRelevantFilesAI(
 		projectRoot,
 		activeEditorContext,
 		diagnostics,
-		preSelectedHeuristicFiles,
+		priorityFiles: preSelectedPriorityFiles,
 		fileSummaries,
 		activeSymbolDetailedInfo,
 		aiModelCall,
@@ -411,7 +420,7 @@ export async function selectRelevantFilesAI(
 	}
 
 	// Check cache first
-	const useCache = selectionOptions?.useCache ?? true;
+	const useCache = selectionOptions?.useAISelectionCache !== false; // Enable cache by default
 	const cacheTimeout = selectionOptions?.cacheTimeout ?? 10 * 60 * 1000; // 10 minutes default
 
 	if (useCache) {
@@ -419,24 +428,18 @@ export async function selectRelevantFilesAI(
 			userRequest,
 			allScannedFiles,
 			activeEditorContext,
-			preSelectedHeuristicFiles,
+			preSelectedPriorityFiles,
 		);
 
 		const cached = aiSelectionCache.get(cacheKey);
 		if (cached && Date.now() - cached.timestamp < cacheTimeout) {
 			console.log(
-				`Using cached AI selection results for request: ${userRequest.substring(
+				`[SmartContextSelector] Using cached AI selection for: "${userRequest.substring(
 					0,
 					50,
-				)}...`,
+				)}..."`,
 			);
 			if (postMessageToWebview) {
-				postMessageToWebview({
-					type: "contextAgentLog",
-					value: {
-						text: `[Context Agent] Using cached context analysis for this request.`,
-					},
-				});
 				// Also simulate the loading state toggle for consistent UX
 				postMessageToWebview({
 					type: "setContextAgentLoading",
@@ -485,11 +488,11 @@ export async function selectRelevantFilesAI(
 		contextPrompt += `\n${projectConfigPrompt}\n`;
 	}
 
-	if (preSelectedHeuristicFiles && preSelectedHeuristicFiles.length > 0) {
-		const heuristicPaths = preSelectedHeuristicFiles.map((uri) =>
+	if (preSelectedPriorityFiles && preSelectedPriorityFiles.length > 0) {
+		const priorityPaths = preSelectedPriorityFiles.map((uri) =>
 			path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/"),
 		);
-		contextPrompt += `\nHeuristically Pre-selected Files (strong candidates, but critically evaluate them): ${heuristicPaths.join(
+		contextPrompt += `\nPriority Files (strong candidates, but critically evaluate them): ${priorityPaths.join(
 			", ",
 		)}\n`;
 	}
@@ -564,9 +567,9 @@ export async function selectRelevantFilesAI(
 		contextPrompt += `--- End Active Symbol Information ---\n`;
 	}
 
-	// Create a set of heuristic files for faster lookup
-	const heuristicPathSet = new Set(
-		preSelectedHeuristicFiles?.map((uri) =>
+	// Create a set of priority files for faster lookup
+	const priorityPathSet = new Set(
+		preSelectedPriorityFiles?.map((uri) =>
 			path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/"),
 		) || [],
 	);
@@ -577,10 +580,11 @@ export async function selectRelevantFilesAI(
 	const { fileListString, isTruncated } = buildOptimizedProjectStructure(
 		relativeFilePaths,
 		fileSummaries,
-		heuristicPathSet,
+		priorityPathSet,
 		options.fileDependencies,
 		options.reverseDependencies,
 		alwaysRunInvestigation,
+		options.fileLineCounts,
 	);
 
 	// Detect if the user request appears to be about fixing an error
@@ -699,9 +703,9 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 			})\n`
 		: "";
 
-	const heuristicFilesPrompt =
-		preSelectedHeuristicFiles && preSelectedHeuristicFiles.length > 0
-			? preSelectedHeuristicFiles
+	const priorityFilesPrompt =
+		preSelectedPriorityFiles && preSelectedPriorityFiles.length > 0
+			? preSelectedPriorityFiles
 					.map((uri) =>
 						path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/"),
 					)
@@ -719,6 +723,14 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 		`You are a Context Selection Agent. Your goal is to identify the most relevant files for a coding task.
 You will iterate using tools until you have enough information to call \`finish_selection\`.
 
+-- Context --
+${contextPrompt}
+-- End Context --
+
+-- Priority Files (Strong Candidates) --
+${priorityFilesPrompt}
+-- End Priority Files --
+
 -- Instructions --
 1.  **Thinking Process (MANDATORY)**: You MUST call the \`report_thought\` tool to explain your search strategy before using other tools.
     *   Example:
@@ -728,21 +740,36 @@ You will iterate using tools until you have enough information to call \`finish_
         \`\`\`
 2.  **Investigate (REQUIRED)**: \`report_thought\` is **NOT** an investigation tool. After explaining your strategy, you **MUST** use \`run_terminal_command\`, \`lookup_workspace_symbol\`, or \`get_file_symbols\` to verify file existence and content.
     *   **Rule**: You cannot call \`finish_selection\` immediately after \`report_thought\` unless you have already run an investigation command in a previous turn and found the specific files you need.
-3.  **Symbol Exploration (PREFERRED)**: Use \`get_file_symbols\` to see a file's structure (functions, classes, variables) without reading its entire content. This is much faster and context-efficient than \`sed\`.
-4.  **Symbol Lookup (GLOBAL)**: Use \`lookup_workspace_symbol\` to find where a specific symbol is defined across the entire project.
-5.  **Graph Traversal (DEEP)**:
+    *   **Git Usage (POWERFUL)**: Use \`git\` to understand recent history and changes.
+        *   \`git status\`: See current state and modified files.
+        *   \`git diff\`: See unstaged changes in the workspace (Ground Truth for WIP).
+        *   \`git diff --staged\`: See staged changes.
+        *   \`git log -n 5\`: See 5 most recent commit messages.
+        *   \`git diff HEAD~1\`: See changes in the last commit.
+        *   \`git show <commit>\`: See details of a specific commit.
+        *   \`git ls-files\`: List files in the index.
+3.  **Powerful Search**: Use \`grep\` or \`find\` to locate code patterns.
+    *   \`grep -rn "pattern" .\`: Search for text in all files.
+    *   \`find . -name "*pattern*"\`: Search for files by name.
+4.  **Symbol Exploration (PREFERRED)**: Use \`get_file_symbols\` to see a file's structure (functions, classes, variables) without reading its entire content. This is much faster and context-efficient than \`sed\`.
+5.  **Symbol Lookup (GLOBAL)**: Use \`lookup_workspace_symbol\` to find where a specific symbol is defined across the entire project.
+6.  **Graph Traversal (DEEP)**:
     *   Use \`find_references\` to see where a symbol is *used* (callers).
     *   Use \`go_to_definition\` to see where a symbol is *defined* (implementation).
     *   **Crucial**: These tools allow you to traverse the dependency graph. Use them to understand how components interact.
-6.  **Strategic Independence (CRITICAL)**: You are provided with "Legacy Suggestions" (Heuristically Pre-selected Files). These are ONLY a starting guess. Do NOT assume they are correct or complete. 
-    *   **Mandate**: Even if the files you think you need are in the legacy list, you **MUST** investigate them (e.g., using \`ls -R\`, \`get_file_symbols\`, or \`sed\`) to confirm their relevance and content before finishing.
-    *   **Truth**: Search the codebase yourself to find the "ground truth." Heuristics often miss important files or include irrelevant ones.
-7.  **Loop Prevention**: Do not run the same command twice.
-8.  **Read Specific Lines (MANDATORY)**: Use \`sed -n 'start,endp' file\` for ALL file reading.
+7.  **Strategic Independence (CRITICAL)**: You are provided with "Priority Files" (strong candidates). These are ONLY a starting guess. Do NOT assume they are correct or complete.
+    *   **Mandate**: Even if the files you think you need are in the legacy list, you **MUST** investigate them (e.g., using \`ls -R\`, \`get_file_symbols\`, \`git diff\`, or \`sed\`) to confirm their relevance and content before finishing.
+    *   **Truth**: Search the codebase yourself to find the "ground truth." Priority suggestions often miss important files or include irrelevant ones.
+8.  **Loop Prevention**: Do not run the same command twice.
+9.  **Read Specific Lines (MANDATORY)**: Use \`sed -n 'start,endp' file\` for ALL file reading.
+    *   **Workflow**: You MUST use \`get_file_symbols\` FIRST to understand the file structure and identify the EXACT line numbers you need before reading with \`sed\`. Using \`sed\` blindly on large ranges is a waste of context.
+    *   **Limits**: Focus on small, targeted ranges.
+        *   **Recommended**: 300-500 lines at most.
+        *   **Inefficient**: Reading >1000 lines at once is highly discouraged and wastes context. If you need that much code, your strategy might be too broad.
     *   Example: \`sed -n '1,50p' src/file.ts\` (reads first 50 lines)
     *   Example: \`sed -n '100,200p' src/file.ts\` (reads lines 100-200)
-9.  **No head/cat**: Do NOT use \`head\` or \`cat\`. Always specify a range with \`sed\` to avoid overwhelming the context.
-10. **Finalize**: Only call \`finish_selection\` when you are confident you have identified ALL necessary files.
+10. **No head/cat**: Do NOT use \`head\` or \`cat\`. Always specify a range with \`sed\` to avoid overwhelming the context.
+11. **Finalize**: Only call \`finish_selection\` when you are confident you have identified ALL necessary files.
 
 -- Project Context --
 Project Path: ${projectRoot.fsPath}
@@ -751,8 +778,8 @@ ${activeFilePrompt}${activeSymbolPrompt}${diagnosticsContext}${historyContext}${
 -- Available Files (Ground Truth for Investigation) --
 Use \`run_terminal_command\` with \`ls -R\` or \`find\` if you need to explore the directory structure.
 
--- Heuristically Pre-selected Files (MAY BE WRONG - INVESTIGATE FIRST) --
-${heuristicFilesPrompt}
+-- Priority Files (MAY BE WRONG - INVESTIGATE FIRST) --
+${priorityFilesPrompt}
 
 -- File Summaries (Reference only) --
 ${summariesPrompt}
@@ -926,7 +953,7 @@ You MUST start by calling \`report_thought\`.
 				},
 			];
 
-			const MAX_TURNS = 30;
+			const MAX_TURNS = 50;
 
 			for (let turn = 0; turn < MAX_TURNS; turn++) {
 				if (cancellationToken?.isCancellationRequested) {
@@ -1058,7 +1085,7 @@ You MUST start by calling \`report_thought\`.
 							userRequest,
 							allScannedFiles,
 							activeEditorContext,
-							preSelectedHeuristicFiles,
+							preSelectedPriorityFiles,
 						);
 						aiSelectionCache.set(cacheKey, {
 							timestamp: Date.now(),
@@ -1066,7 +1093,7 @@ You MUST start by calling \`report_thought\`.
 							userRequest,
 							activeFile: activeEditorContext?.filePath,
 							fileCount: allScannedFiles.length,
-							heuristicFilesCount: preSelectedHeuristicFiles?.length || 0,
+							priorityFilesCount: preSelectedPriorityFiles?.length || 0,
 						});
 					}
 					if (postMessageToWebview) {
@@ -1607,7 +1634,7 @@ JSON Array of selected file paths:
 				userRequest,
 				allScannedFiles,
 				activeEditorContext,
-				preSelectedHeuristicFiles,
+				preSelectedPriorityFiles,
 			);
 			aiSelectionCache.set(cacheKey, {
 				timestamp: Date.now(),
@@ -1615,7 +1642,7 @@ JSON Array of selected file paths:
 				userRequest,
 				activeFile: activeEditorContext?.filePath,
 				fileCount: allScannedFiles.length,
-				heuristicFilesCount: preSelectedHeuristicFiles?.length || 0,
+				priorityFilesCount: preSelectedPriorityFiles?.length || 0,
 			});
 		}
 
@@ -1625,8 +1652,8 @@ JSON Array of selected file paths:
 			"[SmartContextSelector] Error during AI file selection:",
 			error,
 		);
-		// Fallback to heuristics + active file on any error
-		const fallbackFiles = new Set(preSelectedHeuristicFiles || []);
+		// Fallback to priority + active file on any error
+		const fallbackFiles = new Set(preSelectedPriorityFiles || []);
 		if (activeEditorContext?.documentUri) {
 			fallbackFiles.add(activeEditorContext.documentUri);
 		}
@@ -1745,11 +1772,6 @@ function _processSelectedPaths(
 	return finalResultSelections;
 }
 
-// Backward compatibility wrapper: extracts just URIs from FileSelection[]
-function _extractUrisFromSelections(selections: FileSelection[]): vscode.Uri[] {
-	return selections.map((sel) => sel.uri);
-}
-
 /**
  * Clear AI selection cache for a specific workspace or all workspaces
  */
@@ -1778,7 +1800,7 @@ export function getAISelectionCacheStats(): {
 		age: number;
 		fileCount: number;
 		selectedCount: number;
-		heuristicCount: number;
+		priorityCount: number;
 	}>;
 } {
 	const entries = Array.from(aiSelectionCache.entries()).map(
@@ -1787,7 +1809,7 @@ export function getAISelectionCacheStats(): {
 			age: Date.now() - cache.timestamp,
 			fileCount: cache.fileCount,
 			selectedCount: cache.selectedFiles.length,
-			heuristicCount: cache.heuristicFilesCount,
+			priorityCount: cache.priorityFilesCount,
 		}),
 	);
 

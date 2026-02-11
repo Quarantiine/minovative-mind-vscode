@@ -235,7 +235,9 @@
 	/* Collapsible behavior */
 	max-height: 500px; /* Default max height when expanded */
 	overflow: hidden; /* Hide overflow initially, list itself will scroll if needed */
-	transition: max-height 0.3s ease-out, padding 0.3s ease-out,
+	transition:
+		max-height 0.3s ease-out,
+		padding 0.3s ease-out,
 		margin 0.3s ease-out; /* Smooth collapse/expand */
 }
 .ai-context-files.collapsed {
@@ -285,7 +287,9 @@
 	margin: 0; /* Remove default margin */
 	max-height: 150px; /* Default max height for scrollable list when expanded */
 	overflow-y: auto; /* Scroll if too many files */
-	transition: max-height 0.3s ease-out, padding 0.3s ease-out,
+	transition:
+		max-height 0.3s ease-out,
+		padding 0.3s ease-out,
 		margin 0.3s ease-out; /* Smooth collapse/expand */
 }
 
@@ -305,7 +309,9 @@
 	flex-shrink: 0; /* Don't shrink when wrapped */
 	cursor: pointer; /* Now directly clickable */
 	text-decoration: none; /* No underline */
-	transition: background-color 0.1s ease, border-color 0.1s ease;
+	transition:
+		background-color 0.1s ease,
+		border-color 0.1s ease;
 }
 .context-file-item:hover {
 	background-color: var(--vscode-button-secondaryHoverBackground);
@@ -582,4 +588,21 @@
 .context-agent-summary.loading .context-agent-icon {
 	animation: context-agent-pulse 1.5s infinite ease-in-out;
 	color: #ffcc00; /* Optional: Change color to indicate activity */
+}
+
+/* --- Generated Plan Label --- */
+.generated-plan-label {
+	display: inline-block;
+	font-size: 0.75em;
+	font-weight: 600;
+	color: var(--vscode-charts-yellow, #e2c08d);
+	background-color: rgba(226, 192, 141, 0.12);
+	padding: 2px 8px;
+	border-radius: 4px;
+	margin-left: 4px;
+	margin-bottom: 6px;
+	vertical-align: middle;
+	letter-spacing: 0.3px;
+	text-transform: uppercase;
+	width: fit-content;
 }

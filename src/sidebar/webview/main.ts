@@ -20,7 +20,11 @@ import {
 } from "./ui/chatMessageRenderer";
 import { RequiredDomElements } from "./types/webviewTypes";
 import { setIconForButton } from "./utils/iconHelpers";
-import { faChartLine, faProjectDiagram } from "./utils/iconHelpers";
+import {
+	faChartLine,
+	faProjectDiagram,
+	faFastForward,
+} from "./utils/iconHelpers";
 import { hideSuggestions } from "./ui/commandSuggestions";
 
 /**
@@ -66,7 +70,6 @@ export function syncHeuristicContextState(
 	elements.heuristicContextToggle.title = title;
 
 	// 3. Trigger UI update (which handles active/inactive classes based on appState)
-	// We call setLoadingState here to ensure the active/inactive classes are applied.
 	setLoadingState(appState.isLoading, elements);
 }
 
@@ -81,14 +84,21 @@ export function syncHeuristicContextState(
  * @param elements DOM elements.
  */
 export function handleOptimizationSettingsUpdate(
-	message: { value: { heuristicSelectionEnabled: boolean } },
+	message: {
+		value: {
+			heuristicSelectionEnabled: boolean;
+			skipPlanConfirmation?: boolean;
+		};
+	},
 	elements: RequiredDomElements,
 ): void {
-	if (typeof message.value.heuristicSelectionEnabled === "boolean") {
-		syncHeuristicContextState(
-			message.value.heuristicSelectionEnabled,
-			elements,
-		);
+	const settings = message.value;
+
+	if (typeof settings.heuristicSelectionEnabled === "boolean") {
+		syncHeuristicContextState(settings.heuristicSelectionEnabled, elements);
+	}
+	if (typeof settings.skipPlanConfirmation === "boolean") {
+		syncSkipPlanConfirmationState(settings.skipPlanConfirmation, elements);
 	}
 }
 
@@ -109,6 +119,48 @@ function toggleHeuristicContextDisplay(elements: RequiredDomElements): void {
 	});
 
 	// setLoadingState is now called inside syncHeuristicContextState
+}
+
+/**
+ * Synchronizes the skip plan confirmation state between the app state and the UI display.
+ *
+ * @param isEnabled - The desired boolean state for skip plan confirmation.
+ * @param elements - An object containing references to all required DOM elements.
+ */
+export function syncSkipPlanConfirmationState(
+	isEnabled: boolean,
+	elements: RequiredDomElements,
+): void {
+	// 1. Update app state
+	appState.isSkipPlanConfirmationEnabled = isEnabled;
+
+	// 2. Update visual properties (title)
+	const title = isEnabled
+		? "Skip Plan Confirmation is ON"
+		: "Skip Plan Confirmation is OFF";
+	elements.skipPlanConfirmationToggle.title = title;
+
+	// 3. Trigger UI update (which handles active/inactive classes based on appState)
+	setLoadingState(appState.isLoading, elements);
+}
+
+/**
+ * Toggles skip plan confirmation state and updates the display.
+ */
+function toggleSkipPlanConfirmationDisplay(
+	elements: RequiredDomElements,
+): void {
+	// 1. Determine the new state
+	const newEnabledState = !appState.isSkipPlanConfirmationEnabled;
+
+	// 2. Update UI and internal state using the new synchronization function
+	syncSkipPlanConfirmationState(newEnabledState, elements);
+
+	// 3. Send message to extension host to persist the setting
+	postMessageToExtension({
+		type: "toggleSkipPlanConfirmation",
+		isEnabled: newEnabledState,
+	});
 }
 
 /**
@@ -164,9 +216,6 @@ function setLoadingState(
 	loading: boolean,
 	elements: RequiredDomElements,
 ): void {
-	console.log(
-		`[setLoadingState] Call: loading=${loading}, current isLoading=${appState.isLoading}, current isApiKeySet=${appState.isApiKeySet}, current isCommandSuggestionsVisible=${appState.isCommandSuggestionsVisible}`,
-	);
 	appState.isLoading = loading;
 	const loadingMsg = elements.chatContainer.querySelector(".loading-message");
 	if (loadingMsg) {
@@ -209,10 +258,6 @@ function setLoadingState(
 	// Define enablement for Heuristic Context Toggle
 	const canToggleHeuristicButton = !isBlockedByOperation;
 
-	console.log(
-		`[setLoadingState] Final computed canInteractWithMainChatControls=${canInteractWithMainChatControls}, canSendCurrentInput=${canSendCurrentInput}, canInteractWithChatHistoryButtons=${canInteractWithChatHistoryButtons}`,
-	);
-
 	// Apply disabled states to main chat interface elements
 	elements.chatInput.disabled = !canInteractWithMainChatControls;
 	elements.modelSelect.disabled = !canInteractWithMainChatControls;
@@ -224,14 +269,25 @@ function setLoadingState(
 
 	// Apply derived CSS class toggling logic
 	const isHeuristicEnabled = appState.isHeuristicContextEnabled;
-	elements.heuristicContextToggle.classList.toggle(
-		"active",
-		isHeuristicEnabled,
-	);
-	elements.heuristicContextToggle.classList.toggle(
-		"inactive",
-		!isHeuristicEnabled,
-	);
+	if (isHeuristicEnabled) {
+		elements.heuristicContextToggle.classList.add("active");
+		elements.heuristicContextToggle.classList.remove("inactive");
+	} else {
+		elements.heuristicContextToggle.classList.remove("active");
+		elements.heuristicContextToggle.classList.add("inactive");
+	}
+
+	// Apply disabled states to Skip Plan Confirmation Toggle
+	elements.skipPlanConfirmationToggle.disabled = !canToggleHeuristicButton; // Reusing same logic as heuristic toggle
+
+	const isSkipPlanConfirmationEnabled = appState.isSkipPlanConfirmationEnabled;
+	if (isSkipPlanConfirmationEnabled) {
+		elements.skipPlanConfirmationToggle.classList.add("active");
+		elements.skipPlanConfirmationToggle.classList.remove("inactive");
+	} else {
+		elements.skipPlanConfirmationToggle.classList.remove("active");
+		elements.skipPlanConfirmationToggle.classList.add("inactive");
+	}
 
 	// Apply disabled states to API key management controls
 	const enableApiKeyControls =
@@ -471,10 +527,6 @@ function initializeWebview(): void {
 		return;
 	}
 
-	// Post webviewReady message to the extension
-	postMessageToExtension({ type: "webviewReady" });
-	console.log("Webview sent ready message.");
-
 	// Set initial focus to the chat input
 	elements.chatInput.focus();
 
@@ -526,6 +578,19 @@ function initializeWebview(): void {
 	setIconForButton(elements.heuristicContextToggle, faProjectDiagram);
 	// --- End Heuristic Context Toggle Initialization ---
 
+	// --- Skip Plan Confirmation Toggle Initialization ---
+	syncSkipPlanConfirmationState(
+		!!appState.isSkipPlanConfirmationEnabled,
+		elements,
+	);
+
+	elements.skipPlanConfirmationToggle.addEventListener("click", () => {
+		toggleSkipPlanConfirmationDisplay(elements);
+	});
+
+	setIconForButton(elements.skipPlanConfirmationToggle, faFastForward);
+	// --- End Skip Plan Confirmation Toggle Initialization ---
+
 	// Perform initial UI setup for dynamically created components or visibility
 	createPlanConfirmationUI(
 		elements,
@@ -554,6 +619,11 @@ function initializeWebview(): void {
 			}
 		}
 	});
+
+	// Post webviewReady message to the extension host AFTER all handlers are initialized.
+	// This ensures we don't miss any immediate state update messages (like optimization settings).
+	postMessageToExtension({ type: "webviewReady" });
+	console.log("Webview initialization complete, sent ready message.");
 }
 
 // Ensure the webview is initialized once the DOM is fully loaded.

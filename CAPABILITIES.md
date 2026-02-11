@@ -30,6 +30,7 @@ Minovative Mind offers an intuitive chat interface for direct interaction with A
 - **Slash Command Suggestions**: Utilize intelligent suggestions for commands like `/plan`, `/fix`, and `/commit` to streamline actions.
 - **Editable History**: Edit previous messages to re-evaluate conversations with updated context.
 - **Convert to Plans**: AI-generated responses can be seamlessly converted into actionable `/plan` commands for structured execution.
+- **Plan Labels**: AI-generated plan explanations display a "Generated Plan" badge, making them easily distinguishable from regular AI responses in the chat.
 - **Interactive File Selector**: A dedicated "Open File List" button provides a dynamic, searchable, and navigable popup. Users can efficiently select workspace files to insert their paths directly into the chat input, complete with search, keyboard navigation, and visual enhancements.
 
 ### 1.3 Code Explanation
@@ -49,7 +50,7 @@ Minovative Mind can autonomously plan and execute complex development tasks, sig
 - **Automated Workflow**: The AI executes its plan by creating new files, writing and modifying code, and running shell commands (`create_directory`, `create_file`, `modify_file`, `run_command`).
 - **Intelligent Command Escalation**: Commands like `/fix` or general code edits can automatically escalate to a full plan execution when task complexity warrants it.
 - **Dynamic Context Refinement**: Unlike static plans, the AI re-evaluates project context _before every single step_. It investigates the codebase and reads only the specific lines of code needed for that step (e.g., "read lines 50-100 of auth.ts"), ensuring maximum accuracy and minimal token usage.
-- **Confirmation & Monitoring**: You'll be prompted for confirmation before a plan executes, and you can monitor its progress, with options to cancel specific ongoing tasks.
+- **Confirmation & Controls**: You'll be prompted for confirmation before a plan executes by default, but this can be skipped using the "Fast Forward" toggle for rapid execution. You can also monitor progress and cancel specific ongoing tasks.
 - **Autonomous Self-Correction**: Automatically detects and repairs issues introduced during code generation or modification. It monitors **real-time diagnostics** and uses the **exact error message text** to identify root causes and proactively generate repair plans without manual intervention.
 
 ### 2.2 Intelligent Code Modification
@@ -91,7 +92,7 @@ Minovative Mind builds a profound understanding of your project using comprehens
 
 - **Prioritized Context**: Prioritizes files that are recently modified, linked by symbols, or are directly related to the user's active context, with refined relevance scoring considering symbols and references.
 - **Intelligent File Summarization**: Summarizes file content to fit within token limits while preserving critical information, including detailed file complexity estimation and enhanced main purpose detection.
-- **Configurable Heuristic Selection**: Utilizes configurable rules (e.g., directory proximity, dependency analysis, symbol relevance) for intelligent file selection.
+- **Priority File Selection**: Automatically identifies uncommitted git changes and active editor files as priority context, ensuring the AI always has visibility into the most relevant working-set files.
 - **Cached Analysis**: Caches file analysis results to improve performance for symbol and reference lookups. It includes internal file caching to prevent redundant processing.
 - **Smart Truncation & Progressive Loading**: Employs intelligent truncation and progressive loading of content to optimize token usage and response times.
 
@@ -144,7 +145,7 @@ Minovative Mind prioritizes user control, project security, transparent operatio
 - **Seamless State Restoration**: Preserves and restores critical extension states (e.g., pending plans, active AI operations, user preferences) across VS Code restarts for continuity.
 - **Accurate API Token Counting**: Precisely measures token consumption for all AI requests.
 - **Real-time Token Usage Display**: Provides immediate feedback on token usage and request counts (including failures) directly within the sidebar, optimized for high scannability.
-- **Error Handling & Fallbacks**: Implements a layered fallback mechanism for context building (smart → heuristic → minimal) to ensure AI always receives some relevant information.
+- **Error Handling & Fallbacks**: Implements a layered fallback mechanism for context building (smart context → priority files → minimal) to ensure AI always receives some relevant information.
 - **Error and Diff Highlighting**: Highlights errors and code differences in the UI for quick identification and review.
 
 ---

@@ -24,10 +24,14 @@ sequenceDiagram
     activate Planner
     Planner->>User: 4. Streams Textual Explanation
     Planner->>Planner: 5. Generates Structure Plan (JSON)
-    Planner-->>User: 6. Requests Confirmation
-    deactivate Planner
 
-    User->>Executor: 7. Approves Plan
+    alt Skip Confirmation Enabled (Fast Forward)
+        Planner-->>Executor: 6. Auto-Executes Plan
+    else Normal Mode
+        Planner-->>User: 6. Requests Confirmation
+        User->>Executor: 7. Approves Plan
+    end
+    deactivate Planner
 
     activate Executor
     loop Execution Cycle
@@ -35,7 +39,7 @@ sequenceDiagram
         Executor->>VSCode: 9. Executes Step (Create/Modify/Cmd)
     end
 
-    Executor->>Diagnostics: 10. Warm Up Diagnostics
+    Executor->>Diagnostics: 10. Stabilize & Warm Up Diagnostics
     Diagnostics-->>Executor: 11. Returns Error Status
 
     alt Errors Detected
@@ -69,7 +73,8 @@ sequenceDiagram
 ### Phase 3: User Review
 
 1.  **Presentation**: The plan is visualized in the sidebar, showing exactly which files will be touched.
-2.  **Confirmation**: The process pauses. You must click **"Execute Plan"** to proceed. You can also edit the request or cancel at this stage.
+2.  **Confirmation**: By default, the process pauses and you must click **"Execute Plan"** to proceed. You can also edit the request or cancel at this stage.
+3.  **Skip Confirmation (Fast Forward)**: When the "Fast Forward" toggle is enabled in the sidebar, the AI skips the confirmation step entirely and begins execution automatically after streaming the plan explanation.
 
 ### Phase 4: Execution
 
@@ -83,7 +88,7 @@ The `PlanExecutorService` takes over to orchestrate the approved steps:
 
 This is where the agent acts autonomously to ensure quality:
 
-1.  **Diagnostic Warm-up**: After the plan finishes, the system calls `warmUpDiagnostics`. This programmatically opens modified files and waits for VS Code's language servers (TypeScript, Python, etc.) to report errors.
+1.  **Diagnostic Stabilization**: After the plan finishes, the system calls `waitForDiagnosticsToStabilize` on each modified file, then `warmUpDiagnostics`. This programmatically opens modified files and waits for VS Code's language servers (TypeScript, Python, etc.) to fully settle before reporting errors.
 2.  **Error Detection**: The system checks if any _new_ errors (Severity: Error) have appeared in the workspace.
 3.  **The Self-Correction Loop**:
     - **Trigger**: If the plan succeeded but errors are detected, the system **automatically** triggers the `self-correction` workflow.

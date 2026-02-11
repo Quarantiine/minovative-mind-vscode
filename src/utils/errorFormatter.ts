@@ -66,11 +66,10 @@ export function formatUserFacingErrorMessage(
 	}
 	// Add new AI-specific error mappings here, after 'No workspace folder open' and before 'HTTP 401'
 	else if (message.includes(ERROR_STREAM_PARSING_FAILED)) {
-		message =
-			"AI streaming parsing error: The AI returned an unexpected or malformed response (parsing failed) - Please wait...AI Retrying again.";
+		message = "AI streaming parsing error: Please wait...AI Retrying again.";
 	} else if (message.includes(ERROR_SERVICE_UNAVAILABLE)) {
 		message =
-			"AI service temporarily overloaded: The AI service is currently experiencing high load (overloaded) - Please wait...AI Retrying again.";
+			"AI service temporarily overloaded: Please wait...AI Retrying again.";
 	} else if (message.includes(ERROR_QUOTA_EXCEEDED)) {
 		message = "API Quota Exceeded. Retrying automatically.";
 	} else if (

@@ -109,6 +109,8 @@ Command Usage Guidelines:
 - **Robust Searching**: Use \`find . -iname "*pattern*"\` for case-insensitive file searching. \`find\` is case-sensitive by default, so \`*Service.ts\` will miss \`planService.ts\` if using \`*service.ts\`.
 - **Noise Reduction**: Use \`grep ... | uniq\` to remove duplicate matches and save context window.
 - **Canonical Paths**: Use \`realpath <path>\` to resolve relative paths (e.g., \`../\`) before performing file modifications, ensuring accuracy.
+- **Git Context**: If the request involves recent work or history, use \`git log\`, \`git status\`, or \`git diff\` (recent changes in this workspace) to gather context before planning.
+- **Targeted Reading**: When reading files, prefer small, targeted ranges (300-500 lines) over reading entire large files. Use symbols to find specific logic.
 - **Dependencies**: Prefer \`npm install <pkg>\` (no shell) over shell scripts for reliability.
 ${
 	editorContext && diagnosticsString
@@ -247,6 +249,7 @@ Crucial Rules for \`generateExecutionPlan\` Tool:
 - For \`create_file\` with code files, \`generate_prompt\` is MANDATORY, not optional. Never use \`content\` for code.
 - All generated code/instructions must be production-ready (complete, functional, no placeholders/TODOs). The best code you can give.
 - **Allowed Command List**: For 'run_command' steps, you are strictly limited to the following commands: [${SafeCommandExecutor.getAllowedCommands().join(", ")}]. Ensure any command you use is in this list.
+- **Git for Context**: You are encouraged to use \`git log\`, \`git status\`, and \`git diff\` (recent changes in this workspace) to understand the current state and history of the project when needed for context.
 - **Robustness**: Use \`find . -iname ...\` for searches to avoid case-sensitivity issues (e.g., \`find src -name "*service.ts"\` will fail to find \`planService.ts\` on many systems).
 - **PATH ACCURACY**: You MUST use the EXACT relative paths provided in the diagnostics or project context. Do not truncate paths or assume files are in the root if they are in subdirectories.
 
@@ -312,9 +315,14 @@ Diagnostics: ${editorContext.diagnosticsString || "None"}
 
 	return `You are an expert software engineer. A previous attempt to fulfill a request has resulted in errors or incomplete implementation. Your task is to analyze the provided context (focused on recently changed files) and the summary of previous changes/errors to propose a fix strategy.
 
+STRATEGY PRIORITIZATION RULES:
+1. **CRITICAL**: Your primary goal is to fix all reported ERRORS in the "FILES WITH ERRORS" list.
+2. **SKIP CLEAN FILES**: Do NOT suggest modifications for files listed as "CLEAN FILES" or "HAS NO DIAGNOSTICS" unless a change there is MATHEMATICALLY NECESSARY to fix a diagnostic in an error file (e.g., updating an import, changing a function signature used by the error file).
+3. **DIAGNOSTIC FOCUS**: Carefully read the "Self-Correction Diagnostic Summary" and "Relevant Diagnostics" for each file. Your plan must address EVERY reported error.
+
 Instructions:
 1. Review the "Summary of Recent Changes/Errors" and the "Self-Correction Diagnostic Summary".
-2. Identify which files have ERRORS and which are CLEAN. DO NOT suggest changes for CLEAN files unless they are logically necessary for fixing errors in other files.
+2. Identify which files have ERRORS and which are CLEAN. 
 3. Analyze the "Current Project Context" (focusing on files with reported errors) and any "Target File" info.
 4. Propose a clear, high-level, step-by-step textual strategy (using Markdown) to fix the reported ERRORS and complete the task.
 5. Focus solely on problem-solving. No code or JSON output yet.

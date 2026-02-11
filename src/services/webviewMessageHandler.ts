@@ -76,6 +76,7 @@ export async function handleWebviewMessage(
 		"toggleHeuristicContextUsage", // Allowed as a UI interaction during background operations
 		"rebuildProjectContext", // Allowed during background operations
 		"cancelContextAgent", // Allowed during background operations
+		"toggleSkipPlanConfirmation", // Allowed as a UI interaction
 	];
 
 	if (
@@ -450,6 +451,15 @@ export async function handleWebviewMessage(
 				await provider.settingsManager.updateHeuristicSelectionEnabled(
 					isEnabled,
 				);
+				break;
+			}
+
+			case "toggleSkipPlanConfirmation": {
+				const isEnabled = validatedData.isEnabled;
+				console.log(
+					`[MessageHandler] Received toggleSkipPlanConfirmation: ${isEnabled}`,
+				);
+				await provider.settingsManager.updateSkipPlanConfirmation(isEnabled);
 				break;
 			}
 
