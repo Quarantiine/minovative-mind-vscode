@@ -131,7 +131,7 @@ GUIDELINES:
 - Production-ready: Highlight modularity/maintainability.
 
 Format the output to begin EXACTLY with:
-"/plan "
+"/plan Plan: "
 `;
 
 	try {
