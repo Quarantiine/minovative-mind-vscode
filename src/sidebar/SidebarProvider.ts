@@ -505,9 +505,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			}
 		} else {
 			// For any other message type not explicitly categorized, default to immediate sending
-			console.warn(
-				`[SidebarProvider] Message type '${message.type}' not categorized for throttling; sending immediately.`,
-			);
+			// console.warn(
+			// 	`[SidebarProvider] Message type '${message.type}' not categorized for throttling; sending immediately.`,
+			// );
 			this._postMessageImmediateInternal(message);
 		}
 	}

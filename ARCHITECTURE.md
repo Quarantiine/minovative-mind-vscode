@@ -23,13 +23,12 @@ A deeper analysis of the file structure, class responsibilities, and how differe
 
 #### 2. Code & Project Structure Analysis
 
-- **Responsibility**: Provides deep insights into the project's codebase, including extracting document symbols, fetching and formatting diagnostic information, detecting project type, and building dependency graphs.
+- **Responsibility**: Provides deep insights into the project's codebase, including extracting document symbols, fetching and formatting diagnostic information, and detecting project type.
 - **Key Components**:
   - **Document Symbols**: `src/services/symbolService.ts` (retrieves detailed symbol information).
   - **Diagnostic Information**: `src/utils/diagnosticUtils.ts` (retrieves and formats real-time diagnostic data).
-  - **Dependency Graph**: `src/context/dependencyGraphBuilder.ts` (analyzes import/export statements and tracks dependencies using structured `DependencyRelation` objects).
   - **Deep Symbol Analysis (Call Hierarchy)**: `src/services/symbolService.ts` (`prepareCallHierarchy`, `resolveIncomingCalls`, `resolveOutgoingCalls`) extracts complex call and type relationships for the active symbol, ensuring the AI understands execution flow.
-- **Key Files**: `src/services/symbolService.ts`, `src/utils/diagnosticUtils.ts`, `src/services/projectTypeDetector.ts`, `src/context/dependencyGraphBuilder.ts`
+- **Key Files**: `src/services/symbolService.ts`, `src/utils/diagnosticUtils.ts`, `src/services/projectTypeDetector.ts`
 
 ##### Diagnostic Context Integration
 
@@ -57,16 +56,14 @@ This system ensures that diagnostic information, particularly 'Information' and 
 
 #### 4. Advanced Context Building & AI-Driven Selection
 
-- **Responsibility**: Orchestrates the entire process of building highly relevant, semantic-aware contextual data for AI models. It prioritizes functional and semantic relationships between files over simple import chains, avoiding an increase in direct import dependency depth.
+- **Responsibility**: Orchestrates the entire process of building highly relevant, semantic-aware contextual data for AI models. It prioritizes functional and semantic relationships between files using modern IDE symbol and reference APIs.
 - **Key Features**:
-  - **AI Prompt Engineering (`src/context/smartContextSelector.ts`)**: The AI-driven file selection mechanism is enhanced to focus on deeper semantic and functional relevance, utilizing comprehensive symbol information (including call hierarchy data) and file content summaries.
-  - **Heuristic Pre-selection (`src/context/heuristicContextSelector.ts`)**: Improved heuristics provide a more accurate initial set of candidate files, which are then further refined by the AI.
+  - **AI Prompt Engineering (`src/context/smartContextSelector.ts`)**: The AI-driven file selection mechanism is enhanced to focus on deeper semantic and functional relevance, utilizing comprehensive symbol information (including call hierarchy and reference data) and file content summaries.
   - **Semantic Summarization (`src/context/fileContentProcessor.ts`)**: Files are intelligently summarized, capturing their core purpose and abstractions, making them more digestible and relevant for AI context building.
-  - **Conceptual Proximity Graph & Semantic Scoring**: Uses Cosine Similarity (TF-IDF) on file summaries to build a conceptual graph, and scores are adjusted based on explicit dependency relationship types (`runtime`, `type`).
   - **Sequential Project Context (`buildSequentialProjectContext`)**: Handles very large codebases by processing and summarizing files in batches using `SequentialContextService`.
-  - **Configurable Context Gating**: Implements user control over the file relevance engine by introducing a configurable setting (`heuristicSelectionEnabled`). This gates the execution of resource-intensive steps like dependency graph building, symbol processing, and semantic analysis based on user preference, ensuring optimal performance when heuristics are not desired. The `ContextService` handles disabled states via robust fallback mechanisms, and context checks are bypassed entirely for highly specialized commands like `/commit`. A dedicated toggle button in the sidebar UI allows dynamic control.
+  - **Configurable Context Gating**: Implements user control over the file relevance engine. The `ContextService` handles various investigation states via robust fallback mechanisms, and context checks are bypassed entirely for highly specialized commands like `/commit`. A dedicated toggle button in the sidebar UI allows dynamic control.
   - **Context Assembly**: Integrates all collected data into a cohesive, token-optimized prompt string (`buildContextString`).
-- **Key Files**: `src/context/smartContextSelector.ts`, `src/context/heuristicContextSelector.ts`, `src/context/semanticLinker.ts`, `src/context/fileContentProcessor.ts`, `src/services/contextService.ts`, `src/context/workspaceScanner.ts`, `src/context/dependencyGraphBuilder.ts`, `src/context/contextBuilder.ts`, `src/services/symbolService.ts`, `src/utils/diagnosticUtils.ts`, `src/services/sequentialContextService.ts`, `src/context/safeCommandExecutor.ts`
+- **Key Files**: `src/context/smartContextSelector.ts`, `src/context/fileContentProcessor.ts`, `src/services/contextService.ts`, `src/context/workspaceScanner.ts`, `src/context/contextBuilder.ts`, `src/services/symbolService.ts`, `src/utils/diagnosticUtils.ts`, `src/services/sequentialContextService.ts`, `src/context/safeCommandExecutor.ts`
 
 #### 5. Agentic Context Investigation
 

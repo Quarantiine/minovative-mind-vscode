@@ -1301,9 +1301,183 @@ export class PlanExecutorService {
 				}
 				newContent = searchReplaceService.applyBlocks(originalContent, blocks);
 			} catch (error: any) {
-				throw new Error(
-					`Failed to apply Search/Replace blocks: ${error.message}`,
-				);
+				if (error.name === "AmbiguousMatchError") {
+					const ambiguousBlock = error.ambiguousBlock;
+					const lines = originalContent.split("\n");
+					const searchLines = ambiguousBlock.split("\n");
+					const matchIndices: number[] = [];
+
+					// Find all occurrences manually to report line numbers
+					for (let i = 0; i <= lines.length - searchLines.length; i++) {
+						let match = true;
+						for (let j = 0; j < searchLines.length; j++) {
+							if (lines[i + j].trim() !== searchLines[j].trim()) {
+								match = false;
+								break;
+							}
+						}
+						if (match) {
+							matchIndices.push(i + 1); // 1-based line numbers
+						}
+					}
+
+					console.warn(
+						`[PlanExecutor] Ambiguous match detected for ${step.step.path}. Matches at lines: ${matchIndices.join(", ")}. triggering AI retry with context.`,
+					);
+
+					if (attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
+						attempt++;
+
+						// Retrieve symbols to add context
+						let symbolContext = "";
+						try {
+							const symbols = await getSymbolsInDocument(fileUri);
+							if (symbols) {
+								const matchesWithSymbols = matchIndices.map((line) => {
+									const findSymbolForLine = (
+										syms: vscode.DocumentSymbol[],
+										targetLine: number,
+									): string | undefined => {
+										for (const sym of syms) {
+											if (
+												targetLine >= sym.range.start.line + 1 &&
+												targetLine <= sym.range.end.line + 1
+											) {
+												if (sym.children && sym.children.length > 0) {
+													const childFound = findSymbolForLine(
+														sym.children,
+														targetLine,
+													);
+													if (childFound) {
+														return `${sym.name} > ${childFound}`;
+													}
+												}
+												return sym.name;
+											}
+										}
+										return undefined;
+									};
+									const foundSymbol = findSymbolForLine(symbols, line);
+									return foundSymbol
+										? `Line ${line} (inside \`${foundSymbol}\`)`
+										: `Line ${line}`;
+								});
+								symbolContext = matchesWithSymbols.join(", ");
+							} else {
+								symbolContext = matchIndices.map((l) => `Line ${l}`).join(", ");
+							}
+						} catch (e) {
+							console.warn(
+								"Failed to retrieve symbols for ambiguity context:",
+								e,
+							);
+							symbolContext = matchIndices.map((l) => `Line ${l}`).join(", ");
+						}
+
+						const ambiguityPrompt = `
+The SEARCH block you provided is ambiguous. It matches multiple locations in the file: ${symbolContext}.
+
+AMBIGUOUS BLOCK:
+\`\`\`
+${ambiguousBlock}
+\`\`\`
+
+Please provide a new SEARCH block that includes more unique surrounding context (lines before and/or after) to uniquely identify the intended location.
+Use the standard <<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE format.
+`;
+						try {
+							// Recursively calling modifyFileContent with the clarification prompt
+							// We append the ambiguity prompt to the original instruction to give full context
+							const retryResult =
+								await this.enhancedCodeGenerator.modifyFileContent(
+									step.step.path,
+									step.step.modification_prompt + "\n\n" + ambiguityPrompt,
+									originalContent,
+									modificationContext,
+									this.provider.settingsManager.getSelectedModelName(),
+									combinedToken,
+								);
+
+							// Check if the new result is valid
+							const retryRawOutput = cleanCodeOutput(retryResult.content);
+							if (retryRawOutput.includes("<<<<<<< SEARCH")) {
+								const retryBlocks =
+									searchReplaceService.parseBlocks(retryRawOutput);
+								newContent = searchReplaceService.applyBlocks(
+									originalContent,
+									retryBlocks,
+								);
+								// If we get here, the retry succeeded!
+							} else {
+								newContent = retryRawOutput; // Fallback
+							}
+						} catch (retryError: any) {
+							// If retry fails, throw the original error or the new one?
+							// Let's throw the new one if it's different, or wrap it.
+							throw new Error(
+								`Failed to resolve ambiguity after retry: ${retryError.message}`,
+							);
+						}
+					} else {
+						throw new Error(
+							`Ambiguous match found at lines ${matchIndices.join(", ")} and max retries reached.`,
+						);
+					}
+				} else if (error.name === "SearchBlockNotFoundError") {
+					const missingBlock = error.missingBlock;
+					console.warn(
+						`[PlanExecutor] SEARCH block not found for ${step.step.path}. Triggering AI retry.`,
+					);
+
+					if (attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
+						attempt++;
+						const notFoundPrompt = `
+The SEARCH block you provided was NOT FOUND in the file.
+MISSING BLOCK:
+\`\`\`
+${missingBlock}
+\`\`\`
+
+The file content may have changed or the block is incorrect.
+Please review the file content and provide a SEARCH block that EXACTLY matches the existing code.
+Use the standard <<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE format.
+`;
+						try {
+							// Recursively calling modifyFileContent with the clarification prompt
+							const retryResult =
+								await this.enhancedCodeGenerator.modifyFileContent(
+									step.step.path,
+									step.step.modification_prompt + "\n\n" + notFoundPrompt,
+									originalContent,
+									modificationContext,
+									this.provider.settingsManager.getSelectedModelName(),
+									combinedToken,
+								);
+
+							const retryRawOutput = cleanCodeOutput(retryResult.content);
+							if (retryRawOutput.includes("<<<<<<< SEARCH")) {
+								const retryBlocks =
+									searchReplaceService.parseBlocks(retryRawOutput);
+								newContent = searchReplaceService.applyBlocks(
+									originalContent,
+									retryBlocks,
+								);
+							} else {
+								newContent = retryRawOutput;
+							}
+						} catch (retryError: any) {
+							throw new Error(
+								`Failed to fix missing block after retry: ${retryError.message}`,
+							);
+						}
+					} else {
+						throw new Error(`SEARCH block not found and max retries reached.`);
+					}
+				} else {
+					throw new Error(
+						`Failed to apply Search/Replace blocks: ${error.message}`,
+					);
+				}
 			}
 		} else {
 			// Fallback to full file rewrite if no blocks detected (backward compatibility or LLM failure fallback)

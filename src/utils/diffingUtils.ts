@@ -6,7 +6,7 @@ import { DiffAnalysis } from "../types/codeGenerationTypes";
 export async function generatePreciseTextEdits(
 	originalContent: string,
 	modifiedContent: string,
-	document: vscode.TextDocument
+	document: vscode.TextDocument,
 ): Promise<{ range: vscode.Range; newText: string }[]> {
 	const dmp = new diff_match_patch();
 
@@ -60,7 +60,7 @@ export async function generatePreciseTextEdits(
 export async function generateFileChangeSummary(
 	oldContent: string,
 	newContent: string,
-	filePath: string
+	filePath: string,
 ): Promise<{
 	summary: string;
 	addedLines: string[];
@@ -137,12 +137,12 @@ export async function generateFileChangeSummary(
 		const lineSummaryParts: string[] = [];
 		if (addedLineCount > 0) {
 			lineSummaryParts.push(
-				`Added ${addedLineCount} line${addedLineCount === 1 ? "" : "s"}`
+				`Added ${addedLineCount} line${addedLineCount === 1 ? "" : "s"}`,
 			);
 		}
 		if (removedLineCount > 0) {
 			lineSummaryParts.push(
-				`Removed ${removedLineCount} line${removedLineCount === 1 ? "" : "s"}`
+				`Removed ${removedLineCount} line${removedLineCount === 1 ? "" : "s"}`,
 			);
 		}
 		let quantitativeSummary = "";
@@ -170,7 +170,7 @@ export async function generateFileChangeSummary(
 	// Helper to extract entities from a given content string
 	const collectEntities = (
 		content: string,
-		targetMap: Map<string, string[]>
+		targetMap: Map<string, string[]>,
 	) => {
 		let match;
 
@@ -287,7 +287,7 @@ export async function generateFileChangeSummary(
 	const getProcessedEntities = (
 		added: Map<string, string[]>,
 		removed: Map<string, string[]>,
-		type: "added" | "removed" | "modified"
+		type: "added" | "removed" | "modified",
 	): Map<string, string[]> => {
 		const result = new Map<string, string[]>();
 
@@ -330,17 +330,17 @@ export async function generateFileChangeSummary(
 	const modifiedGrouped = getProcessedEntities(
 		addedEntities,
 		removedEntities,
-		"modified"
+		"modified",
 	);
 	const addedGrouped = getProcessedEntities(
 		addedEntities,
 		removedEntities,
-		"added"
+		"added",
 	);
 	const removedGrouped = getProcessedEntities(
 		addedEntities,
 		removedEntities,
-		"removed"
+		"removed",
 	);
 
 	// Helper to format grouped entities into summary strings
@@ -397,12 +397,12 @@ export async function generateFileChangeSummary(
 	const lineSummaryParts: string[] = [];
 	if (addedLineCount > 0) {
 		lineSummaryParts.push(
-			`Added ${addedLineCount} line${addedLineCount === 1 ? "" : "s"}`
+			`Added ${addedLineCount} line${addedLineCount === 1 ? "" : "s"}`,
 		);
 	}
 	if (removedLineCount > 0) {
 		lineSummaryParts.push(
-			`Removed ${removedLineCount} line${removedLineCount === 1 ? "" : "s"}`
+			`Removed ${removedLineCount} line${removedLineCount === 1 ? "" : "s"}`,
 		);
 	}
 
@@ -424,7 +424,7 @@ export async function generateFileChangeSummary(
 
 export function createInversePatch(
 	originalContent: string,
-	newContent: string
+	newContent: string,
 ): string {
 	const dmp = new diff_match_patch();
 	// To create an inverse patch, we calculate the diff from new to original
@@ -463,16 +463,16 @@ export function analyzeDiff(original: string, modified: string): DiffAnalysis {
 
 	if (changeRatio > 0.8) {
 		issues.push(
-			"Modification seems too drastic - consider a more targeted approach"
+			"Modification seems too drastic - consider a more targeted approach",
 		);
 		isReasonable = false;
 	}
 
 	const originalImports = originalLines.filter((line) =>
-		line.trim().startsWith("import")
+		line.trim().startsWith("import"),
 	);
 	const modifiedImports = modifiedLines.filter((line) =>
-		line.trim().startsWith("import")
+		line.trim().startsWith("import"),
 	);
 
 	if (originalImports.length > 0 && modifiedImports.length === 0) {
@@ -494,7 +494,7 @@ export function analyzeDiff(original: string, modified: string): DiffAnalysis {
 export function parseDiffHunkToTextEdits(
 	diffHunk: string,
 	document: vscode.TextDocument,
-	startLineOffset: number = 0
+	startLineOffset: number = 0,
 ): { range: vscode.Range; newText: string }[] {
 	const edits: { range: vscode.Range; newText: string }[] = [];
 	const lines = diffHunk.split("\n").filter((line) => line.trim() !== "");
@@ -509,7 +509,7 @@ export function parseDiffHunkToTextEdits(
 			// Addition: insert new text
 			const newText = line.substring(1) + "\n";
 			const insertPos = document.positionAt(
-				document.offsetAt(new vscode.Position(currentLine, 0))
+				document.offsetAt(new vscode.Position(currentLine, 0)),
 			);
 
 			edits.push({
@@ -522,7 +522,7 @@ export function parseDiffHunkToTextEdits(
 			// Deletion: mark the range to delete
 			if (!inDeletion) {
 				deletionStart = document.positionAt(
-					document.offsetAt(new vscode.Position(currentLine, 0))
+					document.offsetAt(new vscode.Position(currentLine, 0)),
 				);
 				inDeletion = true;
 			}
@@ -530,7 +530,7 @@ export function parseDiffHunkToTextEdits(
 			// Update deletion end position
 			deletionEnd = document.positionAt(
 				document.offsetAt(new vscode.Position(currentLine, 0)) +
-					document.lineAt(currentLine).text.length
+					document.lineAt(currentLine).text.length,
 			);
 
 			currentLine++;
@@ -571,7 +571,7 @@ export async function applyDiffHunkToDocument(
 	document: vscode.TextDocument,
 	diffHunk: string,
 	startLineOffset: number = 0,
-	token?: vscode.CancellationToken
+	token?: vscode.CancellationToken,
 ): Promise<{ success: boolean; error?: string }> {
 	try {
 		// Parse the diff hunk into text edits
@@ -613,7 +613,7 @@ export async function applyDiffHunkToDocument(
 			{
 				undoStopBefore: true,
 				undoStopAfter: true,
-			}
+			},
 		);
 
 		return { success: true };

@@ -710,14 +710,37 @@ export class PlanService {
 		}
 	}
 
-	private _initializeStreamingState(
+	private async _initializeStreamingState(
 		modelName: string,
 		relevantFiles: string[] | undefined,
 		operationId: string,
-	): void {
+	): Promise<void> {
+		// Filter and deduplicate relevantFiles, and check for existence
+		let filteredFiles: string[] = [];
+		if (relevantFiles && relevantFiles.length > 0) {
+			const uniqueFiles = [...new Set(relevantFiles)];
+			const existenceResults = await Promise.all(
+				uniqueFiles.map(async (filePath) => {
+					try {
+						if (!this.workspaceRootUri) {
+							return filePath;
+						}
+						const uri = vscode.Uri.joinPath(this.workspaceRootUri, filePath);
+						await vscode.workspace.fs.stat(uri);
+						return filePath;
+					} catch {
+						return null;
+					}
+				}),
+			);
+			filteredFiles = existenceResults.filter(
+				(f): f is string => f !== null && f.trim() !== "",
+			);
+		}
+
 		this.provider.updatePersistedAiStreamingState({
 			content: "",
-			relevantFiles: relevantFiles ?? [],
+			relevantFiles: filteredFiles,
 			isComplete: false,
 			isError: false,
 			operationId: operationId,
@@ -726,13 +749,13 @@ export class PlanService {
 			type: "aiResponseStart",
 			value: {
 				modelName,
-				relevantFiles: relevantFiles ?? [],
+				relevantFiles: filteredFiles,
 				operationId: operationId,
 			},
 		});
 		this.provider.postMessageToWebview({
 			type: "updateStreamingRelevantFiles",
-			value: relevantFiles ?? [],
+			value: filteredFiles,
 		});
 	}
 
@@ -759,9 +782,6 @@ export class PlanService {
 			await this.provider.endUserOperation("failed");
 			return;
 		}
-
-		let executablePlan: ExecutionPlan | null = null;
-		let lastError: Error | null = null;
 
 		try {
 			this.isGeneratingPlan = true;
@@ -791,135 +811,19 @@ export class PlanService {
 				urlContextString,
 			);
 
-			for (let attempt = 1; attempt <= this.MAX_PLAN_PARSE_RETRIES; attempt++) {
-				this.provider.postMessageToWebview({
-					type: "statusUpdate",
-					value: `Translating strategy into execution steps (Attempt ${attempt}/${this.MAX_PLAN_PARSE_RETRIES})...`,
-					isError: false,
-				});
-
-				try {
-					this.postMessageToWebview({
-						type: "updateJsonLoadingState",
-						value: true,
-					});
-					const { functionCall } =
-						await this.provider.aiRequestService.generateFunctionCall(
-							planContext.initialApiKey,
-							planContext.modelName,
-							[{ role: "user", parts: [{ text: prompt }] }],
-							[{ functionDeclarations: [generateExecutionPlanTool] }],
-							FunctionCallingMode.ANY,
-							token,
-							"structured plan generation",
-						);
-
-					if (token.isCancellationRequested) {
-						throw new Error(ERROR_OPERATION_CANCELLED);
-					}
-					if (!functionCall) {
-						throw new Error("AI failed to generate a valid function call.");
-					}
-
-					const { plan, error } = await this.parseAndValidatePlanWithFix(
-						JSON.stringify(functionCall.args),
-						planContext.workspaceRootUri,
-					);
-
-					this.postMessageToWebview({
-						type: "updateJsonLoadingState",
-						value: false,
-					});
-
-					if (error) {
-						lastError = new Error(`Validation failed: ${error}`);
-						if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
-							continue;
-						} else {
-							throw lastError;
-						}
-					}
-
-					if (!plan || plan.steps.length === 0) {
-						lastError = new Error("Generated plan is empty.");
-						if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
-							continue;
-						} else {
-							throw lastError;
-						}
-					}
-
-					executablePlan = plan;
-					break;
-				} catch (error: any) {
-					this.postMessageToWebview({
-						type: "updateJsonLoadingState",
-						value: false,
-					});
-					if (error.message === ERROR_OPERATION_CANCELLED) {
-						throw error;
-					}
-					lastError = error;
-					if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
-						await this._delay(15000 + attempt * 2000, token);
-						continue;
-					} else {
-						throw lastError;
-					}
-				}
-			}
-
-			if (!executablePlan) {
-				console.error(
-					`[PlanService] Failed to generate structured correction plan after ${this.MAX_PLAN_PARSE_RETRIES} attempts.`,
-				);
-				throw (
-					lastError ||
-					new Error("Failed to generate a valid structured correction plan.")
-				);
-			}
-
-			console.log(
-				"[PlanService] Structured correction plan generated successfully. Executing...",
-			);
-			this.isGeneratingPlan = false;
-			await this.planExecutorService.executePlan(
-				executablePlan,
+			await this._generateAndExecutePlan(
 				planContext,
 				token,
+				prompt,
+				operationId as string,
+				"structured correction plan",
+				true,
 			);
 		} catch (error: any) {
-			const isCancellation = error.message === ERROR_OPERATION_CANCELLED;
-
-			this.provider.postMessageToWebview({
-				type: "updateLoadingState",
-				value: false,
-			});
-
-			if (isCancellation) {
-				this.provider.postMessageToWebview({
-					type: "statusUpdate",
-					value: "Correction plan generation cancelled.",
-				});
-				await this.provider.endUserOperation("cancelled");
-			} else {
-				this.provider.postMessageToWebview({
-					type: "statusUpdate",
-					value: formatUserFacingErrorMessage(
-						error,
-						"An error occurred during correction plan generation.",
-						"Error: ",
-						planContext.workspaceRootUri,
-					),
-					isError: true,
-				});
-				await this.provider.endUserOperation("failed");
-			}
-		} finally {
-			this.isGeneratingPlan = false;
-			await this.provider.setPlanExecutionActive(false);
-			console.log(
-				"[PlanService] Finished generateStructuredPlanFromCorrectionAndExecute.",
+			this._handlePlanGenerationError(
+				error,
+				planContext,
+				"correction plan generation",
 			);
 		}
 	}
@@ -944,9 +848,6 @@ export class PlanService {
 			await this.provider.endUserOperation("failed");
 			return;
 		}
-
-		let executablePlan: ExecutionPlan | null = null;
-		let lastError: Error | null = null;
 
 		try {
 			this.isGeneratingPlan = true;
@@ -989,152 +890,188 @@ export class PlanService {
 				urlContextString,
 			);
 
-			for (let attempt = 1; attempt <= this.MAX_PLAN_PARSE_RETRIES; attempt++) {
-				this.provider.postMessageToWebview({
-					type: "statusUpdate",
-					value: `Translating strategy into execution steps (Attempt ${attempt}/${this.MAX_PLAN_PARSE_RETRIES})...`,
-					isError: false,
+			await this._generateAndExecutePlan(
+				planContext,
+				token,
+				promptForAIForFunctionCall,
+				operationId as string,
+				"structured plan",
+				false,
+			);
+		} catch (error: any) {
+			this._handlePlanGenerationError(error, planContext, "plan generation");
+		}
+	}
+
+	private async _generateAndExecutePlan(
+		planContext: sidebarTypes.PlanGenerationContext,
+		token: vscode.CancellationToken,
+		initialPrompt: string,
+		operationId: string,
+		description: string,
+		isCorrection: boolean = false,
+	): Promise<void> {
+		let executablePlan: ExecutionPlan | null = null;
+		let lastError: Error | null = null;
+		let currentPrompt = initialPrompt;
+
+		for (let attempt = 1; attempt <= this.MAX_PLAN_PARSE_RETRIES; attempt++) {
+			this.provider.postMessageToWebview({
+				type: "statusUpdate",
+				value: `Translating strategy (Attempt ${attempt}/${this.MAX_PLAN_PARSE_RETRIES})...`,
+				isError: false,
+			});
+
+			try {
+				this.postMessageToWebview({
+					type: "updateJsonLoadingState",
+					value: true,
 				});
-
-				try {
-					this.postMessageToWebview({
-						type: "updateJsonLoadingState",
-						value: true,
-					});
-					const result =
-						await this.provider.aiRequestService.generateFunctionCall(
-							planContext.initialApiKey,
-							planContext.modelName,
-							[{ role: "user", parts: [{ text: promptForAIForFunctionCall }] }],
-							[{ functionDeclarations: [generateExecutionPlanTool] }],
-							FunctionCallingMode.ANY,
-							token,
-							"plan generation via function call",
-						);
-
-					const functionCall = result.functionCall;
-
-					if (token.isCancellationRequested) {
-						throw new Error(ERROR_OPERATION_CANCELLED);
-					}
-					if (!functionCall) {
-						throw new Error(
-							"AI failed to generate a valid function call for the plan.",
-						);
-					}
-
-					const { plan, error } = await this.parseAndValidatePlanWithFix(
-						JSON.stringify(functionCall.args),
-						planContext.workspaceRootUri,
+				const { functionCall } =
+					await this.provider.aiRequestService.generateFunctionCall(
+						planContext.initialApiKey,
+						planContext.modelName,
+						[{ role: "user", parts: [{ text: currentPrompt }] }],
+						[{ functionDeclarations: [generateExecutionPlanTool] }],
+						FunctionCallingMode.ANY,
+						token,
+						description,
 					);
 
-					this.postMessageToWebview({
-						type: "updateJsonLoadingState",
-						value: false,
-					});
+				if (token.isCancellationRequested) {
+					throw new Error(ERROR_OPERATION_CANCELLED);
+				}
+				if (!functionCall) {
+					throw new Error(
+						"AI failed to generate a valid function call for the plan.",
+					);
+				}
 
-					if (error) {
-						lastError = new Error(
-							`Failed to parse or validate generated plan: ${error}`,
-						);
-						if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
-							continue;
-						} else {
-							throw lastError;
-						}
-					}
+				const jsonString = JSON.stringify(functionCall.args);
+				const { plan, error } = await this.parseAndValidatePlanWithFix(
+					jsonString,
+					planContext.workspaceRootUri,
+				);
 
-					if (!plan || plan.steps.length === 0) {
-						lastError = new Error(
-							"AI generated plan content but it was empty or invalid after parsing.",
-						);
-						if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
-							continue;
-						} else {
-							throw lastError;
-						}
-					}
+				this.postMessageToWebview({
+					type: "updateJsonLoadingState",
+					value: false,
+				});
 
-					executablePlan = plan;
-					break;
-				} catch (error: any) {
-					this.postMessageToWebview({
-						type: "updateJsonLoadingState",
-						value: false,
-					});
-					if (error.message === ERROR_OPERATION_CANCELLED) {
-						throw error;
-					}
-					lastError = error;
+				if (error) {
+					const jsonSnippet =
+						jsonString.length > 500
+							? jsonString.substring(0, 500) + "..."
+							: jsonString;
+					lastError = new Error(
+						`Failed to parse or validate generated plan: ${error}. JSON Snippet: ${jsonSnippet}`,
+					);
+					console.error(
+						`[PlanService] Parse/Validation error on attempt ${attempt}:`,
+						lastError.message,
+					);
 					if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
-						await this._delay(15000 + attempt * 2000, token);
+						currentPrompt += `\n\nERROR FROM PREVIOUS ATTEMPT: ${error}\nJSON SNIPPET THAT FAILED VALIDATION: ${jsonSnippet}\nPLEASE FIX THE ISSUES ABOVE AND TRY AGAIN. Ensure you call the 'generateExecutionPlan' function correctly with valid arguments according to the instructions.`;
 						continue;
 					} else {
 						throw lastError;
 					}
 				}
-			}
 
-			if (!executablePlan) {
-				console.error(
-					`[PlanService] Failed to generate structured plan after ${this.MAX_PLAN_PARSE_RETRIES} attempts.`,
-				);
-				throw (
-					lastError ||
-					new Error(
-						"Failed to generate and parse a valid structured plan after multiple retries.",
-					)
-				);
-			}
+				if (!plan || plan.steps.length === 0) {
+					lastError = new Error(
+						"AI generated plan content but it was empty or invalid after parsing.",
+					);
+					if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
+						continue;
+					} else {
+						throw lastError;
+					}
+				}
 
-			console.log(
-				"[PlanService] Structured plan generated successfully. Executing...",
-			);
-			this.provider.pendingPlanGenerationContext = null;
-			this.isGeneratingPlan = false;
-			await this.planExecutorService.executePlan(
-				executablePlan,
-				planContext,
-				token,
-			);
-		} catch (error: any) {
-			console.error(
-				"[PlanService] Error in generateStructuredPlanAndExecute:",
-				error,
-			);
-			// ...
-
-			const isCancellation = error.message === ERROR_OPERATION_CANCELLED;
-
-			this.provider.postMessageToWebview({
-				type: "updateLoadingState",
-				value: false,
-			});
-
-			if (isCancellation) {
-				this.provider.postMessageToWebview({
-					type: "statusUpdate",
-					value: "Structured plan generation cancelled.",
+				executablePlan = plan;
+				break;
+			} catch (error: any) {
+				this.postMessageToWebview({
+					type: "updateJsonLoadingState",
+					value: false,
 				});
-				await this.provider.endUserOperation("cancelled");
-			} else {
-				this.provider.postMessageToWebview({
-					type: "statusUpdate",
-					value: formatUserFacingErrorMessage(
-						error,
-						"An unexpected error occurred during plan generation.",
-						"Error generating plan: ",
-						planContext.workspaceRootUri,
-					),
-					isError: true,
-				});
-				await this.provider.endUserOperation("failed");
+				if (error.message === ERROR_OPERATION_CANCELLED) {
+					throw error;
+				}
+				lastError = error;
+				if (attempt < this.MAX_PLAN_PARSE_RETRIES) {
+					await this._delay(15000 + attempt * 2000, token);
+					continue;
+				} else {
+					throw lastError;
+				}
 			}
-		} finally {
-			this.isGeneratingPlan = false;
-			await this.provider.setPlanExecutionActive(false);
-			console.log("[PlanService] Finished generateStructuredPlanAndExecute.");
 		}
+
+		if (!executablePlan) {
+			console.error(
+				`[PlanService] Failed to generate structured plan after ${this.MAX_PLAN_PARSE_RETRIES} attempts.`,
+			);
+			throw (
+				lastError ||
+				new Error(
+					"Failed to generate and parse a valid structured plan after multiple retries.",
+				)
+			);
+		}
+
+		console.log(
+			`[PlanService] Structured plan generated successfully (${description}). Executing...`,
+		);
+
+		if (!isCorrection) {
+			this.provider.pendingPlanGenerationContext = null;
+		}
+
+		this.isGeneratingPlan = false;
+		await this.planExecutorService.executePlan(
+			executablePlan,
+			planContext,
+			token,
+		);
+	}
+
+	private async _handlePlanGenerationError(
+		error: any,
+		planContext: sidebarTypes.PlanGenerationContext,
+		contextDescription: string,
+	): Promise<void> {
+		const isCancellation = error.message === ERROR_OPERATION_CANCELLED;
+
+		this.provider.postMessageToWebview({
+			type: "updateLoadingState",
+			value: false,
+		});
+
+		if (isCancellation) {
+			this.provider.postMessageToWebview({
+				type: "statusUpdate",
+				value: "Plan generation cancelled.",
+			});
+			await this.provider.endUserOperation("cancelled");
+		} else {
+			this.provider.postMessageToWebview({
+				type: "statusUpdate",
+				value: formatUserFacingErrorMessage(
+					error,
+					`An unexpected error occurred during ${contextDescription}.`,
+					"Error: ",
+					planContext.workspaceRootUri,
+				),
+				isError: true,
+			});
+			await this.provider.endUserOperation("failed");
+		}
+
+		this.isGeneratingPlan = false;
+		await this.provider.setPlanExecutionActive(false);
+		console.log(`[PlanService] Finished ${contextDescription}.`);
 	}
 
 	private _handlePostTextualPlanGenerationUI(
@@ -1220,7 +1157,7 @@ export class PlanService {
 				false,
 			);
 
-		this._initializeStreamingState(
+		await this._initializeStreamingState(
 			modelName,
 			buildContextResult.relevantFiles,
 			operationId,

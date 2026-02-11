@@ -5,6 +5,26 @@ export interface SearchReplaceBlock {
 	replace: string;
 }
 
+export class AmbiguousMatchError extends Error {
+	constructor(
+		message: string,
+		public readonly ambiguousBlock: string,
+	) {
+		super(message);
+		this.name = "AmbiguousMatchError";
+	}
+}
+
+export class SearchBlockNotFoundError extends Error {
+	constructor(
+		message: string,
+		public readonly missingBlock: string,
+	) {
+		super(message);
+		this.name = "SearchBlockNotFoundError";
+	}
+}
+
 export class SearchReplaceService {
 	constructor(private changeLogger?: ProjectChangeLogger) {}
 
@@ -96,7 +116,7 @@ export class SearchReplaceService {
 					if (this.changeLogger) {
 						console.error(`[SearchReplaceService] ${errorMsg}`);
 					}
-					throw new Error(errorMsg);
+					throw new AmbiguousMatchError(errorMsg, block.search);
 				}
 				newContent = newContent.replace(block.search, block.replace);
 				continue;
@@ -114,7 +134,7 @@ export class SearchReplaceService {
 				if (this.changeLogger) {
 					console.error(`[SearchReplaceService] ${errorMsg}`);
 				}
-				throw new Error(errorMsg);
+				throw new SearchBlockNotFoundError(errorMsg, block.search);
 			}
 
 			if (matchIndices.length > 1) {
@@ -122,7 +142,7 @@ export class SearchReplaceService {
 				if (this.changeLogger) {
 					console.error(`[SearchReplaceService] ${errorMsg}`);
 				}
-				throw new Error(errorMsg);
+				throw new AmbiguousMatchError(errorMsg, block.search);
 			}
 
 			const matchIndex = matchIndices[0];

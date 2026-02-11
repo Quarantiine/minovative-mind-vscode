@@ -49,18 +49,18 @@ import {
 	resetCodeStreams,
 } from "./codeStreamHandler";
 import { showSuggestions } from "../ui/commandSuggestions";
-import { setJsonLoadingState } from "../main";
+import { setJsonLoadingState, handleOptimizationSettingsUpdate } from "../main";
 
 export function initializeMessageBusHandler(
 	elements: RequiredDomElements,
-	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void
+	setLoadingState: (loading: boolean, elements: RequiredDomElements) => void,
 ): void {
 	window.addEventListener("message", (event: MessageEvent) => {
 		const message = event.data;
 		console.log(
 			"[Webview] Message received from extension:",
 			message.type,
-			message
+			message,
 		);
 
 		switch (message.type) {
@@ -75,7 +75,7 @@ export function initializeMessageBusHandler(
 					message.relevantFiles,
 					undefined, // messageIndexForHistory
 					undefined, // isRelevantFilesExpandedForHistory
-					false // isPlanExplanationForRender
+					false, // isPlanExplanationForRender
 				);
 
 				// REMOVED: This block was prematurely showing the plan confirmation UI.
@@ -96,12 +96,12 @@ export function initializeMessageBusHandler(
 						appState.allWorkspaceFiles,
 						"file",
 						elements,
-						setLoadingState
+						setLoadingState,
 					);
 				} else {
 					console.error(
 						"[MessageBusHandler] Received unexpected payload for receiveWorkspaceFiles:",
-						message.value
+						message.value,
 					);
 					appState.allWorkspaceFiles = []; // Clear files on unexpected format
 					appState.isRequestingWorkspaceFiles = false; // Reset request status
@@ -136,7 +136,7 @@ export function initializeMessageBusHandler(
 					"Is Complete:",
 					isComplete,
 					"Operation ID:",
-					operationId
+					operationId,
 				);
 
 				// Append the base AI message element. This sets up the DOM structure
@@ -152,7 +152,7 @@ export function initializeMessageBusHandler(
 					relevantFiles,
 					undefined, // messageIndexForHistory
 					undefined, // isRelevantFilesExpandedForHistory
-					false // isPlanExplanationForRender
+					false, // isPlanExplanationForRender
 				);
 
 				// Get a reference to the message element that was just created.
@@ -162,18 +162,18 @@ export function initializeMessageBusHandler(
 					// Find the specific content span within the newly created message element.
 					appState.currentAiMessageContentElement =
 						restoredMessageElement.querySelector(
-							".message-text-content"
+							".message-text-content",
 						) as HTMLSpanElement | null;
 
 					// Get references to copy/delete buttons
 					const copyButton = restoredMessageElement.querySelector(
-						".copy-button"
+						".copy-button",
 					) as HTMLButtonElement | null;
 					const deleteButton = restoredMessageElement.querySelector(
-						".delete-button"
+						".delete-button",
 					) as HTMLButtonElement | null;
 					const editButton = restoredMessageElement.querySelector(
-						".edit-button"
+						".edit-button",
 					) as HTMLButtonElement | null;
 
 					if (appState.currentAiMessageContentElement) {
@@ -184,7 +184,7 @@ export function initializeMessageBusHandler(
 						if (isComplete) {
 							// If the stream is complete, just render the final content.
 							appState.currentAiMessageContentElement.innerHTML = md.render(
-								appState.currentAccumulatedText
+								appState.currentAccumulatedText,
 							);
 							// Store the original markdown text for copy functionality
 							appState.currentAiMessageContentElement.dataset.originalMarkdown =
@@ -195,7 +195,7 @@ export function initializeMessageBusHandler(
 								setLoadingState(false, elements);
 							} else {
 								console.log(
-									"[Guard] UI remains disabled due to ongoing cancellation (restoreStreamingProgress completed)."
+									"[Guard] UI remains disabled due to ongoing cancellation (restoreStreamingProgress completed).",
 								);
 							}
 							if (copyButton) {
@@ -233,7 +233,7 @@ export function initializeMessageBusHandler(
 						}
 					} else {
 						console.warn(
-							"[Webview] Failed to find .message-text-content in restored AI message. Fallback to direct append."
+							"[Webview] Failed to find .message-text-content in restored AI message. Fallback to direct append.",
 						);
 						// Fallback if the content element isn't found after appendMessage.
 						// Append the full content, ensuring it's treated as a history message.
@@ -247,7 +247,7 @@ export function initializeMessageBusHandler(
 							relevantFiles,
 							undefined, // messageIndexForHistory
 							undefined, // isRelevantFilesExpandedForHistory
-							false // isPlanExplanationForRender
+							false, // isPlanExplanationForRender
 						);
 						// If isComplete was false, call setLoadingState(false, elements) as animation setup failed.
 						if (!isComplete) {
@@ -256,7 +256,7 @@ export function initializeMessageBusHandler(
 					}
 				} else {
 					console.warn(
-						"[Webview] Failed to find or create AI message element for restoreStreamingProgress. Fallback to direct append."
+						"[Webview] Failed to find or create AI message element for restoreStreamingProgress. Fallback to direct append.",
 					);
 					// Fallback if the message element itself couldn't be created.
 					appendMessage(
@@ -269,7 +269,7 @@ export function initializeMessageBusHandler(
 						relevantFiles,
 						undefined, // messageIndexForHistory
 						undefined, // isRelevantFilesExpandedForHistory
-						false // isPlanExplanationForRender
+						false, // isPlanExplanationForRender
 					);
 					// If isComplete was false, call setLoadingState(false, elements) as animation setup failed.
 					if (!isComplete) {
@@ -282,7 +282,7 @@ export function initializeMessageBusHandler(
 			case "aiRetryNotification": {
 				const { currentDelay, reason } = message.value;
 				console.log(
-					`[Webview] Received aiRetryNotification. Delay: ${currentDelay}s, Reason: ${reason}`
+					`[Webview] Received aiRetryNotification. Delay: ${currentDelay}s, Reason: ${reason}`,
 				);
 
 				let remainingTime = currentDelay;
@@ -292,7 +292,7 @@ export function initializeMessageBusHandler(
 							elements,
 							`${reason} Retrying in ${remainingTime.toFixed(0)}s`,
 							true, // Show as warning/error color
-							true // Show loading dots
+							true, // Show loading dots
 						);
 						remainingTime--;
 						appState.retryTimer = setTimeout(updateRetryStatus, 1000);
@@ -301,7 +301,7 @@ export function initializeMessageBusHandler(
 							elements,
 							"Retrying now",
 							false, // Reset to normal color
-							true
+							true,
 						);
 						appState.retryTimer = null;
 					}
@@ -317,7 +317,7 @@ export function initializeMessageBusHandler(
 				elements.statusArea.textContent = "";
 				elements.apiKeyStatusDiv.textContent = "";
 				console.log(
-					"[Webview] Received showGenericLoadingMessage. Displaying generic loading."
+					"[Webview] Received showGenericLoadingMessage. Displaying generic loading.",
 				);
 				// Remove any existing loading message to ensure a clean state
 				const existingLoadingMsg =
@@ -338,7 +338,7 @@ export function initializeMessageBusHandler(
 				setLoadingState(true, elements);
 				finalizeStreamingMessage(elements); // Modified: Replace resetStreamingAnimationState()
 				console.log(
-					"Received aiResponseStart. Starting stream via appendMessage."
+					"Received aiResponseStart. Starting stream via appendMessage.",
 				);
 				appState.isCancellationInProgress = false; // Add this line
 				appState.currentActiveOperationId = startMessage.value.operationId; // Assign operationId
@@ -352,7 +352,7 @@ export function initializeMessageBusHandler(
 					startMessage.value.relevantFiles,
 					undefined, // messageIndexForHistory
 					undefined, // isRelevantFilesExpandedForHistory
-					false // isPlanExplanationForRender
+					false, // isPlanExplanationForRender
 				);
 				break;
 			}
@@ -361,7 +361,7 @@ export function initializeMessageBusHandler(
 				if (chunkMessage.operationId !== appState.currentActiveOperationId) {
 					console.debug(
 						"Ignoring AI chunk from old operation:",
-						chunkMessage.operationId
+						chunkMessage.operationId,
 					);
 					return;
 				}
@@ -378,7 +378,7 @@ export function initializeMessageBusHandler(
 				if (endMessage.operationId !== appState.currentActiveOperationId) {
 					console.debug(
 						"Ignoring AI response end from old operation:",
-						endMessage.operationId
+						endMessage.operationId,
 					);
 					return;
 				}
@@ -432,7 +432,7 @@ export function initializeMessageBusHandler(
 
 						// CRITICAL CHANGE: Handle generate-plan-button visibility
 						const generatePlanButton = messageElement.querySelector(
-							".generate-plan-button"
+							".generate-plan-button",
 						) as HTMLButtonElement | null;
 
 						if (
@@ -452,7 +452,7 @@ export function initializeMessageBusHandler(
 					}
 				} else {
 					console.warn(
-						"aiResponseEnd received but currentAiMessageContentElement is null. Fallback to appending new message."
+						"aiResponseEnd received but currentAiMessageContentElement is null. Fallback to appending new message.",
 					);
 					// Fallback: If for some reason the element wasn't tracked, append a new message.
 					// This should generally only happen if a previous streaming message was somehow malformed or lost.
@@ -472,7 +472,7 @@ export function initializeMessageBusHandler(
 							undefined, // relevantFiles
 							undefined, // messageIndexForHistory
 							undefined, // isRelevantFilesExpandedForHistory
-							false // isPlanExplanationForRender (fallback, so it's not a plan)
+							false, // isPlanExplanationForRender (fallback, so it's not a plan)
 						);
 					} else {
 						// If successful but currentAiMessageContentElement was null, append the accumulated text.
@@ -486,7 +486,7 @@ export function initializeMessageBusHandler(
 							undefined, // relevantFiles
 							undefined, // messageIndexForHistory
 							undefined, // isRelevantFilesExpandedForHistory
-							false // isPlanExplanationForRender (fallback, so it's not a plan)
+							false, // isPlanExplanationForRender (fallback, so it's not a plan)
 						);
 					}
 				}
@@ -494,7 +494,7 @@ export function initializeMessageBusHandler(
 				// Add logic to select all elements with the class '.user-message-edited-pending-ai'
 				// from 'elements.chatContainer' and remove this class from each of them.
 				const editedMessages = elements.chatContainer.querySelectorAll(
-					".user-message-edited-pending-ai"
+					".user-message-edited-pending-ai",
 				);
 				editedMessages.forEach((msg) => {
 					msg.classList.remove("user-message-edited-pending-ai");
@@ -529,7 +529,7 @@ export function initializeMessageBusHandler(
 						elements,
 						postMessageToExtension,
 						updateStatus,
-						setLoadingState
+						setLoadingState,
 					);
 					appState.pendingPlanData = endMessage.planData as {
 						type: string;
@@ -542,7 +542,7 @@ export function initializeMessageBusHandler(
 						appState.pendingPlanData,
 						postMessageToExtension,
 						updateStatus,
-						setLoadingState
+						setLoadingState,
 					);
 					if (elements.cancelGenerationButton) {
 						elements.cancelGenerationButton.style.display = "none";
@@ -566,7 +566,7 @@ export function initializeMessageBusHandler(
 						endMessage.commitReviewData.stagedFiles,
 						postMessageToExtension,
 						updateStatus,
-						setLoadingState
+						setLoadingState,
 					);
 					if (elements.cancelGenerationButton) {
 						elements.cancelGenerationButton.style.display = "none";
@@ -579,7 +579,7 @@ export function initializeMessageBusHandler(
 						setLoadingState(false, elements);
 					} else {
 						console.log(
-							"[Guard] UI remains disabled due to ongoing cancellation."
+							"[Guard] UI remains disabled due to ongoing cancellation.",
 						);
 					}
 				}
@@ -594,7 +594,7 @@ export function initializeMessageBusHandler(
 						} else {
 							// If cancellation is in progress, UI remains disabled
 							console.log(
-								"[Guard] UI remains disabled due to ongoing cancellation (aiResponseEnd error path)."
+								"[Guard] UI remains disabled due to ongoing cancellation (aiResponseEnd error path).",
 							);
 						}
 					} else {
@@ -603,7 +603,7 @@ export function initializeMessageBusHandler(
 							setLoadingState(false, elements); // Should ideally be handled by resetUIStateAfterCancellation or similar
 						} else {
 							console.log(
-								"[Guard] UI remains disabled as cancellation is acknowledged (aiResponseEnd cancellation path)."
+								"[Guard] UI remains disabled as cancellation is acknowledged (aiResponseEnd cancellation path).",
 							);
 						}
 					}
@@ -616,7 +616,7 @@ export function initializeMessageBusHandler(
 				const initializeMessage = message as PlanTimelineInitializeMessage;
 				console.log(
 					"[Webview] Received planTimelineInitialize message. Steps:",
-					initializeMessage.stepDescriptions.length
+					initializeMessage.stepDescriptions.length,
 				);
 
 				// 3. Handle planTimelineInitialize
@@ -635,7 +635,7 @@ export function initializeMessageBusHandler(
 				const progressMessage = message as PlanTimelineProgressMessage;
 				console.log(
 					"[Webview] Received planTimelineProgress message. Index:",
-					progressMessage.stepIndex
+					progressMessage.stepIndex,
 				);
 
 				// 4. Handle planTimelineProgress
@@ -645,7 +645,7 @@ export function initializeMessageBusHandler(
 					progressMessage.stepIndex,
 					progressMessage.detail ?? "",
 					progressMessage.diffContent,
-					progressMessage.status === "failed"
+					progressMessage.status === "failed",
 				);
 
 				setLoadingState(true, elements);
@@ -658,7 +658,7 @@ export function initializeMessageBusHandler(
 					elements,
 					postMessageToExtension,
 					updateStatus,
-					setLoadingState
+					setLoadingState,
 				);
 				break;
 			}
@@ -666,23 +666,23 @@ export function initializeMessageBusHandler(
 			case "updateTokenStatistics": {
 				console.log(
 					"[Webview] Received token statistics update:",
-					message.value
+					message.value,
 				);
 				const stats = message.value as FormattedTokenStatistics;
 				console.log(
 					`[Webview] updateTokenStatistics: Received stats object:`,
-					stats
+					stats,
 				);
 
 				// Update token usage display
 				const totalInputElement = document.getElementById("total-input-tokens");
 				const totalOutputElement = document.getElementById(
-					"total-output-tokens"
+					"total-output-tokens",
 				);
 				const totalTokensElement = document.getElementById("total-tokens");
 				const requestCountElement = document.getElementById("request-count");
 				const failedRequestCountElement = document.getElementById(
-					"failed-request-count"
+					"failed-request-count",
 				);
 				const avgInputElement = document.getElementById("avg-input-tokens");
 				const avgOutputElement = document.getElementById("avg-output-tokens");
@@ -721,12 +721,12 @@ export function initializeMessageBusHandler(
 
 					if (Array.isArray(stats.modelUsagePercentages)) {
 						modelUsageMap = new Map(
-							stats.modelUsagePercentages as [string, number][]
+							stats.modelUsagePercentages as [string, number][],
 						);
 					} else {
 						console.warn(
 							"[Webview] updateTokenStatistics: Received modelUsagePercentages not as an array of entries. Initializing empty Map. Received:",
-							stats.modelUsagePercentages
+							stats.modelUsagePercentages,
 						);
 						modelUsageMap = new Map();
 					}
@@ -735,8 +735,8 @@ export function initializeMessageBusHandler(
 						`[Webview] updateTokenStatistics: modelUsageMap.size = ${
 							modelUsageMap.size
 						}, modelUsageMap contents = ${JSON.stringify(
-							Array.from(modelUsageMap.entries())
-						)}`
+							Array.from(modelUsageMap.entries()),
+						)}`,
 					);
 
 					if (modelUsageMap.size > 0) {
@@ -759,14 +759,14 @@ export function initializeMessageBusHandler(
 			case "updateCurrentTokenEstimates": {
 				console.log(
 					"[Webview] Received current token estimates update:",
-					message.value
+					message.value,
 				);
 				const estimates = message.value;
 
 				// Update token usage display with current streaming estimates
 				const totalInputElement = document.getElementById("total-input-tokens");
 				const totalOutputElement = document.getElementById(
-					"total-output-tokens"
+					"total-output-tokens",
 				);
 				const totalTokensElement = document.getElementById("total-tokens");
 
@@ -791,13 +791,13 @@ export function initializeMessageBusHandler(
 					failedJson,
 					postMessageToExtension,
 					updateStatus, // Corrected order as per showPlanParseErrorUI signature
-					setLoadingState // Corrected order as per showPlanParseErrorUI signature
+					setLoadingState, // Corrected order as per showPlanParseErrorUI signature
 				);
 				if (!appState.isCancellationInProgress) {
 					setLoadingState(false, elements);
 				} else {
 					console.log(
-						"[Guard] UI remains disabled due to ongoing cancellation (structuredPlanParseFailed)."
+						"[Guard] UI remains disabled due to ongoing cancellation (structuredPlanParseFailed).",
 					);
 				}
 				break;
@@ -810,7 +810,7 @@ export function initializeMessageBusHandler(
 					elements,
 					"Converting strategy to executable plan...",
 					false,
-					true
+					true,
 				);
 				setLoadingState(true, elements);
 				postMessageToExtension({
@@ -833,7 +833,7 @@ export function initializeMessageBusHandler(
 						setLoadingState(false, elements);
 					} else {
 						console.log(
-							"[Guard] UI remains disabled due to ongoing cancellation (commitReview invalid value)."
+							"[Guard] UI remains disabled due to ongoing cancellation (commitReview invalid value).",
 						);
 					}
 					return;
@@ -846,7 +846,7 @@ export function initializeMessageBusHandler(
 					stagedFiles,
 					postMessageToExtension,
 					updateStatus,
-					setLoadingState
+					setLoadingState,
 				);
 				break;
 			}
@@ -855,7 +855,7 @@ export function initializeMessageBusHandler(
 				if (message.value) {
 					console.log(
 						"Received restorePendingCommitReview message:",
-						message.value
+						message.value,
 					);
 					if (
 						typeof message.value.commitMessage !== "string" ||
@@ -863,13 +863,13 @@ export function initializeMessageBusHandler(
 					) {
 						console.error(
 							"Invalid 'restorePendingCommitReview' message value:",
-							message.value
+							message.value,
 						);
 						if (!appState.isCancellationInProgress) {
 							setLoadingState(false, elements);
 						} else {
 							console.log(
-								"[Guard] UI remains disabled due to ongoing cancellation (restorePendingCommitReview invalid value)."
+								"[Guard] UI remains disabled due to ongoing cancellation (restorePendingCommitReview invalid value).",
 							);
 						}
 						return;
@@ -884,7 +884,7 @@ export function initializeMessageBusHandler(
 						stagedFiles,
 						postMessageToExtension,
 						updateStatus,
-						setLoadingState
+						setLoadingState,
 					);
 					appState.isAwaitingUserReview = true; // Added as per instructions.
 
@@ -892,7 +892,7 @@ export function initializeMessageBusHandler(
 						setLoadingState(false, elements);
 					} else {
 						console.log(
-							"[Guard] UI remains disabled due to ongoing cancellation (restorePendingCommitReview)."
+							"[Guard] UI remains disabled due to ongoing cancellation (restorePendingCommitReview).",
 						);
 					}
 
@@ -901,13 +901,13 @@ export function initializeMessageBusHandler(
 					}
 				} else {
 					console.warn(
-						"restorePendingCommitReview received without message.value. No action taken."
+						"restorePendingCommitReview received without message.value. No action taken.",
 					);
 					if (!appState.isCancellationInProgress) {
 						setLoadingState(false, elements);
 					} else {
 						console.log(
-							"[Guard] UI remains disabled due to ongoing cancellation (restorePendingCommitReview fallback)."
+							"[Guard] UI remains disabled due to ongoing cancellation (restorePendingCommitReview fallback).",
 						);
 					}
 				}
@@ -932,14 +932,14 @@ export function initializeMessageBusHandler(
 						restoredPlanData.relevantFiles,
 						undefined, // messageIndexForHistory
 						undefined, // isRelevantFilesExpandedForHistory
-						true // isPlanExplanationForRender
+						true, // isPlanExplanationForRender
 					);
 
 					createPlanConfirmationUI(
 						elements,
 						postMessageToExtension,
 						updateStatus,
-						setLoadingState
+						setLoadingState,
 					);
 
 					if (elements.planConfirmationContainer) {
@@ -947,7 +947,7 @@ export function initializeMessageBusHandler(
 						appState.isAwaitingUserReview = true; // Added as per instructions.
 						updateStatus(
 							elements,
-							"Pending plan confirmation restored. Review and confirm to proceed."
+							"Pending plan confirmation restored. Review and confirm to proceed.",
 						);
 
 						if (elements.cancelGenerationButton) {
@@ -957,36 +957,36 @@ export function initializeMessageBusHandler(
 							setLoadingState(false, elements);
 						} else {
 							console.log(
-								"[Guard] UI remains disabled due to ongoing cancellation (restorePendingPlanConfirmation)."
+								"[Guard] UI remains disabled due to ongoing cancellation (restorePendingPlanConfirmation).",
 							);
 						}
 					} else {
 						console.error(
-							"Error: Plan confirmation container not found during restore. Cannot display pending plan."
+							"Error: Plan confirmation container not found during restore. Cannot display pending plan.",
 						);
 						updateStatus(
 							elements,
 							"Error: Failed to restore pending plan UI. Inputs re-enabled.",
-							true
+							true,
 						);
 						appState.pendingPlanData = null;
 						if (!appState.isCancellationInProgress) {
 							setLoadingState(false, elements);
 						} else {
 							console.log(
-								"[Guard] UI remains disabled due to ongoing cancellation (restorePendingPlanConfirmation fallback)."
+								"[Guard] UI remains disabled due to ongoing cancellation (restorePendingPlanConfirmation fallback).",
 							);
 						}
 					}
 				} else {
 					console.warn(
-						"restorePendingPlanConfirmation received without message.value. No action taken."
+						"restorePendingPlanConfirmation received without message.value. No action taken.",
 					);
 					if (!appState.isCancellationInProgress) {
 						setLoadingState(false, elements);
 					} else {
 						console.log(
-							"[Guard] UI remains disabled due to ongoing cancellation (restorePendingPlanConfirmation no value)."
+							"[Guard] UI remains disabled due to ongoing cancellation (restorePendingPlanConfirmation no value).",
 						);
 					}
 				}
@@ -1006,13 +1006,13 @@ export function initializeMessageBusHandler(
 						undefined, // messageIndexForHistory
 						undefined, // isRelevantFilesExpandedForHistory
 						false, // isPlanExplanationForRender
-						false // isPlanStepUpdate (Hardcoded false, as timeline handles progress)
+						false, // isPlanStepUpdate (Hardcoded false, as timeline handles progress)
 					);
 					setLoadingState(appState.isLoading, elements);
 				} else {
 					console.warn(
 						"Received 'appendRealtimeModelMessage' with invalid value:",
-						message.value
+						message.value,
 					);
 				}
 				break;
@@ -1030,7 +1030,7 @@ export function initializeMessageBusHandler(
 						elements,
 						message.value,
 						message.isError ?? false,
-						message.showLoadingDots ?? false
+						message.showLoadingDots ?? false,
 					);
 					if (
 						appState.isCancellationInProgress &&
@@ -1038,7 +1038,7 @@ export function initializeMessageBusHandler(
 					) {
 						appState.isCancellationInProgress = false;
 						console.log(
-							"[Webview] Cancellation flow confirmed and completed by statusUpdate. isCancellationInProgress reset."
+							"[Webview] Cancellation flow confirmed and completed by statusUpdate. isCancellationInProgress reset.",
 						);
 					}
 				}
@@ -1095,7 +1095,7 @@ export function initializeMessageBusHandler(
 					elements.modelSelect!.value = selectedModel;
 					console.log(
 						"Model list updated in webview. Selected:",
-						selectedModel
+						selectedModel,
 					);
 					setLoadingState(appState.isLoading, elements);
 				} else {
@@ -1109,6 +1109,10 @@ export function initializeMessageBusHandler(
 			}
 			case "updateJsonLoadingState": {
 				setJsonLoadingState(message.value, elements);
+				break;
+			}
+			case "updateOptimizationSettings": {
+				handleOptimizationSettingsUpdate(message as any, elements);
 				break;
 			}
 			case "reenableInput": {
@@ -1146,7 +1150,7 @@ export function initializeMessageBusHandler(
 			case "planExecutionFinished": {
 				console.log(
 					"[Webview] Received planExecutionFinished message.",
-					message
+					message,
 				);
 				const planFinishedMessage = message as PlanExecutionFinishedMessage;
 				appState.hasRevertibleChanges =
@@ -1155,7 +1159,7 @@ export function initializeMessageBusHandler(
 					setLoadingState(false, elements); // Refresh UI to update revert button visibility
 				} else {
 					console.log(
-						"[Guard] UI remains disabled due to ongoing cancellation (planExecutionFinished)."
+						"[Guard] UI remains disabled due to ongoing cancellation (planExecutionFinished).",
 					);
 				}
 				break;
@@ -1178,7 +1182,7 @@ export function initializeMessageBusHandler(
 					setLoadingState(false, elements);
 				} else {
 					console.log(
-						"[Guard] UI remains disabled due to ongoing cancellation (chatCleared)."
+						"[Guard] UI remains disabled due to ongoing cancellation (chatCleared).",
 					);
 				}
 				finalizeStreamingMessage(elements);
@@ -1216,14 +1220,14 @@ export function initializeMessageBusHandler(
 								msg.isRelevantFilesExpanded,
 								msg.isPlanExplanation, // isPlanExplanationForRender
 								msg.isPlanStepUpdate, // Pass the new flag here
-								msg.imageParts // Pass the 12th parameter
+								msg.imageParts, // Pass the 12th parameter
 							);
 						}
 					});
 
 					// Select all elements within elements.chatContainer that have the class .user-message-edited-pending-ai.
 					const editedMessages = elements.chatContainer.querySelectorAll(
-						".user-message-edited-pending-ai"
+						".user-message-edited-pending-ai",
 					);
 					editedMessages.forEach((msg) => {
 						msg.classList.remove("user-message-edited-pending-ai");
@@ -1238,7 +1242,7 @@ export function initializeMessageBusHandler(
 					updateStatus(
 						elements,
 						"Error: Failed to restore chat history due to invalid format.",
-						true
+						true,
 					);
 				}
 				break;
@@ -1246,7 +1250,7 @@ export function initializeMessageBusHandler(
 			case "authStateUpdate": {
 				const { isSignedIn } = message.value;
 				console.log(
-					`[messageBusHandler] authStateUpdate received. isSignedIn: ${isSignedIn}`
+					`[messageBusHandler] authStateUpdate received. isSignedIn: ${isSignedIn}`,
 				);
 
 				break;
@@ -1255,23 +1259,23 @@ export function initializeMessageBusHandler(
 				const { messageIndex, isExpanded } = message.value;
 				if (elements.chatContainer) {
 					const messageElement = elements.chatContainer.querySelector(
-						`.message[data-message-index=\"${messageIndex}\"]`
+						`.message[data-message-index=\"${messageIndex}\"]`,
 					) as HTMLDivElement | null;
 					if (messageElement) {
 						const contextFilesDiv = messageElement.querySelector(
-							".ai-context-files"
+							".ai-context-files",
 						) as HTMLDivElement | null;
 						if (contextFilesDiv) {
 							contextFilesDiv.classList.toggle("collapsed", !isExpanded);
 							contextFilesDiv.classList.toggle("expanded", isExpanded);
 						} else {
 							console.warn(
-								`[updateRelevantFilesDisplay] .ai-context-files div not found for message index ${messageIndex}.`
+								`[updateRelevantFilesDisplay] .ai-context-files div not found for message index ${messageIndex}.`,
 							);
 						}
 					} else {
 						console.warn(
-							`[updateRelevantFilesDisplay] Message element with data-message-index=\"${messageIndex}\" not found.`
+							`[updateRelevantFilesDisplay] Message element with data-message-index=\"${messageIndex}\" not found.`,
 						);
 					}
 				}
@@ -1279,7 +1283,7 @@ export function initializeMessageBusHandler(
 			}
 			case "PrefillChatInput": {
 				console.log(
-					"[Webview] Received PrefillChatInput. Prefilling chat input."
+					"[Webview] Received PrefillChatInput. Prefilling chat input.",
 				);
 				const { text } = message.payload;
 				const chatInput = elements.chatInput;
@@ -1295,7 +1299,7 @@ export function initializeMessageBusHandler(
 					// Update the status bar message to inform the user
 					updateStatus(
 						elements,
-						"Context loaded into chat input. Review and send."
+						"Context loaded into chat input. Review and send.",
 					);
 					// Ensure the UI controls are enabled (e.g., send button)
 					setLoadingState(false, elements);
@@ -1304,14 +1308,14 @@ export function initializeMessageBusHandler(
 			}
 			case "resetCodeStreamingArea": {
 				console.log(
-					"[Webview] Received resetCodeStreamingArea message. Resetting code streams."
+					"[Webview] Received resetCodeStreamingArea message. Resetting code streams.",
 				);
 				resetCodeStreams();
 				break;
 			}
 			case "operationCancelledConfirmation": {
 				console.log(
-					"[Webview] Received operationCancelledConfirmation. Resetting UI state."
+					"[Webview] Received operationCancelledConfirmation. Resetting UI state.",
 				);
 				// Clean up any pending retry timer
 				if (appState.retryTimer) {
@@ -1342,7 +1346,7 @@ export function initializeMessageBusHandler(
 						undefined,
 						undefined,
 						false,
-						false
+						false,
 					);
 					// Ensure we scroll to bottom
 					if (elements.chatContainer) {
@@ -1359,7 +1363,7 @@ export function initializeMessageBusHandler(
 			default:
 				console.warn(
 					"[Webview] Received unknown message type from extension:",
-					message.type
+					message.type,
 				);
 		}
 	});

@@ -77,7 +77,7 @@ If you are a developer looking to build from source or contribute, please refer 
 - **Executing a Plan**:
   - You will be prompted for confirmation before the AI executes a generated plan.
   - Monitor execution progress through VS Code notifications.
-  - **Smart Context**: The AI will automatically find and read relevant code snippets for each step of the plan, ensuring it has the full picture before writing code.
+  - **Smart Context**: The AI will automatically find and read relevant code snippets for each step of the plan using agentic investigation and symbol intelligence, ensuring it has the full picture before writing code.
   - Plans can be cancelled if needed during execution.
 - **Reverting Changes**: The "Revert Changes" button, at the top right, allows you to undo AI-driven workflow actions if necessary.
 - **Autonomous Self-Correction**: For long-running plans, the AI now automatically monitors for errors or missing functionality using a diagnostic feedback loop. If an issue is detected, it captures the **specific error message** and initiates an automatic "Self-Correction" cycle to repair the code without requiring a new manual request.
@@ -92,6 +92,7 @@ If you are a developer looking to build from source or contribute, please refer 
 - **Live Generation**: Code generated for `create_file` and `modify_file` steps streams directly into the editor, providing immediate visual feedback.
 - **Smart Visual Flash**: Newly added or modified code is highlighted with a full-width green flash effect. This highlight tracks with your code as you edit around it and intelligently removes itself only when you modify or delete the flashed lines.
 - **Applying Changes**: AI modifications are applied to your editor, often involving diff analysis and intelligent application of changes.
+- **Real-time Status**: Watch the system analyzed, plan, and execute in real-time with granular status updates (e.g., "Analyzing file structure...", "Applying edits...").
 
 - **Active Exploration**: For complex queries, the **Context Agent** will automatically spring into action. It "investigates" your codebase by running safe terminal commands (`ls`, `grep`, `find`, `sed`, `head`) to find relevant files that static analysis might miss.
 - **Transparent Logs**: You'll see "Context Agent" logs in the chat showing exactly what commands are being run (e.g., `grep -r "auth" .`) and what they returned.

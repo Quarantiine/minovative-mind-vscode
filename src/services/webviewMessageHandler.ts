@@ -739,6 +739,24 @@ export async function handleWebviewMessage(
 					break;
 				}
 
+				// Retrieve the preceding user message for context by traversing backwards
+				let userRequestContent =
+					"No specific user request context available. This might be a continuation or a new topic.";
+				for (let i = messageIndex - 1; i >= 0; i--) {
+					const entry = provider.chatHistoryManager.getChatHistory()[i];
+					if (entry && entry.role === "user") {
+						const textContent = entry.parts
+							.map((part) => ("text" in part && part.text ? part.text : ""))
+							.filter((text) => text.trim().length > 0)
+							.join("\n");
+
+						if (textContent.trim().length > 0) {
+							userRequestContent = textContent;
+							break; // Found the most recent user request
+						}
+					}
+				}
+
 				const aiMessageContent = historyEntry.parts
 					.map((part) => ("text" in part && part.text ? part.text : ""))
 					.filter((text) => text.length > 0)
@@ -770,6 +788,7 @@ export async function handleWebviewMessage(
 
 					const generatedPlanText = await generateLightweightPlanPrompt(
 						aiMessageContent,
+						userRequestContent,
 						DEFAULT_FLASH_LITE_MODEL,
 						provider.aiRequestService,
 						token,

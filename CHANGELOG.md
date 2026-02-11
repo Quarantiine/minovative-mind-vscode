@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.51.0] - February 11, 2026
+
+### Core Simplification and Legacy Cleanup
+
+This major refactor eliminates legacy dependency graphing and semantic linking logic in favor of more efficient, agentic investigation and modern IDE APIs.
+
+- **Eliminated Deprecated Systems**: Removed `dependencyGraphBuilder.ts`, `semanticLinker.ts`, and `heuristicContextSelector.ts`. The system no longer relies on slow, static dependency graph generation or TF-IDF based proximity scoring.
+- **Modernized Context Selection**: Updated context agent tools to use modern IDE symbol and reference APIs. Introduced new context preparation logic to explicitly list clean, warning, and error files for the planning LLM.
+- **Enhanced Execution Intelligence**:
+  - Introduced robust URI resolution (`_resolveTargetFileUri`) in `PlanExecutorService` to handle shorthand paths.
+  - Optimized Plan Executor guards to run _only_ when in correction mode, significantly speeding up normal execution.
+- **Improved UI Streaming**: Modernized `EnhancedCodeGenerator` to stream real-time status updates ("Analyzing structure", "Applying changes") for better feedback.
+- **Deterministic AI Responses**: Enhanced `gemini.ts` to capture model thoughts alongside function calls, ensuring more transparent and reliable AI behavior.
+
 ## [2.50.0] - February 1, 2026
 
 ### Production-Ready Workflow and Smart UX

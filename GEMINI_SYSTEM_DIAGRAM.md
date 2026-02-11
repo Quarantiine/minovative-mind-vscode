@@ -53,7 +53,6 @@ graph TB
         direction TB
         WorkspaceScanner[Workspace Scanner]
         SymbolService[Symbol Service]
-        DependencyGraph[Dependency Graph Builder]
         DiagnosticSvc[Diagnostic Service]
         ProjectType[Project Type Detector]
         SmartContext[Smart Context Selector]
@@ -62,7 +61,6 @@ graph TB
 
         WorkspaceScanner --> SmartContext
         SymbolService --> SmartContext
-        DependencyGraph --> SmartContext
         DiagnosticSvc --> SmartContext
         ProjectType --> SmartContext
         AgenticInvest --> SmartContext
@@ -169,7 +167,7 @@ graph TB
 
 1.  **User Interface**: Handles webview rendering, user input, and state management.
 2.  **Chat History**: Manages persistence and restoration of chat sessions.
-3.  **Context Management**: Scans workspace, detects project type, builds dependency graphs, and gathers context for the AI.
+3.  **Context Management**: Scans workspace, detects project type, gathers context via Agentic investigation and symbol intelligence.
 4.  **AI Services**: Orchestrates requests to Gemini, handles tokens, and manages prompts.
 5.  **Code Generation**: Handles creation and modification of files with validation.
 6.  **Plan & Workflow**: Manages multi-step plans, execution, logging, and reverting changes.

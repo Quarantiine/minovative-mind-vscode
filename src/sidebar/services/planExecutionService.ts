@@ -18,6 +18,7 @@ import {
 import { formatSuccessfulChangesForPrompt } from "../../workflow/changeHistoryFormatter";
 import { formatUserFacingErrorMessage } from "../../utils/errorFormatter";
 import { ERROR_OPERATION_CANCELLED } from "../../ai/gemini";
+import { DiagnosticService } from "../../utils/diagnosticUtils";
 
 // Define enums and interfaces for plan execution
 export enum PlanStepAction {
@@ -83,10 +84,22 @@ export class PlanExecutionService {
 		return new Promise((resolve) => setTimeout(resolve, ms));
 	}
 
-	private _getDiagnosticsForFiles(modifiedFiles: Set<string>): string[] {
+	private async _getDiagnosticsForFiles(
+		modifiedFiles: Set<string>,
+		token: vscode.CancellationToken,
+	): Promise<string[]> {
 		const diagnostics: string[] = [];
 		for (const filePath of modifiedFiles) {
 			const uri = vscode.Uri.file(filePath);
+			try {
+				await DiagnosticService.waitForDiagnosticsToStabilize(uri, token, 2000);
+			} catch (error) {
+				console.warn(
+					`[PlanExecutionService] Failed to wait for diagnostics to stabilize for ${filePath}:`,
+					error,
+				);
+			}
+
 			const fileDiagnostics = vscode.languages.getDiagnostics(uri);
 
 			for (const diagnostic of fileDiagnostics) {
@@ -913,7 +926,10 @@ Return the new plan as a JSON array of PlanStep objects. If no further action is
 			}
 		}
 
-		const diagnostics = this._getDiagnosticsForFiles(modifiedFiles);
+		const diagnostics = await this._getDiagnosticsForFiles(
+			modifiedFiles,
+			token,
+		);
 		aggregate.diagnostics = diagnostics;
 
 		const hasSignificantErrors = aggregate.initialResults.some(
@@ -973,7 +989,10 @@ Return the new plan as a JSON array of PlanStep objects. If no further action is
 					}
 				}
 
-				const finalDiagnostics = this._getDiagnosticsForFiles(modifiedFiles);
+				const finalDiagnostics = await this._getDiagnosticsForFiles(
+					modifiedFiles,
+					token,
+				);
 				aggregate.diagnostics = finalDiagnostics;
 				aggregate.overallSuccess =
 					refinementSuccess && finalDiagnostics.length === 0;

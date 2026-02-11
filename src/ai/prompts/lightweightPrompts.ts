@@ -2,10 +2,7 @@ import { AIRequestService } from "../../services/aiRequestService";
 import { DEFAULT_FLASH_LITE_MODEL } from "../../sidebar/common/sidebarConstants";
 import { ERROR_OPERATION_CANCELLED } from "../gemini";
 import * as vscode from "vscode";
-import {
-	HistoryEntry,
-	HistoryEntryPart,
-} from "../../sidebar/common/sidebarTypes";
+import { HistoryEntry } from "../../sidebar/common/sidebarTypes";
 
 // Helper to format history entries into a readable string for the prompt
 function formatHistoryForPrompt(history: readonly HistoryEntry[]): string {
@@ -98,26 +95,43 @@ BEGIN SUMMARY (Use the model 'Gemini Flash Lite' approach: highly focused and br
 
 export async function generateLightweightPlanPrompt(
 	aiMessageContent: string,
+	userRequestContent: string,
 	modelName: string,
 	aiRequestService: AIRequestService,
 	token?: vscode.CancellationToken,
 ): Promise<string> {
 	const prompt = `
+You are an expert technical planner.
 
-Analyze the AI's previous response to create a high-level plan for code implementation. Focus on a structured, step-by-step outline of key changes, integrations, and considerations, without code. Use this as a blueprint for production-ready code.
+CONTEXT:
+1. User Request:
+"""
+${userRequestContent}
+"""
 
-Guidelines:
-- Concise and actionable: Extract essential steps, dependencies, and logic.
-- High-level: Describe actions, brief rationale if key, and interactions; no details or code.
-- Reference files/modules: Mention existing ones if implied for context.
-- Structure: Use numbered/bulleted lists; group tasks (e.g., setup, logic, testing).
-- Complete: Include error handling, edges, performance, prerequisites if relevant.
-- Production-ready: Highlight modularity, scalability, security, maintainability.
+2. AI Response (Technical Explanation/Suggestion):
+"""
+${aiMessageContent}
+"""
 
-Begin the plan exactly with this:
-"/plan with high-level thinking, no coding yet, in the best way, generate a plan about this below (use related files if needed to implement plan):"
+TASK:
+Create a high-level, structured plan based on the AI's response, BUT strictly aligned with the User's Request.
 
-AI Response: ${aiMessageContent}
+CRITICAL INTENT CHECK:
+- If the User's Request was about UPDATING DOCUMENTATION (e.g., "update docs", "document this"), the plan MUST focus on updating documentation files (.md, etc.). DO NOT propose modifying code files unless explicitly requested.
+- If the User's Request was about REFACTORING or CODING, the plan should focus on code changes.
+- Ensure the plan actually addresses what the user asked for, using the AI's response as the technical detail for *how* to do it.
+
+GUIDELINES:
+- Concise and actionable: Extract essential steps.
+- High-level: Describe actions and brief rationale.
+- Reference files/modules: Mention existing ones implied by context.
+- Structure: Use numbered/bulleted lists.
+- Complete: Include error handling/verifications.
+- Production-ready: Highlight modularity/maintainability.
+
+Format the output to begin EXACTLY with:
+"/plan "
 `;
 
 	try {

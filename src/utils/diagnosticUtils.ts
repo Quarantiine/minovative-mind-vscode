@@ -17,8 +17,30 @@ export interface FormatDiagnosticsOptions {
 	snippetContextLines?: SnippetContextLines;
 }
 
-async function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+async function sleep(
+	ms: number,
+	token?: vscode.CancellationToken,
+): Promise<void> {
+	if (token?.isCancellationRequested) {
+		return Promise.resolve();
+	}
+	return new Promise((resolve) => {
+		let disposable: vscode.Disposable;
+		const timer = setTimeout(() => {
+			if (disposable) {
+				disposable.dispose();
+			}
+			resolve();
+		}, ms);
+
+		if (token) {
+			disposable = token.onCancellationRequested(() => {
+				clearTimeout(timer);
+				disposable.dispose();
+				resolve();
+			});
+		}
+	});
 }
 
 export function getSeverityName(severity: vscode.DiagnosticSeverity): string {
@@ -473,7 +495,7 @@ export class DiagnosticService {
 					uri.fsPath
 				} in ${actualCheckInterval.toFixed(0)}ms.`,
 			);
-			await sleep(actualCheckInterval);
+			await sleep(actualCheckInterval, token);
 		}
 
 		console.warn(

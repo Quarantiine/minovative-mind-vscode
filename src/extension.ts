@@ -530,7 +530,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 				const symbolContextBlock = activeSymbolContext || "";
 
-				composedMessage = `/plan Fix the issues described in the 'Relevant Diagnostics' section. Explore the project as needed to identify root causes and implement a production-ready fix.\n\n${diagnosticsBlock}${symbolContextBlock}`;
+				composedMessage = `/plan Fix the issues described in the 'Relevant Diagnostics' section within \`${displayFileName}\`. Explore the project as needed to identify root causes and implement a production-ready fix.\n\n${diagnosticsBlock}${symbolContextBlock}`;
 			} else if (instruction === "/docs") {
 				const docsInstruction = `/plan Document and Clean Code. Instruction: For the context provided below, perform two simultaneous actions: 
 				\n\n1. **Documentation**: Generate comprehensive, high-quality documentation. 
@@ -552,15 +552,15 @@ export async function activate(context: vscode.ExtensionContext) {
 				}
 			} else if (instruction === "chat") {
 				if (originalSelection.isEmpty) {
-					composedMessage = userProvidedMessage || "";
+					composedMessage = `${userProvidedMessage || ""}\n\n${displayFileName}`;
 				} else {
-					composedMessage = `${userProvidedMessage || ""}\n\n--- Context: ${displayFileName} (${contextDescription}) ---\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\``;
+					composedMessage = `${userProvidedMessage || ""}\n\n\`${displayFileName}\`:\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\``;
 				}
 			} else if (instruction === "custom prompt") {
 				if (originalSelection.isEmpty) {
-					composedMessage = `/plan ${userProvidedMessage || ""}`;
+					composedMessage = `/plan ${userProvidedMessage || ""}\n\n${displayFileName}`;
 				} else {
-					composedMessage = `/plan ${userProvidedMessage || ""}\n\n--- Context: ${displayFileName} (${contextDescription}) ---\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\``;
+					composedMessage = `/plan ${userProvidedMessage || ""}\n\n\`${displayFileName}\`:\n\`\`\`${languageId}\n${contextForMessage}\n\`\`\``;
 				}
 			} else {
 				vscode.window.showErrorMessage("Unknown instruction received.");
