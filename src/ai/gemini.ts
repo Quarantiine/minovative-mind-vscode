@@ -347,10 +347,11 @@ export async function* generateContentStream(
 				}
 			}
 		} else if (!contentYielded && !finalResponse.promptFeedback?.blockReason) {
-			geminiLogger.warn(
+			geminiLogger.error(
 				modelName,
-				`Stream ended without yielding content or a block reason.`,
+				`Stream ended without yielding content or a block reason. Treating as a retryable error.`,
 			);
+			throw new Error(ERROR_SERVICE_UNAVAILABLE);
 		}
 	} catch (error: any) {
 		_handleGeminiError(error, modelName, "stream generation", true);

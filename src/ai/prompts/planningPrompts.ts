@@ -105,8 +105,9 @@ ${newDependencyInstructionsForExplanation.trim()}
 Refer to the "Broader Project Context" which includes detailed symbol information.
 
 Command Usage Guidelines:
-- **Stability**: Use \`ls | sort\` or \`find . | sort\` for consistent file ordering to prevent hallucinations.
-- **Robust Searching**: Use \`find . -iname "*pattern*"\` for case-insensitive file searching. \`find\` is case-sensitive by default, so \`*Service.ts\` will miss \`planService.ts\` if using \`*service.ts\`.
+- **Stability**: Use \`git ls-files | sort\` for consistent, gitignore-respecting file ordering. Prefer \`git ls-files\` over \`ls -R\` or \`find .\` to avoid noise from node_modules, dist, and build artifacts.
+- **Robust Searching**: Use \`find src -iname "*pattern*"\` for case-insensitive file searching scoped to source directories. \`find\` is case-sensitive by default, so \`*Service.ts\` will miss \`planService.ts\` if using \`*service.ts\`.
+- **Workspace Scoping**: Always scope searches to source directories (\`src/\`, \`lib/\`, etc.) instead of \`.\` (project root). Never manually search in \`node_modules\`, \`dist\`, \`out\`, \`build\`, or other generated directories — these are automatically excluded from commands by the system.
 - **Noise Reduction**: Use \`grep ... | uniq\` to remove duplicate matches and save context window.
 - **Canonical Paths**: Use \`realpath <path>\` to resolve relative paths (e.g., \`../\`) before performing file modifications, ensuring accuracy.
 - **Git Context**: If the request involves recent work or history, use \`git log\`, \`git status\`, or \`git diff\` (recent changes in this workspace) to gather context before planning.

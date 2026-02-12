@@ -677,11 +677,12 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 	let investigationInstruction: string;
 
 	if (isTruncated || alwaysRunInvestigation || isLikelyErrorRequest) {
-		const searchToolInstructions = `*   **POWERFUL SEARCH**: You can use \`|\` (pipes) and \`grep\` / \`find\` to filter results.
+		const searchToolInstructions = `*   **POWERFUL SEARCH**: You can use \`|\` (pipes) and \`grep\` / \`find\` to filter results. Commands are automatically filtered to exclude node_modules, dist, build artifacts, and binary files.
     *   **Examples**:
-        *   \`ls -R | grep "auth"\` (Find files with "auth" in name)
+        *   \`git ls-files | grep "auth"\` (Find files with "auth" in name — respects .gitignore)
         *   \`find src -name "*.ts" -exec grep -l "interface User" {} +\` (Find files containing text)
-        *   \`grep -r "class User" src\` (Search content recursively)`;
+        *   \`grep -rn "class User" src\` (Search content recursively in source directory)
+    *   **IMPORTANT**: Always prefer \`git ls-files\` over \`ls -R\` — it automatically respects .gitignore. Scope \`grep\` and \`find\` to source directories (e.g., \`src/\`, \`lib/\`) instead of \`.\` to avoid noise from generated code.`;
 
 		investigationInstruction = `2.  **Investigate (REQUIRED)**: The file list is TRUNCATED or this is a high-priority request. You MUST run a \`run_terminal_command\` to find specific files.
     ${searchToolInstructions}
@@ -747,10 +748,12 @@ ${priorityFilesPrompt}
         *   \`git log -n 5\`: See 5 most recent commit messages.
         *   \`git diff HEAD~1\`: See changes in the last commit.
         *   \`git show <commit>\`: See details of a specific commit.
-        *   \`git ls-files\`: List files in the index.
-3.  **Powerful Search**: Use \`grep\` or \`find\` to locate code patterns.
-    *   \`grep -rn "pattern" .\`: Search for text in all files.
-    *   \`find . -name "*pattern*"\`: Search for files by name.
+        *   \`git ls-files\`: List all tracked files (respects .gitignore).
+3.  **Powerful Search**: Use \`grep\` or \`find\` scoped to source directories to locate code patterns. Commands are automatically filtered to exclude node_modules, dist, build artifacts, and binary files.
+    *   \`grep -rn "pattern" src\`: Search for text in source files.
+    *   \`git ls-files | grep "pattern"\`: Find files by name (respects .gitignore).
+    *   \`find src -name "*pattern*"\`: Search for files by name in source directory.
+    *   **IMPORTANT**: Always scope searches to source directories (\`src/\`, \`lib/\`, etc.) instead of \`.\` (project root). Never search in \`node_modules\`, \`dist\`, \`out\`, \`build\`, or other generated directories.
 4.  **Symbol Exploration (PREFERRED)**: Use \`get_file_symbols\` to see a file's structure (functions, classes, variables) without reading its entire content. This is much faster and context-efficient than \`sed\`.
 5.  **Symbol Lookup (GLOBAL)**: Use \`lookup_workspace_symbol\` to find where a specific symbol is defined across the entire project.
 6.  **Graph Traversal (DEEP)**:
@@ -758,7 +761,7 @@ ${priorityFilesPrompt}
     *   Use \`go_to_definition\` to see where a symbol is *defined* (implementation).
     *   **Crucial**: These tools allow you to traverse the dependency graph. Use them to understand how components interact.
 7.  **Strategic Independence (CRITICAL)**: You are provided with "Priority Files" (strong candidates). These are ONLY a starting guess. Do NOT assume they are correct or complete.
-    *   **Mandate**: Even if the files you think you need are in the legacy list, you **MUST** investigate them (e.g., using \`ls -R\`, \`get_file_symbols\`, \`git diff\`, or \`sed\`) to confirm their relevance and content before finishing.
+    *   **Mandate**: Even if the files you think you need are in the legacy list, you **MUST** investigate them (e.g., using \`git ls-files\`, \`get_file_symbols\`, \`git diff\`, or \`sed\`) to confirm their relevance and content before finishing.
     *   **Truth**: Search the codebase yourself to find the "ground truth." Priority suggestions often miss important files or include irrelevant ones.
 8.  **Loop Prevention**: Do not run the same command twice.
 9.  **Read Specific Lines (MANDATORY)**: Use \`sed -n 'start,endp' file\` for ALL file reading.
@@ -776,7 +779,7 @@ Project Path: ${projectRoot.fsPath}
 ${activeFilePrompt}${activeSymbolPrompt}${diagnosticsContext}${historyContext}${projectConfigPrompt}
 
 -- Available Files (Ground Truth for Investigation) --
-Use \`run_terminal_command\` with \`ls -R\` or \`find\` if you need to explore the directory structure.
+Use \`run_terminal_command\` with \`git ls-files\` or \`find src\` if you need to explore the directory structure. Prefer \`git ls-files\` as it respects .gitignore.
 
 -- Priority Files (MAY BE WRONG - INVESTIGATE FIRST) --
 ${priorityFilesPrompt}
