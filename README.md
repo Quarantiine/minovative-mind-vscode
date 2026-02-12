@@ -18,7 +18,7 @@ Minovative Mind is a powerful, open-source AI agent for Visual Studio Code that 
 - **💬 Intelligent Chat**: Context-aware chat that understands your entire workspace. Text and image support (Multimodal).
 - **🛠️ Auto-Fix & Debug**: `/fix` command to analyze errors and auto-repair code issues.
 - **📝 Documentation & Cleanup**: `/docs` command to add comprehensive docs and remove clutter.
-- **🔎 Context Agent**: Actively investigates your codebase using terminal commands (`ls`, `grep`, `find`, `sed`, `head`) to find relevant references efficiently.
+- **🔎 Context Agent**: Actively investigates your codebase using terminal commands (`git ls-files`, `grep`, `find`, `sed`, `head`) with automatic `.gitignore`-aware filtering to find relevant references efficiently.
 - **💾 Git Automation**: `/commit` generates descriptive commit messages based on your changes.
 - **🛡️ Safe & Private**: Runs locally using the latest **Gemini Flash Lite** models for speed and efficiency.
 

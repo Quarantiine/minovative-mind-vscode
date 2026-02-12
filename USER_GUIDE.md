@@ -96,8 +96,8 @@ If you are a developer looking to build from source or contribute, please refer 
 - **Applying Changes**: AI modifications are applied to your editor, often involving diff analysis and intelligent application of changes.
 - **Real-time Status**: Watch the system analyzed, plan, and execute in real-time with granular status updates (e.g., "Analyzing file structure...", "Applying edits...").
 
-- **Active Exploration**: For complex queries, the **Context Agent** will automatically spring into action. It "investigates" your codebase by running safe terminal commands (`ls`, `grep`, `find`, `sed`, `head`) to find relevant files that static analysis might miss.
-- **Transparent Logs**: You'll see "Context Agent" logs in the chat showing exactly what commands are being run (e.g., `grep -r "auth" .`) and what they returned.
+- **Active Exploration**: For complex queries, the **Context Agent** will automatically spring into action. It "investigates" your codebase by running safe terminal commands (`git ls-files`, `grep`, `find`, `sed`, `head`) to find relevant files that static analysis might miss. All search commands are automatically filtered to respect `.gitignore` rules and exclude build artifacts, dependencies, and binary files.
+- **Transparent Logs**: You'll see "Context Agent" logs in the chat showing exactly what commands are being run (e.g., `grep -r "auth" src/`) and what they returned.
 - **Progressive Discovery**: In large projects, the Context Agent uses a "Progressive Discovery" strategy, starting with a truncated view of your project structure and discovering files on-the-fly to save tokens and improve performance.
 - **Error Awareness**: If you ask about an error or bug, the Context Agent automatically enters "Investigation Mode" to hunt down the root cause using the error message and real-time diagnostics.
 

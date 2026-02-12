@@ -58,7 +58,7 @@ sequenceDiagram
 ### Phase 1: Initiation & Context Gathering
 
 1.  **User Intent Analysis**: When you send a message, the **Lightweight Classification Service** (using Gemini Flash Lite) first determines if you are asking for a code modification, a general question, or reporting a bug.
-2.  **Active Investigation**: If the intent requires deep context, the **Context Agent** activates. It may autonomously run "safe" terminal commands (`ls`, `grep`, `find`) to locate relevant files that static analysis might miss.
+2.  **Active Investigation**: If the intent requires deep context, the **Context Agent** activates. It may autonomously run "safe" terminal commands (`git ls-files`, `grep`, `find`) to locate relevant files that static analysis might miss. All commands are automatically enhanced with gitignore-aware exclusion filters to skip dependencies, build artifacts, and binary files.
     - _Example_: If you ask to "fix the auth service," it might `grep` for "AuthService" to find the definition file.
 3.  **Context Construction**: The agent bundles the selected file contents, active editor state, and any diagnostic messages into a coherent prompt context.
 

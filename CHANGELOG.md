@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.52.1] - February 12, 2026
+
+### Gitignore-Aware Context Agent Commands
+
+Enhanced the `SafeCommandExecutor` with automatic, gitignore-aligned command transformation to ensure the Context Agent never searches through irrelevant files or directories.
+
+- **Automatic Command Transformation**: Recursive `grep` commands are now automatically injected with `--exclude-dir`, `--exclude`, and `--binary-files=without-match` flags. `find` commands receive directory prune clauses. `ls -R` is rewritten to `git ls-files` for native `.gitignore` awareness.
+- **Comprehensive Exclusion Lists**: Curated lists of ~80 excluded directories, ~90 excluded file extensions, and ~25 excluded filenames covering all major languages and frameworks: Node.js, Python, Java/Kotlin, Go, Rust, Ruby, PHP, C/C++, .NET, iOS/macOS, Terraform, and all major JS frameworks (Next.js, Nuxt, SvelteKit, Astro, Vite, Parcel).
+- **Updated Agent Prompts**: Context Agent prompts in `smartContextSelector.ts`, `planningPrompts.ts`, and `enhancedCodeGenerationPrompts.ts` now instruct the AI to use `git ls-files` instead of `ls -R` and scope searches to source directories.
+- **Documentation Updated**: All project documentation (README, ARCHITECTURE, CAPABILITIES, USER_GUIDE, WORKFLOW_LIFECYCLE) updated to reflect the new gitignore-aware command behavior.
+
 ## [2.52.0] - February 11, 2026
 
 ### Skip Plan Confirmation & Priority Files Model

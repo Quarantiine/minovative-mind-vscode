@@ -98,17 +98,17 @@ Minovative Mind builds a profound understanding of your project using comprehens
 
 ### 3.4 Agentic Context Investigation
 
-- **Active Codebase Exploration**: The Context Agent proactively "looks around" your codebase using high-performance, cost-effective models (**Gemini Flash Lite**) and safe terminal commands (`ls`, `grep`, `find`, `cat`, `sed`, `head`, `tail`, `wc`, `file`) to discover relevant files that static analysis might miss.
+- **Active Codebase Exploration**: The Context Agent proactively "looks around" your codebase using high-performance, cost-effective models (**Gemini Flash Lite**) and safe terminal commands (`git ls-files`, `grep`, `find`, `cat`, `sed`, `head`, `tail`, `wc`, `file`) to discover relevant files that static analysis might miss. All search commands are automatically transformed to respect `.gitignore` rules through injected exclusion flags.
 - **Progressive Discovery**: For large repositories, the agent starts with a highly efficient, truncated view of the project structure and discovers files on-demand using **Progressive Discovery**, reducing initial context token usage by up to 90%.
 - **Intent-Aware Context**: Automatically classifies the user's intent (e.g., bug fixing vs. general query) to prioritize the most relevant diagnostic or symbol information for the context.
 - **AI-Driven Error Investigation**: Automatically detects when you're asking about errors or bugs using intelligent intent classification and proactively investigates error messages, stack traces, and relevant code paths before generating a response.
-- **Safe Execution Environment**: All investigation commands are executed in a secure, read-only sandbox that prevents modification or external network access.
+- **Safe Execution Environment**: All investigation commands are executed in a secure, read-only sandbox that prevents modification or external network access. Commands are automatically enhanced with comprehensive exclusion lists covering all major languages and frameworks (Node.js, Python, Java, Go, Rust, Ruby, PHP, C/C++, .NET, iOS/macOS, Terraform) to skip build artifacts, dependencies, and binary files.
 - **Transparent Operation**: You see exactly what the agent is doing—every command run and its output is logged transparently in the chat interface.
 
 ### 3.3 Resilient Context Construction
 
 - **Large Project Handling**: Designed to efficiently handle large projects by strategically skipping oversized files (e.g., 1MB+ files).
-- **Intelligent File Exclusion**: Automatically excludes binary files and adheres to `.gitignore` rules to optimize context and avoid irrelevant data.
+- **Intelligent File Exclusion**: Automatically excludes binary files and adheres to `.gitignore` rules to optimize context and avoid irrelevant data. The `SafeCommandExecutor` proactively transforms `grep`, `find`, and `ls -R` commands with gitignore-aligned exclusion filters, ensuring the agent never searches through `node_modules`, `dist`, `build`, or other generated content.
 - **Language Detection**: Includes robust language detection for files without extensions, ensuring accurate context formatting for the AI.
 
 ---
