@@ -720,23 +720,19 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 					.join("\n\n")
 			: "No summaries available.";
 
-	const selectionPrompt =
+	const systemPrompt =
 		`You are a Context Selection Agent. Your goal is to identify the most relevant files for a coding task.
 You will iterate using tools until you have enough information to call \`finish_selection\`.
 
--- Context --
-${contextPrompt}
--- End Context --
-
--- Priority Files (Strong Candidates) --
-${priorityFilesPrompt}
--- End Priority Files --
-
 -- Instructions --
 1.  **Thinking Process (MANDATORY)**: You MUST call the \`report_thought\` tool to explain your search strategy before using other tools.
+    *   **FORMATTING**: Use **Markdown** in your thoughts.
+        *   Use **bold** for emphasis.
+        *   Use \`code ticks\` for file paths, symbols, and commands.
+        *   Use bullet lists (-) for multiple steps.
     *   Example:
         \`\`\`
-        [Tool Call] report_thought(thought="User mentioned 'auth'. I should search for 'AuthService' or 'LoginController'.")
+        [Tool Call] report_thought(thought="User mentioned **auth**. I should search for \`AuthService\` or \`LoginController\` using \`lookup_workspace_symbol\`.")
         [Tool Call] lookup_workspace_symbol("AuthService")
         \`\`\`
 2.  **Investigate (REQUIRED)**: \`report_thought\` is **NOT** an investigation tool. After explaining your strategy, you **MUST** use \`run_terminal_command\`, \`lookup_workspace_symbol\`, or \`get_file_symbols\` to verify file existence and content.
@@ -776,22 +772,29 @@ ${priorityFilesPrompt}
 
 -- Project Context --
 Project Path: ${projectRoot.fsPath}
-${activeFilePrompt}${activeSymbolPrompt}${diagnosticsContext}${historyContext}${projectConfigPrompt}
+${projectConfigPrompt}
 
--- Available Files (Ground Truth for Investigation) --
-Use \`run_terminal_command\` with \`git ls-files\` or \`find src\` if you need to explore the directory structure. Prefer \`git ls-files\` as it respects .gitignore.
-
--- Priority Files (MAY BE WRONG - INVESTIGATE FIRST) --
-${priorityFilesPrompt}
+-- Available Files (Ground Truth) --
+${fileListString}
 
 -- File Summaries (Reference only) --
 ${summariesPrompt}
+`.trim();
+
+	const userPrompt = `
+-- Context --
+${contextPrompt}
+-- End Context --
+
+-- Priority Files (Strong Candidates) --
+${priorityFilesPrompt}
+-- End Priority Files --
 
 You MUST start by calling \`report_thought\`.
 `.trim();
 
 	console.log(
-		`[SmartContextSelector] Sending prompt to AI for file selection (${selectionPrompt.length} chars)`,
+		`[SmartContextSelector] Sending prompt to AI for file selection (System: ${systemPrompt.length}, User: ${userPrompt.length} chars)`,
 	);
 
 	try {
@@ -803,13 +806,14 @@ You MUST start by calling \`report_thought\`.
 					{
 						name: "report_thought",
 						description:
-							"Report your thinking process and search strategy to the user. This helps transparency. Use this BEFORE calling other tools.",
+							"Report your thinking process and search strategy to the user. This helps transparency. Use this BEFORE calling other tools. SUPPORTS MARKDOWN (bold, lists, code ticks).",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {
 								thought: {
 									type: SchemaType.STRING,
-									description: "The thinking process and strategy explanation.",
+									description:
+										"The thinking process and strategy explanation. Use **Markdown** for clarity (e.g., **bold** for emphasis, `code` for paths/symbols, - lists for steps).",
 								},
 							},
 							required: ["thought"],
@@ -952,7 +956,7 @@ You MUST start by calling \`report_thought\`.
 			currentHistory = [
 				{
 					role: "user",
-					parts: [{ text: selectionPrompt }],
+					parts: [{ text: userPrompt }],
 				},
 			];
 
@@ -975,6 +979,7 @@ You MUST start by calling \`report_thought\`.
 						FunctionCallingMode.ANY,
 						cancellationToken,
 						"context_agent_turn",
+						systemPrompt, // Pass static context as system instruction
 					);
 					functionCall = result.functionCall;
 					thought = result.thought;

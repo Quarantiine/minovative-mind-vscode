@@ -33,6 +33,23 @@ export function formatUserFacingErrorMessage(
 		message = String(error);
 	}
 
+	// Prevent double formatting if the message already has a recognized prefix
+	const commonPrefixes = [
+		"AI Error:",
+		"AI Response Generation Error:",
+		"AI Response Regeneration Error:",
+		"AI Initialization Error:",
+		contextPrefix.trim(),
+	].filter((p) => p !== "");
+
+	if (commonPrefixes.some((p) => message.startsWith(p))) {
+		// Ensure paths are sanitized even if the message is already prefixed
+		if (workspaceRootUri) {
+			message = sanitizeErrorMessagePaths(message, workspaceRootUri);
+		}
+		return message;
+	}
+
 	// Handle cancellation specifically, as it's a known user-initiated action
 	if (message.includes(ERROR_OPERATION_CANCELLED)) {
 		return `${contextPrefix}Operation cancelled by user.`;
@@ -59,7 +76,7 @@ export function formatUserFacingErrorMessage(
 		message.includes("timed out")
 	) {
 		message =
-			"Network issue or timeout: Could not connect to the AI service. Please check your internet connection or try again in a few moments.";
+			"Network timeout: Could not connect to the AI service. Please check your internet connection, verify your proxy/VPN settings, and try again in a few moments.";
 	} else if (message.includes("No workspace folder open")) {
 		message =
 			"No VS Code workspace folder is currently open. Please open a project folder to proceed with this operation.";
@@ -67,11 +84,21 @@ export function formatUserFacingErrorMessage(
 	// Add new AI-specific error mappings here, after 'No workspace folder open' and before 'HTTP 401'
 	else if (message.includes(ERROR_STREAM_PARSING_FAILED)) {
 		message = "AI streaming parsing error: Please wait...AI Retrying again.";
-	} else if (message.includes(ERROR_SERVICE_UNAVAILABLE)) {
+	} else if (
+		message.includes(ERROR_SERVICE_UNAVAILABLE) ||
+		message.includes("overloaded") ||
+		message.includes("HTTP 503")
+	) {
 		message =
-			"AI service temporarily overloaded: Please wait...AI Retrying again.";
-	} else if (message.includes(ERROR_QUOTA_EXCEEDED)) {
-		message = "API Quota Exceeded. Retrying automatically.";
+			"The AI service is currently overloaded. Please wait a moment and try again.";
+	} else if (
+		message.includes(ERROR_QUOTA_EXCEEDED) ||
+		message.includes("HTTP 429") ||
+		message.includes("quota exceeded") ||
+		message.includes("rate limit exceeded")
+	) {
+		message =
+			"You have reached your API quota limit. Please check your billing or usage limits on the AI provider's dashboard.";
 	} else if (
 		message.includes("SAFETY") ||
 		message.includes("safety policy") ||
@@ -79,14 +106,15 @@ export function formatUserFacingErrorMessage(
 		message.includes("content moderation")
 	) {
 		message =
-			"Content generation stopped: The AI response was blocked due to a safety policy. Please try rephrasing your request or adjusting the input.";
+			"Safety Block: The request was blocked because it triggered safety filters. Please try rephrasing your request to be more specific and technical, and avoid sensitive topics that might trigger content moderation.";
 	} else if (
 		message.includes("resource exhausted") ||
 		message.includes("prompt too long") ||
-		message.includes("token limit exceeded")
+		message.includes("token limit exceeded") ||
+		message.includes("context window exceeded")
 	) {
 		message =
-			"Input too long: Your request or chat history exceeded the AI's maximum length. Please try a shorter message or clear the chat history.";
+			"Context window exceeded: Your request or chat history is too long for the AI model to process. Please try a shorter message, clear the chat history, or remove large files from the active context.";
 	} else if (
 		message.includes("model not found") ||
 		message.includes("invalid model name") ||
@@ -115,15 +143,8 @@ export function formatUserFacingErrorMessage(
 	) {
 		message =
 			"Authentication required: Your API key might be invalid or unauthorized. Please verify your API key in the Minovative Mind settings or ensure you are signed in.";
-	} else if (
-		message.includes("HTTP 429") ||
-		message.includes("quota exceeded") ||
-		message.includes("rate limit exceeded")
-	) {
-		message =
-			"Usage limit exceeded: You have exceeded your API usage quota or rate limit. Please wait and try again later, or consider upgrading your plan.";
 	} else if (message.includes("HTTP 50")) {
-		// Covers 500, 502, 503, 504 etc. for server-side issues
+		// Covers 500, 501, 502, 504 etc. (503 is handled above as overloaded)
 		message =
 			"AI service unavailable: The AI service is temporarily unavailable due to a server error. Please wait...Retrying again.";
 	} else if (message.toLowerCase().startsWith("error: ")) {
@@ -134,7 +155,7 @@ export function formatUserFacingErrorMessage(
 		// Keep existing security alerts but ensure consistent phrasing if passed raw
 	} else if (message.includes("Expected JSON response, but got text")) {
 		message =
-			"Invalid AI response: The AI did not return a valid JSON plan. This might be due to a model issue or an unexpected response format. Please try again.";
+			"The AI returned an unexpected response format. Please try rephrasing your request.";
 	}
 
 	// Sanitize paths in the message if a workspace root is provided
@@ -143,7 +164,12 @@ export function formatUserFacingErrorMessage(
 	}
 
 	// Final check and fallback
-	if (message.trim() === "" || message === "[object Object]") {
+	if (
+		!message ||
+		message.trim() === "" ||
+		message.trim() === "[object Object]" ||
+		message.trim().toLowerCase() === "error"
+	) {
 		message = defaultMessage;
 	}
 

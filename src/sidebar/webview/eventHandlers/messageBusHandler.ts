@@ -301,7 +301,7 @@ export function initializeMessageBusHandler(
 							elements,
 							"Retrying now",
 							false, // Reset to normal color
-							true,
+							false,
 						);
 						appState.retryTimer = null;
 					}

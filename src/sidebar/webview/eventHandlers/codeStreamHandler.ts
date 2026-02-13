@@ -102,7 +102,6 @@ export function handleCodeFileStreamChunk(
 	const streamInfo = activeCodeStreams.get(streamId);
 	if (streamInfo) {
 		streamInfo.codeElement.textContent += chunk;
-		// Re-highlighting is handled once at the end of the stream, not with each chunk
 		if (codeStreamingArea) {
 			codeStreamingArea.scrollTop = codeStreamingArea.scrollHeight; // Scroll to bottom
 		}

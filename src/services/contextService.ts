@@ -37,7 +37,6 @@ import {
 } from "./projectTypeDetector"; // Import project type detection and formatting
 import {
 	DEFAULT_FLASH_LITE_MODEL,
-	DEFAULT_FLASH_MODEL,
 	DEFAULT_SIZE,
 } from "../sidebar/common/sidebarConstants";
 import { SUPPORTED_CODE_EXTENSIONS } from "../utils/languageUtils";

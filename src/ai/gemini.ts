@@ -122,6 +122,7 @@ function _handleGeminiError(
  * @param modelName The specific Gemini model name to use (e.g., "gemini-2.5-pro-latest").
  * @param tools Optional array of tools to configure the model with.
  * @param systemInstruction Optional system instruction to override the default.
+ * @param cachedContent Optional cached content object (from cacheManager).
  * @returns True if initialization was successful or already initialized correctly, false otherwise.
  */
 export function initializeGenerativeAI(
@@ -129,6 +130,7 @@ export function initializeGenerativeAI(
 	modelName: string,
 	tools?: Tool[],
 	systemInstruction?: string,
+	cachedContent?: any, // Using any to avoid strict type issues with server/client SDK mix
 ): boolean {
 	geminiLogger.log(
 		modelName,
@@ -166,7 +168,8 @@ export function initializeGenerativeAI(
 			apiKey !== currentApiKey ||
 			modelName !== currentModelName ||
 			newToolsHash !== currentToolsHash ||
-			finalSystemInstruction !== currentSystemInstruction;
+			finalSystemInstruction !== currentSystemInstruction ||
+			(cachedContent && true); // Always re-init if using cache for now to be safe
 
 		if (needsInitialization) {
 			geminiLogger.log(
@@ -180,11 +183,23 @@ export function initializeGenerativeAI(
 				}. New model: ${modelName}`,
 			);
 			generativeAI = new GoogleGenerativeAI(apiKey);
-			model = generativeAI.getGenerativeModel({
+
+			const modelParams: any = {
 				model: modelName,
 				tools: tools,
-				systemInstruction: finalSystemInstruction,
-			});
+			};
+
+			// If using cache, we don't pass systemInstruction here as it's likely in the cache
+			// But if provided, we should check documentation. Usually cache contains it.
+			// If cachedContent is provided, we use it.
+			if (cachedContent) {
+				geminiLogger.log(modelName, "Initializing model with CACHED CONTENT.");
+				modelParams.cachedContent = cachedContent;
+			} else {
+				modelParams.systemInstruction = finalSystemInstruction;
+			}
+
+			model = generativeAI.getGenerativeModel(modelParams);
 			currentApiKey = apiKey;
 			currentModelName = modelName;
 			currentToolsHash = newToolsHash;
@@ -240,6 +255,12 @@ export async function* generateContentStream(
 	token?: vscode.CancellationToken,
 	isMergeOperation: boolean = false,
 	systemInstruction?: string,
+	onTokenUsage?: (usage: {
+		promptTokenCount: number;
+		candidatesTokenCount: number;
+		totalTokenCount: number;
+	}) => void,
+	cachedContent?: any, // New parameter
 ): AsyncIterableIterator<string> {
 	if (token?.isCancellationRequested) {
 		geminiLogger.log(
@@ -250,7 +271,13 @@ export async function* generateContentStream(
 	}
 
 	if (
-		!initializeGenerativeAI(apiKey, modelName, undefined, systemInstruction)
+		!initializeGenerativeAI(
+			apiKey,
+			modelName,
+			undefined,
+			systemInstruction,
+			cachedContent,
+		)
 	) {
 		throw new Error(
 			`Gemini AI client not initialized. Please check API key and selected model (${modelName}).`,
@@ -265,9 +292,6 @@ export async function* generateContentStream(
 	// This is now valid after updating the @google/generative-ai package.
 	const requestConfig = {
 		...generationConfig,
-		thinkingConfig: {
-			thinkingBudget: -1,
-		},
 	};
 
 	let contentYielded = false;
@@ -312,6 +336,14 @@ export async function* generateContentStream(
 
 		geminiLogger.log(modelName, `Stream finished.`);
 		const finalResponse = await result.response;
+
+		if (finalResponse.usageMetadata && onTokenUsage) {
+			geminiLogger.log(
+				modelName,
+				`Usage metadata received: ${JSON.stringify(finalResponse.usageMetadata)}`,
+			);
+			onTokenUsage(finalResponse.usageMetadata);
+		}
 
 		if (finalResponse.promptFeedback?.blockReason) {
 			const { blockReason, safetyRatings } = finalResponse.promptFeedback;
@@ -374,10 +406,28 @@ export async function generateFunctionCall(
 	contents: Content[],
 	tools: Tool[],
 	functionCallingMode?: FunctionCallingMode, // Modified function signature
+	systemInstruction?: string,
+	cachedContent?: any, // New parameter
+	token?: vscode.CancellationToken,
 ): Promise<{ functionCall: FunctionCall | null; thought?: string }> {
+	if (token?.isCancellationRequested) {
+		geminiLogger.log(
+			modelName,
+			`Cancellation requested before function call generation for model: ${modelName}.`,
+		);
+		throw new Error(ERROR_OPERATION_CANCELLED);
+	}
 	geminiLogger.log(modelName, `Attempting to generate function call.`);
 
-	if (!initializeGenerativeAI(apiKey, modelName, tools)) {
+	if (
+		!initializeGenerativeAI(
+			apiKey,
+			modelName,
+			tools,
+			systemInstruction,
+			cachedContent,
+		)
+	) {
 		throw new Error(
 			`Gemini AI client not initialized for function call generation. Please check API key, selected model (${modelName}), and tools.`,
 		);

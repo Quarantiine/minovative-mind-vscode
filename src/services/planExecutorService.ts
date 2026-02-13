@@ -28,6 +28,8 @@ import { DiagnosticService } from "../utils/diagnosticUtils";
 import { FileSelection } from "../context/smartContextSelector";
 import { getSymbolsInDocument } from "./symbolService";
 import { SearchReplaceService } from "./searchReplaceService";
+import { ExplorationService } from "./ExplorationService";
+import { GatekeeperService } from "./GatekeeperService";
 
 export class PlanExecutorService {
 	private commandExecutionTerminals: vscode.Terminal[] = [];
@@ -39,6 +41,8 @@ export class PlanExecutorService {
 		private postMessageToWebview: (message: ExtensionToWebviewMessages) => void,
 		private urlContextService: UrlContextService,
 		private enhancedCodeGenerator: EnhancedCodeGenerator,
+		private explorationService: ExplorationService,
+		private gatekeeperService: GatekeeperService,
 		private readonly MAX_TRANSIENT_STEP_RETRIES: number,
 	) {}
 
@@ -127,6 +131,9 @@ export class PlanExecutorService {
 		// This is used by the self-correction workflow to check for errors in all intended files.
 		const verifiedTargetUris: vscode.Uri[] = [];
 		for (const s of orderedSteps) {
+			if (operationToken.isCancellationRequested) {
+				throw new Error(ERROR_OPERATION_CANCELLED);
+			}
 			if (
 				isCreateFileStep(s) ||
 				isModifyFileStep(s) ||
@@ -192,8 +199,80 @@ export class PlanExecutorService {
 								type: "statusUpdate",
 								value: `Finalizing`,
 							});
+							if (combinedToken.isCancellationRequested) {
+								throw new Error(ERROR_OPERATION_CANCELLED);
+							}
 							await this._warmUpDiagnostics(affectedUris, combinedToken);
 						}
+
+						// --- GATEKEEPER VERIFICATION ---
+						if (
+							!combinedToken.isCancellationRequested &&
+							affectedUris.size > 0
+						) {
+							this.postMessageToWebview({
+								type: "statusUpdate",
+								value: "Analyzing stability...", // AI Risk Assessment
+							});
+
+							// Generate a summary of all changes in the current plan
+							const changes = this.provider.changeLogger.getChangeLog();
+							const changeSummary = changes
+								.map(
+									(c) =>
+										`[${c.changeType.toUpperCase()}] ${c.filePath}: ${c.summary}`,
+								)
+								.join("\n");
+
+							// Create an AbortSignal from the CancellationToken
+							const abortController = new AbortController();
+							if (combinedToken.isCancellationRequested)
+								abortController.abort();
+							const signalDisposable = combinedToken.onCancellationRequested(
+								() => abortController.abort(),
+							);
+
+							try {
+								const riskDecision =
+									await this.gatekeeperService.assessRiskWithAI(
+										changeSummary,
+										abortController.signal,
+									);
+
+								if (
+									riskDecision.runVerification &&
+									riskDecision.suggestedCommand
+								) {
+									this.postMessageToWebview({
+										type: "statusUpdate",
+										value: `Verifying: ${riskDecision.suggestedCommand}`,
+									});
+
+									const verificationPassed =
+										await this.gatekeeperService.verifyChange(
+											riskDecision.suggestedCommand,
+											abortController.signal,
+										);
+
+									if (!verificationPassed) {
+										vscode.window.showWarningMessage(
+											`Minovative Mind: Verification failed (${riskDecision.suggestedCommand}). Please review the changes.`,
+										);
+									} else {
+										console.log(
+											"[MinovativeMind] Verification passed successfully.",
+										);
+									}
+								} else {
+									console.log(
+										`[MinovativeMind] Skipping verification. Reason: ${riskDecision.reason}`,
+									);
+								}
+							} finally {
+								signalDisposable.dispose();
+							}
+						}
+						// --- END GATEKEEPER ---
 
 						if (!combinedToken.isCancellationRequested) {
 							this.provider.currentExecutionOutcome = "success";
@@ -231,6 +310,15 @@ export class PlanExecutorService {
 
 			await this.provider.setPlanExecutionActive(false);
 
+			this.postMessageToWebview({
+				type: "updateLoadingState",
+				value: false,
+			});
+
+			this.postMessageToWebview({
+				type: "reenableInput",
+			});
+
 			let outcome: sidebarTypes.ExecutionOutcome;
 			if (this.provider.currentExecutionOutcome === undefined) {
 				outcome = "failed";
@@ -239,12 +327,8 @@ export class PlanExecutorService {
 					.currentExecutionOutcome as sidebarTypes.ExecutionOutcome;
 			}
 
-			await this.provider.showPlanCompletionNotification(outcome);
-
-			this.postMessageToWebview({
-				type: "updateLoadingState",
-				value: false,
-			});
+			// Do not await notification as it might wait for user interaction if sidebar is hidden
+			this.provider.showPlanCompletionNotification(outcome);
 
 			this.postMessageToWebview({
 				type: "planExecutionEnded",

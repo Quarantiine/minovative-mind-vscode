@@ -29,6 +29,8 @@ import { ContextRefresherService } from "../services/contextRefresherService";
 import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
 import { LightweightClassificationService } from "../services/lightweightClassificationService";
 import { SearchReplaceService } from "../services/searchReplaceService";
+import { ExplorationService } from "../services/ExplorationService";
+import { GatekeeperService } from "../services/GatekeeperService";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import * as crypto from "crypto"; // Import crypto for UUID generation
 import { z } from "zod";
@@ -74,6 +76,10 @@ const MESSAGE_THROTTLING_CONFIG = {
 		"resetCodeStreamingArea",
 		"updateCancellationState",
 		"triggerStructuredPlanFromCorrection",
+		"codeFileStreamStart", // Signals the start of code file streaming
+		"codeFileStreamChunk", // Individual chunks of streamed code content (very frequent, but critical for perceived speed)
+		"codeFileStreamEnd", // Signals the end of code file streaming
+		"planTimelineProgress", // Critical for immediate feedback on plan steps
 	] as const,
 	THROTTLED_TYPES: [
 		"updateRelevantFilesDisplay", // Toggling relevant files display
@@ -81,9 +87,6 @@ const MESSAGE_THROTTLING_CONFIG = {
 		"statusUpdate", // General progress updates (can be frequent)
 		"updateTokenStatistics", // Real-time token statistics updates
 		"updateCurrentTokenEstimates", // Real-time token estimates during streaming
-		"codeFileStreamStart", // Signals the start of code file streaming
-		"codeFileStreamChunk", // Individual chunks of streamed code content (very frequent)
-		"codeFileStreamEnd", // Signals the end of code file streaming
 		"gitProcessUpdate", // Updates from git command execution
 		"updateStreamingRelevantFiles",
 	] as const,
@@ -206,6 +209,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	private contextRefresherService: ContextRefresherService;
 	/** Service for lightweight AI-based classification of intent and errors. */
 	private lightweightClassificationService: LightweightClassificationService;
+	/** Service for exploring the codebase to gather context. */
+	public explorationService!: ExplorationService;
+	/** Service for verifying changes before completion. */
+	public gatekeeperService!: GatekeeperService;
 
 	// --- State for Throttling Messages ---
 	/** Queue holding messages waiting to be sent to the webview, subject to throttling. */
@@ -343,12 +350,30 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			this.changeLogger,
 		);
 
+		// Initialize Exploration and Gatekeeper Services
+		this.explorationService = new ExplorationService(
+			this,
+			context,
+			this.workspaceRootUri || vscode.Uri.file("/"),
+		);
+
+		this.gatekeeperService = new GatekeeperService(
+			this,
+			context,
+			this.workspaceRootUri || vscode.Uri.file("/"),
+		);
+
 		this.planService = new PlanService(
 			this,
 			this.workspaceRootUri,
 			this.enhancedCodeGenerator,
 			this.postMessageToWebview.bind(this),
 		);
+
+		// Update PlanService to pass the new services to executor if needed,
+		// OR deeply update where PlanExecutor is instantiated.
+		// Wait, PlanService instantiates PlanExecutor.
+		// I need to update PlanService.ts as well to accept these services and pass them down.
 		this.chatService = new ChatService(this);
 		this.commitService = new CommitService(this);
 
@@ -914,13 +939,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			this.activeOperationCancellationTokenSource = undefined;
 		}
 
-		if (this.contextAgentCancellationTokenSource) {
-			console.log(
-				"[SidebarProvider] Disposing contextAgentCancellationTokenSource.",
-			);
-			this.contextAgentCancellationTokenSource.dispose();
-			this.contextAgentCancellationTokenSource = undefined;
-		}
+		// Centralize disposal of context agent state
+		this.finalizeContextLoadingState();
 
 		// Clear persisted streaming state
 		await this.updatePersistedAiStreamingState(null);
@@ -1038,13 +1058,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			this.activeOperationCancellationTokenSource.cancel();
 		}
 
-		// Cancel the context agent token source if it exists.
-		if (this.contextAgentCancellationTokenSource) {
-			this.contextAgentCancellationTokenSource.cancel();
-		}
+		// Cancel the context agent if active.
+		await this.cancelContextAgent();
 
 		// Dispose and clear the token source and operation ID.
-		this.clearActiveOperationState();
+		await this.clearActiveOperationState();
 
 		this.activeChildProcesses.forEach((cp) => {
 			console.log(

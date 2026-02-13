@@ -23,6 +23,7 @@ import {
 	faFileImport,
 } from "@fortawesome/free-solid-svg-icons";
 import { adjustChatInputHeight } from "../eventHandlers/inputEventHandlers"; // Import adjustChatInputHeight
+import { scrollToBottomIfAtBottom } from "../utils/scrollUtils";
 
 // Global reference to setLoadingState function
 let globalSetLoadingState:
@@ -94,7 +95,7 @@ export function finalizeStreamingMessage(elements: RequiredDomElements): void {
 			appState.currentAiMessageContentElement.dataset.originalMarkdown =
 				appState.currentAccumulatedText;
 
-			elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
+			scrollToBottomIfAtBottom(elements.chatContainer);
 		}
 
 		// Re-enable action buttons on all messages, which will handle the just-completed message
@@ -223,7 +224,7 @@ export function appendMessage(
 			detailsElement.appendChild(logEntryContainer);
 
 			// Scroll to bottom
-			elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
+			scrollToBottomIfAtBottom(elements.chatContainer);
 			return; // Exit after appending to existing group
 		}
 
@@ -265,7 +266,7 @@ export function appendMessage(
 
 		// Append to chat container and scroll
 		elements.chatContainer.appendChild(messageElement);
-		elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
+		scrollToBottomIfAtBottom(elements.chatContainer);
 		updateEmptyChatPlaceholderVisibility(elements);
 		return; // Early return for Context Agent logs
 	}
@@ -813,7 +814,7 @@ export function appendMessage(
 	}
 
 	elements.chatContainer.appendChild(messageElement);
-	elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
+	scrollToBottomIfAtBottom(elements.chatContainer);
 	updateEmptyChatPlaceholderVisibility(elements);
 }
 

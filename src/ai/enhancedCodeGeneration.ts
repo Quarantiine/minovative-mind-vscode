@@ -278,9 +278,11 @@ export class EnhancedCodeGenerator {
 				streamId,
 				filePath: `/${path.basename(filePath)}`,
 				languageId,
-				status: "Generating code",
+				status: "Loading",
 			},
 		});
+
+		let isFirstChunk = true;
 
 		try {
 			const rawContent = await this.aiRequestService.generateWithRetry(
@@ -290,8 +292,26 @@ export class EnhancedCodeGenerator {
 				"enhanced file generation",
 				generationConfig, // Pass generationConfig here
 				{
-					onChunk: async (chunk) =>
-						this._streamChunk(streamId, filePath, chunk, onCodeChunkCallback),
+					onChunk: async (chunk) => {
+						if (isFirstChunk) {
+							isFirstChunk = false;
+							this.postMessageToWebview({
+								type: "codeFileStreamStart",
+								value: {
+									streamId,
+									filePath: `/${path.basename(filePath)}`,
+									languageId,
+									status: "Generating code",
+								},
+							});
+						}
+						await this._streamChunk(
+							streamId,
+							filePath,
+							chunk,
+							onCodeChunkCallback,
+						);
+					},
 				},
 				token,
 				false, // isMergeOperation
@@ -415,6 +435,18 @@ export class EnhancedCodeGenerator {
 				cleanedExtractedContent,
 				false,
 			);
+
+			// Final status update to show check mark when done
+			this.postMessageToWebview({
+				type: "codeFileStreamStart",
+				value: {
+					streamId,
+					filePath: `/${path.basename(finalPath)}`,
+					languageId,
+					status: "✓",
+				},
+			});
+
 			return { ...validationResult, actualPath: finalPath }; // NEW: Include finalPath
 		} catch (error: any) {
 			// Re-throw the error to be handled by the PlanExecutorService's retry logic.
@@ -463,19 +495,39 @@ export class EnhancedCodeGenerator {
 				streamId,
 				filePath: `/${path.basename(filePath)}`,
 				languageId,
-				status: "Generating code",
+				status: "Loading",
 			},
 		});
+
+		let isFirstChunk = true;
 
 		const rawContent = await this.aiRequestService.generateWithRetry(
 			[{ text: userMessage }],
 			modelName,
 			undefined,
 			"enhanced file modification",
-			undefined,
+			undefined, // generationConfig
 			{
-				onChunk: async (chunk) =>
-					this._streamChunk(streamId, filePath, chunk, onCodeChunkCallback),
+				onChunk: async (chunk) => {
+					if (isFirstChunk) {
+						isFirstChunk = false;
+						this.postMessageToWebview({
+							type: "codeFileStreamStart",
+							value: {
+								streamId,
+								filePath: `/${path.basename(filePath)}`,
+								languageId,
+								status: "Generating code",
+							},
+						});
+					}
+					await this._streamChunk(
+						streamId,
+						filePath,
+						chunk,
+						onCodeChunkCallback,
+					);
+				},
 			},
 			token,
 			false, // isMergeOperation
@@ -596,6 +648,17 @@ export class EnhancedCodeGenerator {
 			token,
 			onCodeChunkCallback,
 		);
+
+		// Final status update to show check mark when done
+		this.postMessageToWebview({
+			type: "codeFileStreamStart",
+			value: {
+				streamId,
+				filePath: `/${path.basename(filePath)}`,
+				languageId,
+				status: "✓",
+			},
+		});
 
 		return { content: validation.finalContent, validation };
 	}

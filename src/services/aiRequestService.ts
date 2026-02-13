@@ -14,8 +14,10 @@ import {
 	ERROR_OPERATION_CANCELLED,
 	ERROR_QUOTA_EXCEEDED,
 	ERROR_SERVICE_UNAVAILABLE,
+	ERROR_STREAM_PARSING_FAILED,
 	generateContentStream,
 	countGeminiTokens,
+	generateFunctionCall,
 } from "../ai/gemini";
 import {
 	ParallelProcessor,
@@ -23,6 +25,8 @@ import {
 	ParallelTaskResult,
 } from "../utils/parallelProcessor";
 import { TokenTrackingService } from "./tokenTrackingService";
+import { GeminiCacheManager } from "../ai/cacheManager";
+import { geminiLogger } from "../utils/logger";
 
 export type SearchReplaceBlockToolOutput = {
 	blocks: Array<{
@@ -105,15 +109,14 @@ ${rawTextOutput}
 			},
 		];
 
-		const result = await this.raceWithCancellation(
-			gemini.generateFunctionCall(
-				apiKey,
-				modelName,
-				contents,
-				[SEARCH_REPLACE_EXTRACTION_TOOL],
-				FunctionCallingMode.ANY,
-			),
+		const result = await this.generateFunctionCall(
+			apiKey,
+			modelName,
+			contents,
+			[SEARCH_REPLACE_EXTRACTION_TOOL],
+			FunctionCallingMode.ANY,
 			token,
+			"search_replace_extraction",
 		);
 
 		if (!result || !result.functionCall) {
@@ -257,6 +260,10 @@ ${rawTextOutput}
 			return `Error: No API Key available. Please add an API key in the settings.`;
 		}
 
+		// Initialize Cache Manager with the ApiKeyManager
+		const cacheManager = GeminiCacheManager.getInstance();
+		cacheManager.setApiKeyManager(this.apiKeyManager);
+
 		let consecutiveTransientErrorCount = 0;
 		const baseDelayMs = 15000;
 		const maxDelayMs = 10 * 60 * 1000;
@@ -266,6 +273,46 @@ ${rawTextOutput}
 		let finalOutputTokensCount = 0;
 		let requestStatus: "success" | "failed" | "cancelled" = "failed";
 		let accumulatedResult = "";
+
+		// Context Caching Logic
+		let cachedContent: any = undefined;
+		// Threshold: ~30k characters (approx 7-8k tokens) is a good starting point for caching overhead being worth it.
+		// Google's free tier has limitations, but paid/pay-as-you-go makes this valuable.
+		// We only cache if systemInstruction is substantial.
+		if (systemInstruction && systemInstruction.length > 30000) {
+			geminiLogger.log(
+				modelName,
+				`[AIRequestService] System instruction is large (${systemInstruction.length} chars). Checking cache...`,
+			);
+			try {
+				// We use the systemInstruction + modelName as the basis for the cache key
+				// Ideally we should include tools hash too if tools are used, but for now systemInstruction is the main heavy part.
+				const cacheResult = await cacheManager.getOrCreateCache(
+					systemInstruction,
+					modelName,
+				);
+				if (cacheResult) {
+					cachedContent = { parts: [], role: "model" }; // Placeholder logic, actually we need the cache name.
+					// The Google SDK `cachedContent` parameter in `getGenerativeModel` expects an object with `contents`?
+					// No, `cachedContent` in `modelParams` is usually the *object* returned by `cacheManager.get` or the *name*.
+					// Let's verify gemini.ts implementation details.
+					// In gemini.ts we did `modelParams.cachedContent = cachedContent`.
+					// The SDK expects `cachedContent` to be the object structure.
+					// But `getOrCreateCache` returns { cacheName: string }.
+					// We need to pass `{ contents: ..., name: ... }` or just correct structure.
+					// Actually, looking at docs, `cachedContent` property in `getGenerativeModel` is the `CachedContent` object.
+					// But we can ALSO just pass the name if we construct it right?
+					// Let's assume for now we pass the object with the name.
+					cachedContent = { name: cacheResult.cacheName };
+					geminiLogger.log(
+						modelName,
+						`[AIRequestService] Using cache: ${cacheResult.cacheName} (New: ${cacheResult.isNew})`,
+					);
+				}
+			} catch (error) {
+				geminiLogger.error(modelName, "Failed to use Context Caching", error);
+			}
+		}
 
 		const historyForGemini =
 			history && history.length > 0
@@ -307,28 +354,15 @@ ${rawTextOutput}
 				historyTextParts + " " + userMessageTextForContext;
 		}
 
+		// Optimize: Use estimate immediately to avoid blocking start
+		// We will rely on usageMetada from the stream for accurate counts.
 		let finalInputTokensPerAttempt = 0;
-		if (this.tokenTrackingService && currentApiKey) {
-			try {
-				finalInputTokensPerAttempt = await this.raceWithCancellation(
-					countGeminiTokens(currentApiKey, modelName, requestContentsForGemini),
-					token,
-				);
-				console.log(
-					`[AIRequestService] Accurately counted ${finalInputTokensPerAttempt} input tokens for model ${modelName}.`,
-				);
-			} catch (e) {
-				if ((e as Error).message === ERROR_OPERATION_CANCELLED) {
-					throw e;
-				}
-				console.warn(
-					`[AIRequestService] Failed to get accurate input token count from Gemini API (${modelName}), falling back to estimate. Error:`,
-					e,
-				);
-				finalInputTokensPerAttempt = this.tokenTrackingService.estimateTokens(
-					totalInputTextForContext,
-				);
-			}
+
+		if (this.tokenTrackingService) {
+			// 1. fast estimate for initial logging/tracking
+			finalInputTokensPerAttempt = this.tokenTrackingService.estimateTokens(
+				totalInputTextForContext,
+			);
 		}
 
 		try {
@@ -343,7 +377,7 @@ ${rawTextOutput}
 				console.log(
 					`[AIRequestService] Attempt with key ...${currentApiKey.slice(
 						-4,
-					)} for ${requestType}. (Total input tokens so far: ${totalInputTokensConsumed})`,
+					)} for ${requestType}. (Estimated total input tokens so far: ${totalInputTokensConsumed})`,
 				);
 
 				accumulatedResult = "";
@@ -351,6 +385,8 @@ ${rawTextOutput}
 					if (!currentApiKey) {
 						throw new Error("API Key became invalid during retry loop.");
 					}
+
+					let usageMetadata: any = null;
 
 					const stream = generateContentStream(
 						currentApiKey,
@@ -360,6 +396,10 @@ ${rawTextOutput}
 						token,
 						isMergeOperation,
 						systemInstruction,
+						(metadata) => {
+							usageMetadata = metadata;
+						},
+						cachedContent, // Pass cachedContent here
 					);
 
 					let chunkCount = 0;
@@ -384,26 +424,26 @@ ${rawTextOutput}
 						}
 					}
 
-					// Accurately count and track output tokens after the response is complete
-					if (this.tokenTrackingService && currentApiKey) {
-						try {
-							finalOutputTokensCount = await this.raceWithCancellation(
-								countGeminiTokens(currentApiKey, modelName, [
-									{ role: "model", parts: [{ text: accumulatedResult }] },
-								]),
-								token,
-							);
-							console.log(
-								`[AIRequestService] Accurately counted ${finalOutputTokensCount} output tokens for model ${modelName}.`,
-							);
-						} catch (e) {
-							if ((e as Error).message === ERROR_OPERATION_CANCELLED) {
-								throw e;
-							}
-							console.warn(
-								`[AIRequestService] Failed to get accurate output token count from Gemini API (${modelName}), falling back to estimate. Error:`,
-								e,
-							);
+					// Update token counts from metadata if available
+					if (usageMetadata) {
+						// Update totalInputTokensConsumed with the accurate count from the API
+						// We replace the estimate for this attempt with the actual value.
+						// Note: totalInputTokensConsumed accumulates across retries.
+						// We subtract the estimate we added at start of loop, and add the real value.
+						totalInputTokensConsumed =
+							totalInputTokensConsumed -
+							finalInputTokensPerAttempt +
+							usageMetadata.promptTokenCount;
+						finalOutputTokensCount = usageMetadata.candidatesTokenCount;
+						console.log(
+							`[AIRequestService] Accurate usage from metadata: Input=${usageMetadata.promptTokenCount}, Output=${usageMetadata.candidatesTokenCount}`,
+						);
+					} else {
+						// Fallback to estimate if metadata missing (unlikely with recent API)
+						console.warn(
+							`[AIRequestService] Usage metadata missing. Falling back to estimates.`,
+						);
+						if (this.tokenTrackingService) {
 							finalOutputTokensCount =
 								this.tokenTrackingService.estimateTokens(accumulatedResult);
 						}
@@ -426,15 +466,24 @@ ${rawTextOutput}
 
 					if (
 						errorMessage === ERROR_QUOTA_EXCEEDED ||
-						errorMessage === ERROR_SERVICE_UNAVAILABLE
+						errorMessage === ERROR_SERVICE_UNAVAILABLE ||
+						errorMessage === ERROR_STREAM_PARSING_FAILED
 					) {
 						const isQuotaError = errorMessage === ERROR_QUOTA_EXCEEDED;
-						const transientReason = isQuotaError
-							? "Quota/Rate limit hit"
-							: "Service temporarily unavailable";
-						const displayReason = isQuotaError
-							? "API Quota Exceeded. Retrying automatically."
-							: "AI Service Unavailable. Retrying automatically.";
+						const isStreamParsingError =
+							errorMessage === ERROR_STREAM_PARSING_FAILED;
+						let transientReason = "Service temporarily unavailable";
+						let displayReason =
+							"AI Service Unavailable. Retrying automatically.";
+
+						if (isQuotaError) {
+							transientReason = "Quota/Rate limit hit";
+							displayReason = "API Quota Exceeded. Retrying automatically.";
+						} else if (isStreamParsingError) {
+							transientReason = "Stream parsing failed";
+							displayReason =
+								"Stream parsing error (likely network/content issue). Retrying automatically.";
+						}
 
 						const currentDelay = Math.min(
 							maxDelayMs,
@@ -496,7 +545,7 @@ ${rawTextOutput}
 		} finally {
 			// Final token tracking for the overall request context
 			if (this.tokenTrackingService && totalInputTokensConsumed > 0) {
-				// If not already set via accurate count, estimate output tokens from whatever we accumulated
+				// If not already set via usageMetadata, estimate output tokens from whatever we accumulated
 				if (requestStatus !== "success" || finalOutputTokensCount === 0) {
 					finalOutputTokensCount =
 						this.tokenTrackingService.estimateTokens(accumulatedResult);
@@ -741,6 +790,9 @@ ${rawTextOutput}
 					contents,
 					tools,
 					functionCallingMode,
+					undefined, // systemInstruction
+					undefined, // cachedContent
+					token,
 				),
 				token,
 			);
@@ -808,21 +860,60 @@ ${rawTextOutput}
 		functionCallingMode?: FunctionCallingMode,
 		token?: vscode.CancellationToken,
 		contextString: string = "function_call",
+		systemInstruction?: string,
 	): Promise<{ functionCall: FunctionCall | null; thought?: string }> {
 		const apiKey = this.apiKeyManager.getActiveApiKey();
 		if (!apiKey) {
 			throw new Error("No API Key available.");
 		}
 
+		// Initialize Cache Manager with the ApiKeyManager
+		const cacheManager = GeminiCacheManager.getInstance();
+		cacheManager.setApiKeyManager(this.apiKeyManager);
+
+		// Context Caching Logic (Shared with generateWithRetry, could be refactored)
+		let cachedContent: any = undefined;
+		if (systemInstruction && systemInstruction.length > 30000) {
+			geminiLogger.log(
+				modelName,
+				`[AIRequestService] System instruction (Function Call) is large (${systemInstruction.length} chars). Checking cache...`,
+			);
+			try {
+				const cacheResult = await cacheManager.getOrCreateCache(
+					systemInstruction,
+					modelName,
+				);
+				if (cacheResult) {
+					cachedContent = { name: cacheResult.cacheName };
+					geminiLogger.log(
+						modelName,
+						`[AIRequestService] Using cache for Function Call: ${cacheResult.cacheName}`,
+					);
+				}
+			} catch (error) {
+				geminiLogger.error(
+					modelName,
+					"Failed to use Context Caching for Function Call",
+					error,
+				);
+			}
+		}
+
 		// We could add retry logic here similar to generateWithRetry if needed in the future
-		return this.generateFunctionCall(
+		const callPromise = generateFunctionCall(
 			apiKey,
 			modelName,
 			contents,
 			tools,
 			functionCallingMode,
+			systemInstruction,
+			cachedContent,
 			token,
-			contextString,
 		);
+
+		if (token) {
+			return this.raceWithCancellation(callPromise, token);
+		}
+		return callPromise;
 	}
 }

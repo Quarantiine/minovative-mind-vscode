@@ -24,6 +24,8 @@ import { repairJsonEscapeSequences } from "../utils/jsonUtils";
 import { PlanExecutorService } from "./planExecutorService";
 import { generateExecutionPlanTool } from "../ai/prompts/planFunctions";
 import { ActiveSymbolDetailedInfo } from "./contextService";
+import { ExplorationService } from "./ExplorationService";
+import { GatekeeperService } from "./GatekeeperService";
 import {
 	DiagnosticService,
 	FormatDiagnosticsOptions,
@@ -58,6 +60,8 @@ export class PlanService {
 			postMessageToWebview,
 			this.urlContextService,
 			enhancedCodeGenerator,
+			provider.explorationService,
+			provider.gatekeeperService,
 			this.MAX_TRANSIENT_STEP_RETRIES,
 		);
 	}

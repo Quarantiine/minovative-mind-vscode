@@ -71,7 +71,6 @@ export class ChatService {
 		userContentParts: HistoryEntryPart[],
 		groundingEnabled: boolean = false,
 	): Promise<void> {
-		const { settingsManager } = this.provider;
 		const apiKey = this.provider.apiKeyManager.getActiveApiKey();
 		const modelName = DEFAULT_FLASH_LITE_MODEL;
 
@@ -98,62 +97,31 @@ export class ChatService {
 		let success = true;
 		let finalAiResponseText: string | null = null;
 
-		if (!apiKey) {
-			vscode.window.showErrorMessage(
-				"Gemini API key is not set. Please set it in VS Code settings to use chat features.",
-			);
-			this.provider.postMessageToWebview({
-				type: "aiResponseEnd",
-				success: false,
-				error: "Gemini API key is not set.",
-				operationId: operationId as string,
-			});
-			return;
-		}
-
-		if (!modelName) {
-			vscode.window.showErrorMessage(
-				"Gemini model is not selected. Please select one in VS Code settings to use chat features.",
-			);
-			this.provider.postMessageToWebview({
-				type: "aiResponseEnd",
-				success: false,
-				error: "Gemini model is not selected.",
-				operationId: operationId as string,
-			});
-			return;
-		}
-
-		const initializationSuccess = initializeGenerativeAI(apiKey, modelName);
-
-		if (!initializationSuccess) {
-			vscode.window.showErrorMessage(
-				`Failed to initialize Gemini AI with model '${modelName}'. Please check your API key and selected model.`,
-			);
-			this.provider.postMessageToWebview({
-				type: "aiResponseEnd",
-				success: false,
-				error: `Failed to initialize Gemini AI with model '${modelName}'.`,
-				operationId: operationId as string,
-			});
-			throw new Error(
-				formatUserFacingErrorMessage(
-					new Error(
-						`Failed to initialize Gemini AI with model '${modelName}'.`,
-					),
-					"Failed to initialize AI service.",
-					"AI Initialization Error: ",
-					this.provider.workspaceRootUri,
-				),
-			);
-		}
-
 		const userMessageTextForContext = userContentParts
 			.filter((part): part is { text: string } => "text" in part)
 			.map((part) => part.text)
 			.join("\n");
 
 		try {
+			if (!apiKey) {
+				throw new Error(
+					"Gemini API key is not set. Please set it in VS Code settings to use chat features.",
+				);
+			}
+
+			if (!modelName) {
+				throw new Error(
+					"Gemini model is not selected. Please select one in VS Code settings to use chat features.",
+				);
+			}
+
+			const initializationSuccess = initializeGenerativeAI(apiKey, modelName);
+
+			if (!initializationSuccess) {
+				throw new Error(
+					`Failed to initialize Gemini AI with model '${modelName}'. Please check your API key and selected model.`,
+				);
+			}
 			const { historicallyRelevantFiles, focusReminder } =
 				await this._analyzeRecentHistory();
 
@@ -190,9 +158,9 @@ export class ChatService {
 					});
 				} catch (summaryError: any) {
 					console.warn(
-						`[ChatService] Failed to generate history summary. Continuing without focused summary. Error: \${summaryError.message}`,
+						`[ChatService] Failed to generate history summary. Continuing with limited context. Error: ${summaryError.message}`,
 					);
-					historySummaryContent = `[WARNING: Could not generate focused history summary due to error: \${summaryError.message}]`;
+					historySummaryContent = `[IMPORTANT: Focused history summarization failed. Contextual relevance may be reduced. Error: ${summaryError.message}]`;
 				}
 			}
 			// ---------------------------------------------
@@ -297,6 +265,11 @@ export class ChatService {
 			}
 			if (finalAiResponseText.toLowerCase().startsWith("error:")) {
 				success = false;
+				this.provider.chatHistoryManager.addHistoryEntry(
+					"model",
+					[{ text: finalAiResponseText }],
+					"error-message",
+				);
 			} else {
 				const aiResponseUrlContexts =
 					await this.urlContextService.processMessageForUrlContext(
@@ -345,6 +318,11 @@ export class ChatService {
 						isError: true,
 					});
 				}
+				this.provider.chatHistoryManager.addHistoryEntry(
+					"model",
+					[{ text: finalAiResponseText }],
+					"error-message",
+				);
 			}
 		} finally {
 			const isThisOperationStillActiveGlobally =
@@ -389,12 +367,9 @@ export class ChatService {
 	public async regenerateAiResponseFromHistory(
 		userMessageIndex: number,
 	): Promise<void> {
-		const {
-			settingsManager,
-			chatHistoryManager,
-			contextService,
-			aiRequestService,
-		} = this.provider;
+		const { chatHistoryManager, contextService, aiRequestService } =
+			this.provider;
+		const apiKey = this.provider.apiKeyManager.getActiveApiKey();
 		const modelName = DEFAULT_FLASH_LITE_MODEL;
 
 		await this.provider.startUserOperation("chat");
@@ -423,6 +398,25 @@ export class ChatService {
 		let relevantFiles: string[] | undefined;
 
 		try {
+			if (!apiKey) {
+				throw new Error(
+					"Gemini API key is not set. Please set it in VS Code settings to use chat features.",
+				);
+			}
+
+			if (!modelName) {
+				throw new Error(
+					"Gemini model is not selected. Please select one in VS Code settings to use chat features.",
+				);
+			}
+
+			const initializationSuccess = initializeGenerativeAI(apiKey, modelName);
+
+			if (!initializationSuccess) {
+				throw new Error(
+					`Failed to initialize Gemini AI with model '${modelName}'. Please check your API key and selected model.`,
+				);
+			}
 			currentHistory = chatHistoryManager.getChatHistory();
 
 			let lastUserMessageIndex = -1;
@@ -530,6 +524,11 @@ export class ChatService {
 			}
 			if (finalAiResponseText.toLowerCase().startsWith("error:")) {
 				success = false;
+				chatHistoryManager.addHistoryEntry(
+					"model",
+					[{ text: finalAiResponseText }],
+					"error-message",
+				);
 			} else {
 				chatHistoryManager.addHistoryEntry(
 					"model",

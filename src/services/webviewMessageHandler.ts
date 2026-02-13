@@ -1062,7 +1062,7 @@ export async function handleWebviewMessage(
 				break;
 
 			case "cancelContextAgent":
-				provider.cancelContextAgent();
+				await provider.cancelContextAgent();
 				break;
 
 			default:

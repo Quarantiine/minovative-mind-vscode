@@ -1,6 +1,7 @@
 import { md } from "../utils/markdownRenderer";
 import { appState } from "../state/appState";
 import { RequiredDomElements } from "../types/webviewTypes";
+import { scrollToBottomIfAtBottom } from "../utils/scrollUtils";
 
 /**
  * Stops the typing animation by clearing the interval timer.
@@ -22,7 +23,7 @@ export function typeNextCharacters(elements: RequiredDomElements): void {
 	if (!appState.currentAiMessageContentElement) {
 		stopTypingAnimation();
 		console.warn(
-			"[Webview][TypingAnimation] No currentAiMessageContentElement found, stopping typing animation."
+			"[Webview][TypingAnimation] No currentAiMessageContentElement found, stopping typing animation.",
 		);
 		return;
 	}
@@ -37,18 +38,18 @@ export function typeNextCharacters(elements: RequiredDomElements): void {
 
 	const charsToType = Math.min(
 		appState.CHARS_PER_INTERVAL,
-		appState.typingBuffer.length
+		appState.typingBuffer.length,
 	);
 	if (charsToType > 0) {
 		appState.currentAccumulatedText += appState.typingBuffer.substring(
 			0,
-			charsToType
+			charsToType,
 		);
 		appState.typingBuffer = appState.typingBuffer.substring(charsToType);
 
 		// Render the accumulated text as Markdown
 		appState.currentAiMessageContentElement.innerHTML = md.render(
-			appState.currentAccumulatedText
+			appState.currentAccumulatedText,
 		);
 		// Store the original markdown text for copy functionality
 		appState.currentAiMessageContentElement.dataset.originalMarkdown =
@@ -56,7 +57,7 @@ export function typeNextCharacters(elements: RequiredDomElements): void {
 
 		// Scroll to the bottom of the chat container
 		// elements.chatContainer is guaranteed to be an HTMLDivElement by RequiredDomElements
-		elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
+		scrollToBottomIfAtBottom(elements.chatContainer);
 	}
 }
 
@@ -76,10 +77,10 @@ export function startTypingAnimation(elements: RequiredDomElements): void {
 		// Use an arrow function to capture elements in the closure for the interval callback
 		appState.typingTimer = setInterval(
 			() => typeNextCharacters(elements),
-			intervalMs
+			intervalMs,
 		);
 		console.log(
-			`[Webview][TypingAnimation] Typing animation started with interval ${intervalMs}ms.`
+			`[Webview][TypingAnimation] Typing animation started with interval ${intervalMs}ms.`,
 		);
 	}
 }
