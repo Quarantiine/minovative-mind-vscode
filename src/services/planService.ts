@@ -123,6 +123,15 @@ export class PlanService {
 	}
 
 	public async triggerSelfCorrectionWorkflow(): Promise<void> {
+		// 1. Cancel the PREVIOUS operation's token to ensure clean handoff.
+		// SidebarProvider no longer does this, so we must do it here.
+		if (this.provider.activeOperationCancellationTokenSource) {
+			console.log(
+				"[PlanService] Cancelling previous operation token for clean handoff to self-correction.",
+			);
+			this.provider.activeOperationCancellationTokenSource.cancel();
+		}
+
 		const token = this.provider.activeOperationCancellationTokenSource?.token;
 		if (!token) {
 			return;
@@ -138,6 +147,27 @@ export class PlanService {
 					"[PlanService] Active change log empty. Using changes from last completed plan for self-correction.",
 				);
 			}
+		}
+
+		if (recentChanges.length === 0) {
+			console.warn(
+				"[PlanService] Self-correction aborted: No recent changes or last plan changes found to correct.",
+			);
+			this.provider.postMessageToWebview({
+				type: "statusUpdate",
+				value:
+					"Self-correction aborted: No changes found to analyze for errors.",
+			});
+
+			// Cleanup manually since we are aborting and not starting a new operation.
+			// We cannot call endUserOperation("success") as it would trigger self-correction loop again.
+			await this.provider.clearActiveOperationState();
+			this.provider.postMessageToWebview({
+				type: "updateLoadingState",
+				value: false,
+			});
+			this.provider.postMessageToWebview({ type: "reenableInput" });
+			return;
 		}
 
 		const changedUris = this._extractUrisFromChangeSets(recentChanges);
@@ -157,14 +187,20 @@ export class PlanService {
 		const operationId =
 			this.provider.currentActiveChatOperationId ?? "unknown-operation";
 
-		// IMPORTANT: Fetch the NEW token after starting the operation.
-		// The 'token' variable defined at the start of the method refers to the OLD operation's token,
-		// which was just cancelled in SidebarProvider to allow this new operation to start.
-		// Using the old token would cause immediate cancellation validation failure.
+		// Fetch the NEW token after starting the operation.
 		const freshToken =
 			this.provider.activeOperationCancellationTokenSource?.token;
 
 		if (!freshToken) {
+			console.error(
+				"[PlanService][CRITICAL] Self-correction aborted: Could not obtain fresh CancellationTokenSource immediately after starting new operation in SidebarProvider.",
+			);
+			this.provider.postMessageToWebview({
+				type: "statusUpdate",
+				value:
+					"Self-correction aborted: Failed to initialize operation token. See logs for details.",
+				isError: true,
+			});
 			return;
 		}
 
@@ -369,6 +405,11 @@ export class PlanService {
 				),
 				isError: true,
 			});
+			if (!isCancellation) {
+				console.error(
+					`[PlanService] Self-correction workflow aborted due to non-cancellation failure: ${error.message}`,
+				);
+			}
 			await this.provider.endUserOperation(
 				isCancellation ? "cancelled" : "failed",
 			);
@@ -965,8 +1006,9 @@ export class PlanService {
 						[{ role: "user", parts: [{ text: currentPrompt }] }],
 						[{ functionDeclarations: [generateExecutionPlanTool] }],
 						FunctionCallingMode.ANY,
-						token,
+						operationId,
 						description,
+						token,
 					);
 
 				if (token.isCancellationRequested) {

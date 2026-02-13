@@ -143,7 +143,29 @@ export class PlanExecutorService {
 				verifiedTargetUris.push(resolved);
 			}
 		}
-		this.provider.lastPlanTargetUris = verifiedTargetUris;
+
+		if (planContext.isCorrectionMode) {
+			// In correction mode, we want to ACCUMULATE targets.
+			// This ensures that if we fix File A but break File B (which was part of the original plan),
+			// File B remains in the "watch list" for the next correction cycle.
+			const existingUris = this.provider.lastPlanTargetUris || [];
+
+			// Use a Map to deduplicate by fsPath string to avoid duplicates
+			const uniqueUris = new Map<string, vscode.Uri>();
+
+			// Add existing
+			existingUris.forEach((u) => uniqueUris.set(u.fsPath, u));
+			// Add new
+			verifiedTargetUris.forEach((u) => uniqueUris.set(u.fsPath, u));
+
+			this.provider.lastPlanTargetUris = Array.from(uniqueUris.values());
+			console.log(
+				`[PlanExecutor] Correction Mode: Accumulated ${this.provider.lastPlanTargetUris.length} target URIs (Merged ${existingUris.length} existing with ${verifiedTargetUris.length} new).`,
+			);
+		} else {
+			// Normal mode: Overwrite/Reset the list
+			this.provider.lastPlanTargetUris = verifiedTargetUris;
+		}
 
 		try {
 			await vscode.window.withProgress(

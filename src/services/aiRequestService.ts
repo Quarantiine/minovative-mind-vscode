@@ -115,6 +115,8 @@ ${rawTextOutput}
 			contents,
 			[SEARCH_REPLACE_EXTRACTION_TOOL],
 			FunctionCallingMode.ANY,
+			undefined, // systemInstruction
+			undefined, // cachedContent
 			token,
 			"search_replace_extraction",
 		);
@@ -732,6 +734,8 @@ ${rawTextOutput}
 		contents: Content[],
 		tools: Tool[],
 		functionCallingMode?: FunctionCallingMode,
+		systemInstruction?: string,
+		cachedContent?: any,
 		token?: vscode.CancellationToken,
 		contextString: string = "function_call", // New parameter with default value
 	): Promise<{ functionCall: FunctionCall | null; thought?: string }> {
@@ -790,8 +794,8 @@ ${rawTextOutput}
 					contents,
 					tools,
 					functionCallingMode,
-					undefined, // systemInstruction
-					undefined, // cachedContent
+					systemInstruction, // Pass systemInstruction
+					cachedContent, // Pass cachedContent
 					token,
 				),
 				token,
@@ -899,8 +903,8 @@ ${rawTextOutput}
 			}
 		}
 
-		// We could add retry logic here similar to generateWithRetry if needed in the future
-		const callPromise = generateFunctionCall(
+		// Delegate to the tracked generateFunctionCall method
+		return this.generateFunctionCall(
 			apiKey,
 			modelName,
 			contents,
@@ -909,11 +913,7 @@ ${rawTextOutput}
 			systemInstruction,
 			cachedContent,
 			token,
+			contextString,
 		);
-
-		if (token) {
-			return this.raceWithCancellation(callPromise, token);
-		}
-		return callPromise;
 	}
 }

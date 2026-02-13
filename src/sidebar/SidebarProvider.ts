@@ -910,6 +910,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		// Create a new vscode.CancellationTokenSource instance
 		this.activeOperationCancellationTokenSource =
 			new vscode.CancellationTokenSource();
+		console.log(
+			"[SidebarProvider] SUCCESS: Created and assigned new activeOperationCancellationTokenSource for this operation.",
+		);
 
 		this.currentActiveChatOperationId = newOperationId;
 
@@ -1237,13 +1240,27 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	}
 
 	/**
-	 * Checks specifically for Error-level diagnostics across the workspace.
+	 * Checks specifically for Error-level diagnostics in the files associated with the last plan.
 	 */
 	private _checkDiagnosticsForErrors(): boolean {
-		const allDiagnostics = vscode.languages.getDiagnostics();
-		return allDiagnostics.some(([uri, diagnostics]) =>
-			diagnostics.some((d) => d.severity === vscode.DiagnosticSeverity.Error),
-		);
+		if (this.lastPlanTargetUris.length === 0) {
+			return false;
+		}
+
+		for (const uri of this.lastPlanTargetUris) {
+			const diagnostics = vscode.languages.getDiagnostics(uri);
+			const hasError = diagnostics.some(
+				(d) => d.severity === vscode.DiagnosticSeverity.Error,
+			);
+			if (hasError) {
+				console.log(
+					`[SidebarProvider] Found error diagnostics in ${uri.fsPath}`,
+				);
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -1256,6 +1273,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	): Promise<void> {
 		let message: string;
 		let isError: boolean;
+
+		// Wait for a short fixed delay before checking for errors.
+		// "Smart" waiting for stabilization proved unreliable/blocking.
+		if (this.lastPlanTargetUris.length > 0) {
+			console.log(
+				`[SidebarProvider] Waiting 2000ms for diagnostics to settle for ${this.lastPlanTargetUris.length} files...`,
+			);
+			await new Promise((resolve) => setTimeout(resolve, 2000));
+		}
 
 		const diagnosticsErrorsExist = this._checkDiagnosticsForErrors();
 
@@ -1285,18 +1311,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
 			this.postMessageToWebview({
 				type: "statusUpdate",
-				value:
-					"Plan succeeded but diagnostics indicate errors. Initiating self-correction...",
+				value: "Plan succeeded but diagnostics indicate errors",
 				isError: true,
 			});
 
-			this.currentExecutionOutcome = undefined;
-			await this.setPlanExecutionActive(false);
-
-			// Cancel the current token explicitly so that startUserOperation (called inside triggerSelfCorrectionWorkflow)
-			// doesn't block due to concurrency checks.
-			this.activeOperationCancellationTokenSource?.cancel();
-
+			// Delegate lifecycle management (cancellation of old op, start of new op) to PlanService
 			await this.planService.triggerSelfCorrectionWorkflow();
 			return;
 		}
