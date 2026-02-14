@@ -5,6 +5,47 @@ const faCopySvg = `<svg class="fa-icon" aria-hidden="true" focusable="false" dat
 const copyButtonHtml = `\n    <button class="code-copy-button" title="Copy code">\n        ${faCopySvg}\n    </button>\n`;
 
 /**
+ * Sanitizes AI response text by stripping out agentic control sequences
+ * and tool call markers that may have leaked into the text stream.
+ *
+ * Specifically targets:
+ * - <ctrlXX> patterns (agentic control sequences)
+ * - call:default_api:...{...} patterns (traditional/hidden tool calls)
+ * - Hidden control characters (x00-x1F, x7F-x9F) except whitespace.
+ * - <span class="tool-call">...</span> markers.
+ * - Internal function calls like finish_selection(...).
+ * - Raw HTML tags.
+ */
+export function sanitizeAiResponse(text: string): string {
+	if (!text) return text;
+
+	// 1. Remove agentic control sequences like <ctrl95>, <ctrl42>
+	// Matches <ctrl followed by 1 or more digits and a closing >
+	let sanitized = text.replace(/<ctrl\d+>/g, "");
+
+	// 2. Remove traditionally leaked tool call patterns
+	// Matches "call:default_api:" followed by identifier and a braced block
+	// Note: This is a heuristic for text-leaked tool calls.
+	sanitized = sanitized.replace(/call:default_api:[a-zA-Z0-9_-]+\{.*?\}/gs, "");
+
+	// 3. Remove raw control characters that might cause glitches, except \n, \r, \t
+	// eslint-disable-next-line no-control-regex
+	sanitized = sanitized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "");
+
+	// 4. Remove tool call span markers and their content
+	sanitized = sanitized.replace(/<span class="tool-call">.*?<\/span>/gs, "");
+
+	// 5. Remove leaked internal function calls (like finish_selection)
+	// Matches finish_selection(...) optionally wrapped in backticks
+	sanitized = sanitized.replace(/`?finish_selection\(.*?\)`?/gs, "");
+
+	// 6. General HTML cleanup to prevent injection or leaks
+	sanitized = sanitized.replace(/<[^>]*>/g, "");
+
+	return sanitized;
+}
+
+/**
  * Configured MarkdownIt instance for rendering markdown content.
  * It includes support for HTML, linkification, typography, and syntax highlighting
  * using highlight.js.
@@ -34,7 +75,7 @@ export const md: MarkdownIt = new MarkdownIt({
 		// ensuring it remains self-contained.
 		const languageAttr = lang ? ` data-language="${lang}"` : "";
 		return `<pre class="hljs has-copy-button"${languageAttr}>${copyButtonHtml}<code>${md.utils.escapeHtml(
-			str
+			str,
 		)}</code></pre>`;
 	},
 });

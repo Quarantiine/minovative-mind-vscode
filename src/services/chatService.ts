@@ -12,9 +12,6 @@ import { DEFAULT_FLASH_LITE_MODEL } from "../sidebar/common/sidebarConstants";
 import { formatUserFacingErrorMessage } from "../utils/errorFormatter";
 import { ContextBuildOptions } from "../types/context";
 
-const AI_CHAT_PROMPT =
-	"Lets discuss and do not code yet. Focus on high-level thinking and project context to explain production-ready solutions. If the User's message is not clear, ask for clarification.";
-
 export class ChatService {
 	private urlContextService: UrlContextService;
 
@@ -200,7 +197,7 @@ export class ChatService {
 				},
 			});
 
-			let systemInstruction = `${AI_CHAT_PROMPT} \n\nProject Context:\n${
+			let systemInstruction = `Project Context:\n${
 				projectContext.contextString
 			}${urlContextString ? `\n\n${urlContextString}` : ""}`;
 
@@ -485,7 +482,7 @@ export class ChatService {
 				},
 			});
 
-			const systemInstruction = `${AI_CHAT_PROMPT} \n\nProject Context:\n${projectContext.contextString}`;
+			const systemInstruction = `Project Context:\n${projectContext.contextString}`;
 
 			const fullUserTurnContents: HistoryEntryPart[] = [
 				...userContentPartsForRegen,

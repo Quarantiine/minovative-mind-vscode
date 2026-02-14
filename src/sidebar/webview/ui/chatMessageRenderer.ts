@@ -1,4 +1,4 @@
-import { md } from "../utils/markdownRenderer";
+import { md, sanitizeAiResponse } from "../utils/markdownRenderer";
 import {
 	setIconForButton,
 	faExclamationTriangle,
@@ -87,10 +87,11 @@ export function finalizeStreamingMessage(elements: RequiredDomElements): void {
 		} else if (finalContent.length > 0) {
 			// 4. Execute standard finalization logic for non-empty content
 
+			const sanitizedText = sanitizeAiResponse(appState.currentAccumulatedText);
+
 			// Render the final accumulated content
-			appState.currentAiMessageContentElement.innerHTML = md.render(
-				appState.currentAccumulatedText,
-			);
+			appState.currentAiMessageContentElement.innerHTML =
+				md.render(sanitizedText);
 			// Store the original markdown text for copy functionality
 			appState.currentAiMessageContentElement.dataset.originalMarkdown =
 				appState.currentAccumulatedText;
@@ -221,6 +222,7 @@ export function appendMessage(
 			);
 			logEntryContainer.innerHTML = md.render(text);
 			logEntryContainer.dataset.originalMarkdown = text;
+			addCodeToggleToContextLog(logEntryContainer);
 			detailsElement.appendChild(logEntryContainer);
 
 			// Scroll to bottom
@@ -255,6 +257,7 @@ export function appendMessage(
 		);
 		textElementNew.innerHTML = md.render(text);
 		textElementNew.dataset.originalMarkdown = text;
+		addCodeToggleToContextLog(textElementNew);
 		detailsElementNew.appendChild(textElementNew);
 
 		messageElement.appendChild(detailsElementNew);
@@ -744,7 +747,8 @@ export function appendMessage(
 				appState.currentAiMessageContentElement = null;
 				appState.currentAccumulatedText = "";
 
-				const renderedHtml = md.render(text);
+				const sanitizedText = sanitizeAiResponse(text);
+				const renderedHtml = md.render(sanitizedText);
 				textElement.innerHTML = renderedHtml;
 				// Store the original markdown text for copy functionality
 				textElement.dataset.originalMarkdown = text;
@@ -1181,4 +1185,28 @@ export function setContextAgentLoadingState(
 			}
 		}
 	}
+}
+
+/**
+ * Adds a "Show Code" toggle button for any code blocks found within a Context Agent log entry.
+ * This ensures that logs remain compact by default while allowing users to inspect the agent's work.
+ */
+function addCodeToggleToContextLog(container: HTMLElement): void {
+	const preBlocks = container.querySelectorAll("pre");
+	preBlocks.forEach((pre) => {
+		const toggleBtn = document.createElement("button");
+		toggleBtn.classList.add("context-agent-code-toggle");
+		toggleBtn.textContent = "Hide Code";
+
+		toggleBtn.addEventListener("click", () => {
+			const isExpanded = pre.classList.toggle("expanded");
+			toggleBtn.textContent = isExpanded ? "Hide Code" : "Show Code";
+		});
+
+		// Default to expanded
+		pre.classList.add("expanded");
+
+		// Insert toggle button before the pre block
+		pre.parentNode?.insertBefore(toggleBtn, pre);
+	});
 }

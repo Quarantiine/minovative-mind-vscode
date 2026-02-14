@@ -74,14 +74,12 @@
 	border-radius: var(--border-radius);
 	word-wrap: break-word;
 	line-height: 1.5;
-	width: 100%;
-	max-width: 95%; /* Keep slightly off edge */
 	border: 1px solid transparent; /* Base border */
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); /* Subtle shadow */
 	display: flex;
 	flex-direction: column;
 	position: relative;
-	margin-bottom: 35px;
+	margin-bottom: 30px;
+	width: 100%;
 }
 
 .message > strong {
@@ -95,7 +93,6 @@
 .message-text-content {
 	display: block;
 	flex-grow: 1;
-	width: 100%;
 }
 
 .message-text-content table {
@@ -119,6 +116,7 @@
 	margin-left: auto;
 	min-height: fit-content;
 	border-color: var(--vscode-list-activeSelectionBackground);
+	width: 90%;
 }
 
 .user-message strong {
@@ -226,7 +224,7 @@
 	display: flex;
 	flex-direction: column;
 	/* Visual appearance */
-	background-color: var(--vscode-editorWidget-background);
+	background-color: transparent;
 	border: 1px solid var(--vscode-editorGroupHeader-tabsBorder); /* A subtle border */
 	border-radius: var(--border-radius);
 	padding: var(--message-padding); /* Similar to message padding */
@@ -472,29 +470,29 @@
 
 /* --- Context Agent Terminal Styling --- */
 .message.context-agent-log {
-	background-color: #1e1e1e; /* Deep terminal background */
-	color: #d4d4d4; /* Standard terminal text */
-	font-family: "SF Mono", Monaco, Menlo, Courier, monospace;
+	background-color: transparent; /* Deeper black background */
+	color: white; /* Standard terminal text */
 	font-size: 0.85em;
 	padding: 10px 14px;
+	margin-top: 10px;
 	margin-bottom: 20px;
-	border: 1px solid #333;
+	border: 1px solid rgba(255, 255, 255, 0.2);
 	border-radius: 6px;
-	box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
 	opacity: 0.95;
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
+	width: 90%;
 }
 
 .message.context-agent-log > strong {
-	color: #4ec9b0; /* VS Code Cyan/Teal for "Sender" */
+	color: #ffffff; /* Amber for "Sender" */
 	font-weight: 600;
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	border-bottom: 1px solid #333;
-	padding-bottom: 6px;
+	border-bottom: 1px solid rgba(249, 168, 37, 0.2);
+	padding-bottom: 8px;
 	margin-bottom: 4px;
 	text-transform: uppercase;
 	letter-spacing: 0.05em;
@@ -502,7 +500,7 @@
 }
 
 .context-agent-icon {
-	color: #4ec9b0;
+	color: white;
 	font-size: 1.1em;
 }
 
@@ -524,13 +522,18 @@
 	width: 100%;
 }
 
+.context-agent-details[open] {
+	margin-bottom: 15px;
+}
+
 .context-agent-summary {
 	cursor: pointer;
 	display: flex;
 	align-items: center;
 	gap: 6px;
 	padding: 4px 0;
-	color: #4ec9b0; /* VS Code Cyan/Teal */
+	color: #64b5f6; /* Sky Blue */
+	transition: color 0.2s ease;
 	font-weight: 600;
 	font-size: 0.9em;
 	text-transform: uppercase;
@@ -560,7 +563,9 @@
 .context-agent-content {
 	padding-top: 4px;
 	margin-top: 2px;
-	border-top: 1px solid rgba(255, 255, 255, 0.05); /* Subtle separator */
+	border-left: 1px solid rgba(255, 255, 255, 0.2);
+	padding: 12px;
+	margin-bottom: 15px;
 }
 
 .context-agent-content:first-of-type {
@@ -569,25 +574,9 @@
 	padding-top: 8px;
 }
 
-/* Loading Animation for Context Agent */
-@keyframes context-agent-pulse {
-	0% {
-		opacity: 1;
-		transform: scale(1);
-	}
-	50% {
-		opacity: 0.5;
-		transform: scale(0.9);
-	}
-	100% {
-		opacity: 1;
-		transform: scale(1);
-	}
-}
-
 .context-agent-summary.loading .context-agent-icon {
-	animation: context-agent-pulse 1.5s infinite ease-in-out;
-	color: #ffcc00; /* Optional: Change color to indicate activity */
+	animation: 1.5s infinite ease-in-out;
+	color: var(--vscode-charts-yellow, #ffffff);
 }
 
 /* --- Generated Plan Label --- */
@@ -595,7 +584,7 @@
 	display: inline-block;
 	font-size: 0.75em;
 	font-weight: 600;
-	color: var(--vscode-charts-yellow, #e2c08d);
+	color: var(--vscode-charts-yellow, #ffffff);
 	background-color: rgba(226, 192, 141, 0.12);
 	padding: 2px 8px;
 	border-radius: 4px;
@@ -605,4 +594,17 @@
 	letter-spacing: 0.3px;
 	text-transform: uppercase;
 	width: fit-content;
+}
+
+.thinking-prefix {
+	display: inline-block;
+	color: #ffe082; /* Soft amber/yellow */
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	font-size: 0.85em;
+	background-color: rgba(255, 224, 130, 0.1);
+	padding: 1px 4px;
+	border-radius: 3px;
+	margin-right: 4px;
 }

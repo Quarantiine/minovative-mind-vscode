@@ -414,8 +414,8 @@ export class SequentialContextService {
 			);
 		}
 
-		// Fallback to priority files if AI selection fails
-		return priorityFiles.length > 0 ? priorityFiles : allFiles.slice(0, 5);
+		// No fallback - respect AI (or lack thereof)
+		return [];
 	}
 
 	/**

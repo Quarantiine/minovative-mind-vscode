@@ -22,9 +22,8 @@ import {
 	AiResponseChunkMessage,
 	AiResponseEndMessage,
 	FormattedTokenStatistics,
-	ExtensionToWebviewMessages,
-	PlanTimelineInitializeMessage, // ADDED
-	PlanTimelineProgressMessage, // ADDED
+	PlanTimelineInitializeMessage,
+	PlanTimelineProgressMessage,
 } from "../../common/sidebarTypes";
 import {
 	stopTypingAnimation,
@@ -38,7 +37,7 @@ import {
 	hideAllConfirmationAndReviewUIs,
 	showClearChatConfirmationUI,
 } from "../ui/confirmationAndReviewUIs";
-import { md } from "../utils/markdownRenderer";
+import { md, sanitizeAiResponse } from "../utils/markdownRenderer";
 import { postMessageToExtension } from "../utils/vscodeApi";
 import { RequiredDomElements } from "../types/webviewTypes";
 import { resetUIStateAfterCancellation } from "../ui/statusManager";
@@ -183,9 +182,11 @@ export function initializeMessageBusHandler(
 						// Render content and manage loading state based on `isComplete`
 						if (isComplete) {
 							// If the stream is complete, just render the final content.
-							appState.currentAiMessageContentElement.innerHTML = md.render(
+							const sanitizedText = sanitizeAiResponse(
 								appState.currentAccumulatedText,
 							);
+							appState.currentAiMessageContentElement.innerHTML =
+								md.render(sanitizedText);
 							// Store the original markdown text for copy functionality
 							appState.currentAiMessageContentElement.dataset.originalMarkdown =
 								appState.currentAccumulatedText;
@@ -209,8 +210,11 @@ export function initializeMessageBusHandler(
 							}
 						} else {
 							// If the stream is NOT complete, render accumulated content PLUS the loading dots.
+							const sanitizedText = sanitizeAiResponse(
+								appState.currentAccumulatedText,
+							);
 							appState.currentAiMessageContentElement.innerHTML =
-								md.render(appState.currentAccumulatedText) +
+								md.render(sanitizedText) +
 								'<span class="loading-text">Generating<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>';
 							startTypingAnimation(elements); // Re-activate the typing animation for the dots
 							// Disable action buttons and indicate a loading state
@@ -409,7 +413,10 @@ export function initializeMessageBusHandler(
 						appState.currentAiMessageContentElement.dataset.originalMarkdown =
 							errorText;
 					} else {
-						finalContentHtml = md.render(appState.currentAccumulatedText);
+						const sanitizedText = sanitizeAiResponse(
+							appState.currentAccumulatedText,
+						);
+						finalContentHtml = md.render(sanitizedText);
 						appState.currentAiMessageContentElement.dataset.originalMarkdown =
 							appState.currentAccumulatedText;
 					}
@@ -476,10 +483,13 @@ export function initializeMessageBusHandler(
 						);
 					} else {
 						// If successful but currentAiMessageContentElement was null, append the accumulated text.
+						const sanitizedText = sanitizeAiResponse(
+							appState.currentAccumulatedText,
+						);
 						appendMessage(
 							elements,
 							"Model",
-							md.render(appState.currentAccumulatedText),
+							md.render(sanitizedText),
 							"ai-message",
 							true,
 							undefined, // diffContent

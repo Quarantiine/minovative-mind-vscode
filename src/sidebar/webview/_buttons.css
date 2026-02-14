@@ -1,8 +1,8 @@
 #save-chat-button,
 #load-chat-button,
 #clear-chat-button {
-	background-color: var(--vscode-input-background); /* Dark background */
-	border-color: var(--border-color); /* Add a subtle border */
+	background-color: transparent; /* Dark background */
+	border-color: rgba(255, 255, 255, 0.1); /* Add a subtle border */
 	color: var(--vscode-button-secondaryForeground); /* Ensure contrast */
 }
 #save-chat-button:hover,
@@ -15,7 +15,7 @@
 #save-chat-button:disabled,
 #load-chat-button:disabled,
 #clear-chat-button:disabled {
-	background-color: var(--vscode-input-background); /* Keep dark background */
+	background-color: transparent; /* Keep dark background */
 	border-color: var(--border-color);
 	color: var(--vscode-button-secondaryForeground);
 	opacity: 0.5;

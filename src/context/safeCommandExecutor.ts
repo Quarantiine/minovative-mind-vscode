@@ -6,7 +6,7 @@ import * as cp from "child_process";
  * from wasting time and context tokens on dependency, build, cache, and
  * generated content. Aligned with DEFAULT_IGNORE_PATTERNS in ignoreUtils.ts.
  */
-const EXCLUDED_DIRS = [
+export const EXCLUDED_DIRS = [
 	// --- Universal Build/Output ---
 	"node_modules",
 	".git",
@@ -112,7 +112,7 @@ const EXCLUDED_DIRS = [
  * Covers images, video, audio, fonts, archives, documents, compiled artifacts,
  * IDE files, and tool-specific generated files across all major languages.
  */
-const EXCLUDED_EXTENSIONS = [
+export const EXCLUDED_EXTENSIONS = [
 	// --- Images ---
 	"*.png",
 	"*.jpg",
@@ -248,7 +248,7 @@ const EXCLUDED_EXTENSIONS = [
  * Comprehensive list of specific filenames that should be excluded from searches.
  * Lock files, OS metadata, cache files, and tool-generated artifacts.
  */
-const EXCLUDED_FILES = [
+export const EXCLUDED_FILES = [
 	// --- Lock Files ---
 	"package-lock.json",
 	"yarn.lock",

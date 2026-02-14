@@ -1,4 +1,4 @@
-import { md } from "../utils/markdownRenderer";
+import { md, sanitizeAiResponse } from "../utils/markdownRenderer";
 import { appState } from "../state/appState";
 import { RequiredDomElements } from "../types/webviewTypes";
 import { scrollToBottomIfAtBottom } from "../utils/scrollUtils";
@@ -47,10 +47,12 @@ export function typeNextCharacters(elements: RequiredDomElements): void {
 		);
 		appState.typingBuffer = appState.typingBuffer.substring(charsToType);
 
+		// Sanitize the text before rendering to ensure no tool calls leak during the typing animation
+		const sanitizedText = sanitizeAiResponse(appState.currentAccumulatedText);
+
 		// Render the accumulated text as Markdown
-		appState.currentAiMessageContentElement.innerHTML = md.render(
-			appState.currentAccumulatedText,
-		);
+		appState.currentAiMessageContentElement.innerHTML =
+			md.render(sanitizedText);
 		// Store the original markdown text for copy functionality
 		appState.currentAiMessageContentElement.dataset.originalMarkdown =
 			appState.currentAccumulatedText;

@@ -4,7 +4,7 @@ import { appState } from "../state/appState";
 import { updateStatus } from "./statusManager"; // Added updateEmptyChatPlaceholderVisibility
 import { PendingPlanData, RequiredDomElements } from "../types/webviewTypes";
 import { stopTypingAnimation } from "./typingAnimation";
-import { md } from "../utils/markdownRenderer";
+import { md, sanitizeAiResponse } from "../utils/markdownRenderer";
 
 /**
  * Dynamically creates and initializes the plan confirmation UI elements if they don't already exist.
@@ -509,10 +509,10 @@ export function hideCommitReviewUI(elements: RequiredDomElements): void {
 		// ensure its content is finalized and any lingering loading dots are removed.
 		// This overwrites its innerHTML with the accumulated text, which should be the final AI response.
 		if (appState.currentAiMessageContentElement) {
+			const sanitizedText = sanitizeAiResponse(appState.currentAccumulatedText);
 			// Render the final accumulated text as Markdown into the element
-			appState.currentAiMessageContentElement.innerHTML = md.render(
-				appState.currentAccumulatedText,
-			);
+			appState.currentAiMessageContentElement.innerHTML =
+				md.render(sanitizedText);
 			// Store the original markdown text for consistency with other messages and copy functionality
 			appState.currentAiMessageContentElement.dataset.originalMarkdown =
 				appState.currentAccumulatedText;

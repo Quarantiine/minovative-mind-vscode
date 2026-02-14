@@ -8,14 +8,21 @@ import {
 } from "../sidebar/common/sidebarTypes";
 import { TEMPERATURE } from "../sidebar/common/sidebarConstants";
 import { ActiveSymbolDetailedInfo } from "../services/contextService";
-import { SafeCommandExecutor } from "./safeCommandExecutor";
+import { SafeCommandExecutor, EXCLUDED_FILES } from "./safeCommandExecutor";
 import { AIRequestService } from "../services/aiRequestService";
 import {
 	getSymbolsInDocument,
 	serializeDocumentSymbolHierarchy,
 	findReferences,
 	getDefinition,
+	getImplementations,
+	getTypeDefinition,
+	prepareCallHierarchy,
+	resolveIncomingCalls,
+	resolveOutgoingCalls,
 } from "../services/symbolService";
+import { getGitStagedDiff } from "../sidebar/services/gitService";
+import { DiagnosticService } from "../utils/diagnosticUtils";
 import {
 	Tool,
 	Content,
@@ -245,12 +252,19 @@ function buildOptimizedProjectStructure(
 	fileLineCounts?: Map<string, number>,
 ): { fileListString: string; isTruncated: boolean } {
 	const fileCount = relativeFilePaths.length;
-	const FILE_LIST_THRESHOLD = 500; // Increased threshold to avoid unnecessary truncation
+	const FILE_LIST_THRESHOLD = 20; // Lowered to force discovery even for small projects
 
 	if (forceOptimization || fileCount > FILE_LIST_THRESHOLD) {
-		// Optimized Mode: Show top-level structure + priority/root files
+		// Optimized Mode: Show top-level structure + priority/essential root files
 		const topLevelDirs = new Set<string>();
 		const importantFiles = new Set<string>();
+
+		const essentialRootFiles = new Set([
+			"package.json",
+			"tsconfig.json",
+			"README.md",
+			".gitignore",
+		]);
 
 		relativeFilePaths.forEach((p) => {
 			// Always include priority files (active, modified, errors)
@@ -259,10 +273,16 @@ function buildOptimizedProjectStructure(
 				return;
 			}
 
-			// Always include root-level configuration/readme files
+			// Include ONLY essential root-level configuration/readme files
 			if (!p.includes("/")) {
-				importantFiles.add(p);
-				return;
+				const lowercasePath = p.toLowerCase();
+				if (
+					essentialRootFiles.has(lowercasePath) &&
+					!EXCLUDED_FILES.includes(p)
+				) {
+					importantFiles.add(p);
+					return;
+				}
 			}
 
 			// Group others into directories
@@ -270,12 +290,12 @@ function buildOptimizedProjectStructure(
 			topLevelDirs.add(firstSegment + "/");
 		});
 
-		let output = "--- Project Structure (Optimized View) ---\n";
+		let output = "--- Project Structure (Optimized Discovery View) ---\n";
 		output += `Total Files: ${fileCount}\n`;
 		output +=
-			"Note: To save context, this view is TRUNCATED. It shows only top-level directories and important root files.\n";
+			"Note: This is a high-level DISCOVERY view. Most files are hidden to save context.\n";
 		output +=
-			"YOU MUST USE `run_terminal_command` (ls -R, find) TO DISCOVER SPECIFIC FILES IN SUBDIRECTORIES.\n\n";
+			"YOU MUST USE `run_terminal_command` (e.g. `ls -R`, `find src`), `lookup_workspace_symbol`, or `get_file_symbols` to explore and find specific files.\n\n";
 
 		output += "--- Top-Level Directories ---\n";
 		if (topLevelDirs.size > 0) {
@@ -469,10 +489,7 @@ export async function selectRelevantFilesAI(
 		postMessageToWebview({
 			type: "contextAgentLog",
 			value: {
-				text: `[Context Agent] Analysis started for: "${userRequest.substring(
-					0,
-					50,
-				)}..."`,
+				text: `[User Request] Analysis started for: "${userRequest}"`,
 			},
 		});
 	}
@@ -687,7 +704,7 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 		investigationInstruction = `2.  **Investigate (REQUIRED)**: The file list is TRUNCATED or this is a high-priority request. You MUST run a \`run_terminal_command\` to find specific files.
     ${searchToolInstructions}
     *   **CHECK BEFORE READING**: Use \`wc -l file\` to check size.
-    *   **EXIT STRATEGY**: As soon as you find the relevant file path, **STOP** investigating. Call \`finish_selection\`.`;
+    *   **COMPLETION**: Call \`finish_selection\` when you are confident you have gathered all necessary context. You should continue investigating if you believe further files or symbols are required to provide a complete solution.`;
 	} else {
 	}
 
@@ -735,15 +752,13 @@ You will iterate using tools until you have enough information to call \`finish_
         [Tool Call] report_thought(thought="User mentioned **auth**. I should search for \`AuthService\` or \`LoginController\` using \`lookup_workspace_symbol\`.")
         [Tool Call] lookup_workspace_symbol("AuthService")
         \`\`\`
-2.  **Investigate (REQUIRED)**: \`report_thought\` is **NOT** an investigation tool. After explaining your strategy, you **MUST** use \`run_terminal_command\`, \`lookup_workspace_symbol\`, or \`get_file_symbols\` to verify file existence and content.
-    *   **Rule**: You cannot call \`finish_selection\` immediately after \`report_thought\` unless you have already run an investigation command in a previous turn and found the specific files you need.
-    *   **Git Usage (POWERFUL)**: Use \`git\` to understand recent history and changes.
+2.  **Investigate (OPTIONAL)**: After explaining your strategy, you **MAY** use \`run_terminal_command\`, \`lookup_workspace_symbol\`, or \`get_file_symbols\` to verify file existence and content.
+    *   **Rule**: If you already have all the information you need (e.g., for a general question about your capabilities or if the relevant files are obvious), you can call \`finish_selection\` immediately.
+    *   **Git Usage (POWERFUL)**: Use \`git\` (via terminal or \`get_git_diffs\`) to understand recent history and changes.
         *   \`git status\`: See current state and modified files.
-        *   \`git diff\`: See unstaged changes in the workspace (Ground Truth for WIP).
-        *   \`git diff --staged\`: See staged changes.
+        *   \`get_git_diffs(type='head')\`: Programmatic access to unstaged changes (Ground Truth for WIP).
+        *   \`get_git_diffs(type='staged')\`: See staged changes.
         *   \`git log -n 5\`: See 5 most recent commit messages.
-        *   \`git diff HEAD~1\`: See changes in the last commit.
-        *   \`git show <commit>\`: See details of a specific commit.
         *   \`git ls-files\`: List all tracked files (respects .gitignore).
 3.  **Powerful Search**: Use \`grep\` or \`find\` scoped to source directories to locate code patterns. Commands are automatically filtered to exclude node_modules, dist, build artifacts, and binary files.
     *   \`grep -rn "pattern" src\`: Search for text in source files.
@@ -752,23 +767,27 @@ You will iterate using tools until you have enough information to call \`finish_
     *   **IMPORTANT**: Always scope searches to source directories (\`src/\`, \`lib/\`, etc.) instead of \`.\` (project root). Never search in \`node_modules\`, \`dist\`, \`out\`, \`build\`, or other generated directories.
 4.  **Symbol Exploration (PREFERRED)**: Use \`get_file_symbols\` to see a file's structure (functions, classes, variables) without reading its entire content. This is much faster and context-efficient than \`sed\`.
 5.  **Symbol Lookup (GLOBAL)**: Use \`lookup_workspace_symbol\` to find where a specific symbol is defined across the entire project.
-6.  **Graph Traversal (DEEP)**:
+6.  **Graph Traversal & Type Exploration (DEEP)**:
     *   Use \`find_references\` to see where a symbol is *used* (callers).
-    *   Use \`go_to_definition\` to see where a symbol is *defined* (implementation).
-    *   **Crucial**: These tools allow you to traverse the dependency graph. Use them to understand how components interact.
-7.  **Strategic Independence (CRITICAL)**: You are provided with "Priority Files" (strong candidates). These are ONLY a starting guess. Do NOT assume they are correct or complete.
-    *   **Mandate**: Even if the files you think you need are in the legacy list, you **MUST** investigate them (e.g., using \`git ls-files\`, \`get_file_symbols\`, \`git diff\`, or \`sed\`) to confirm their relevance and content before finishing.
-    *   **Truth**: Search the codebase yourself to find the "ground truth." Priority suggestions often miss important files or include irrelevant ones.
-8.  **Loop Prevention**: Do not run the same command twice.
-9.  **Read Specific Lines (MANDATORY)**: Use \`sed -n 'start,endp' file\` for ALL file reading.
-    *   **Workflow**: You MUST use \`get_file_symbols\` FIRST to understand the file structure and identify the EXACT line numbers you need before reading with \`sed\`. Using \`sed\` blindly on large ranges is a waste of context.
+    *   Use \`go_to_definition\` to see where a symbol is *defined*.
+    *   Use \`get_implementations\` to find all concrete classes/methods implementing an interface/abstract method.
+    *   Use \`get_type_definition\` to see the definition of a type for a symbol.
+    *   Use \`get_call_hierarchy_incoming\` and \`get_call_hierarchy_outgoing\` to trace function calls.
+    *   **Crucial**: These tools allow you to traverse the dependency graph and understand complex contracts. Use them to understand how components interact.
+7.  **Diagnostics & Git (GROUND TRUTH)**:
+    *   Use \`get_file_diagnostics\` to see compiler errors and warnings for a file. This is essential for identifying bugs or type issues.
+    *   Use \`get_git_diffs(type='staged'|'head')\` to quickly see current workspace changes.
+8.  **Strategic Independence (CRITICAL)**: You are provided with "Priority Files" (strong candidates). These are ONLY a starting guess. Do NOT assume they are correct or complete.
+    *   **Truth**: Search the codebase yourself to find the "ground truth" if the priority suggestions seem insufficient or incorrect.
+9.  **Loop Prevention**: Do not run the same command twice.
+10. **Read Specific Lines (MANDATORY)**: Use the \`read_file\` tool for ALL file reading.
+    *   **Workflow**: You MUST use \`get_file_symbols\` FIRST to understand the file structure and identify the EXACT line numbers you need before reading with \`read_file\`. Using \`read_file\` blindly on large ranges is a waste of context.
     *   **Limits**: Focus on small, targeted ranges.
         *   **Recommended**: 300-500 lines at most.
         *   **Inefficient**: Reading >1000 lines at once is highly discouraged and wastes context. If you need that much code, your strategy might be too broad.
-    *   Example: \`sed -n '1,50p' src/file.ts\` (reads first 50 lines)
-    *   Example: \`sed -n '100,200p' src/file.ts\` (reads lines 100-200)
-10. **No head/cat**: Do NOT use \`head\` or \`cat\`. Always specify a range with \`sed\` to avoid overwhelming the context.
-11. **Finalize**: Only call \`finish_selection\` when you are confident you have identified ALL necessary files.
+    *   Example: \`read_file(path="src/file.ts", startLine=1, endLine=50)\`
+11. **No head/cat**: Do NOT use \`head\` or \`cat\` via \`run_terminal_command\`. Always use the \`read_file\` tool to avoid overwhelming the context.
+12. **Finalize**: Call \`finish_selection\` when you are confident you have what you need to complete the user's task. You determine the point of completion based on whether your findings are sufficient to solve the problem.
 
 -- Project Context --
 Project Path: ${projectRoot.fsPath}
@@ -838,14 +857,14 @@ You MUST start by calling \`report_thought\`.
 					{
 						name: "finish_selection",
 						description:
-							"Call this when you have found all relevant file paths. Supports optional line ranges OR symbol names. Returns the final list.",
+							"Call this when you have found what you need to answer acording to the user's needs. Supports optional line ranges OR symbol names. Returns the final list.",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {
 								selectedFiles: {
 									type: SchemaType.ARRAY,
 									description:
-										"JSON Array of file paths. Supports line ranges: 'path/file.ts' (full), 'path/file.ts:10-50' (lines), OR symbols: 'path/file.ts#symbolName' (e.g. 'auth.ts#login'). You can also use objects: { \"path\": \"src/auth.ts\", \"symbol\": \"login\" }.",
+										"JSON Array of file paths. Supports line ranges: 'path/file.ts' (full), 'path/file.ts:10-50' (lines), OR symbols: 'path/file.ts#symbolName' (e.g. 'auth.ts#login'). If no files are needed to fulfill the request, provide an empty array [].",
 									items: {
 										type: SchemaType.STRING, // Use STRING to avoid enum errors, rely on string parsing
 									},
@@ -913,6 +932,118 @@ You MUST start by calling \`report_thought\`.
 						},
 					},
 					{
+						name: "get_implementations",
+						description:
+							"Find all implementations of an interface or abstract class. Use this to see concrete code that satisfies a contract.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								path: {
+									type: SchemaType.STRING,
+									description: "The file path relative to the project root.",
+								},
+								line: {
+									type: SchemaType.NUMBER,
+									description:
+										"The line number (1-based) where the symbol is located.",
+								},
+							},
+							required: ["path", "line"],
+						},
+					},
+					{
+						name: "get_type_definition",
+						description:
+							"Find the definition of a type for a symbol. Use this to understand complex types or interface definitions.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								path: {
+									type: SchemaType.STRING,
+									description: "The file path relative to the project root.",
+								},
+								line: {
+									type: SchemaType.NUMBER,
+									description:
+										"The line number (1-based) where the symbol is located.",
+								},
+							},
+							required: ["path", "line"],
+						},
+					},
+					{
+						name: "get_call_hierarchy_incoming",
+						description:
+							"Find all functions that call a specific function. Use this to understand the impact of a change or how a feature is used.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								path: {
+									type: SchemaType.STRING,
+									description: "The file path relative to the project root.",
+								},
+								line: {
+									type: SchemaType.NUMBER,
+									description:
+										"The line number (1-based) where the function is defined.",
+								},
+							},
+							required: ["path", "line"],
+						},
+					},
+					{
+						name: "get_call_hierarchy_outgoing",
+						description:
+							"Find all functions called by a specific function. Use this to trace the logic flow into dependencies.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								path: {
+									type: SchemaType.STRING,
+									description: "The file path relative to the project root.",
+								},
+								line: {
+									type: SchemaType.NUMBER,
+									description:
+										"The line number (1-based) where the function is defined.",
+								},
+							},
+							required: ["path", "line"],
+						},
+					},
+					{
+						name: "get_file_diagnostics",
+						description:
+							"Get all compiler errors, warnings, and hints for a specific file. Use this to identify bugs or type issues.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								path: {
+									type: SchemaType.STRING,
+									description: "The file path relative to the project root.",
+								},
+							},
+							required: ["path"],
+						},
+					},
+					{
+						name: "get_git_diffs",
+						description:
+							"Get the current staged changes or diffs against HEAD. Use this to understand what you're working on and prioritize relevant files.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								type: {
+									type: SchemaType.STRING,
+									description: "Type of diff to get: 'staged' or 'head'.",
+									format: "enum",
+									enum: ["staged", "head"],
+								},
+							},
+							required: ["type"],
+						},
+					},
+					{
 						name: "go_to_definition",
 						description:
 							"Find where a symbol used at a specific location is defined. Use this to understand the implementation of a dependency.",
@@ -938,6 +1069,30 @@ You MUST start by calling \`report_thought\`.
 							required: ["path", "line"],
 						},
 					},
+					{
+						name: "read_file",
+						description:
+							"Read a specific range of lines from a file. Use this AFTER identifying relevant lines with get_file_symbols.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								path: {
+									type: SchemaType.STRING,
+									description:
+										"The file path relative to the project root (e.g., 'src/auth.ts').",
+								},
+								startLine: {
+									type: SchemaType.NUMBER,
+									description: "The starting line number (1-based, inclusive).",
+								},
+								endLine: {
+									type: SchemaType.NUMBER,
+									description: "The ending line number (1-based, inclusive).",
+								},
+							},
+							required: ["path", "startLine", "endLine"],
+						},
+					},
 				],
 			},
 		];
@@ -961,6 +1116,7 @@ You MUST start by calling \`report_thought\`.
 			];
 
 			const MAX_TURNS = 50;
+			let consecutiveTextOnlyCount = 0;
 
 			for (let turn = 0; turn < MAX_TURNS; turn++) {
 				if (cancellationToken?.isCancellationRequested) {
@@ -992,7 +1148,7 @@ You MUST start by calling \`report_thought\`.
 
 				// Log Text-based Thinking if available (fallback)
 				if (thought) {
-					const thoughtLogText = `[Thinking] ${thought}`;
+					const thoughtLogText = `<span class="thinking-prefix">[Thinking]</span> ${thought}`;
 					console.log(
 						`[SmartContextSelector] Agent thought (text): ${thought}`,
 					);
@@ -1008,27 +1164,42 @@ You MUST start by calling \`report_thought\`.
 					if (addContextAgentLogToHistory) {
 						addContextAgentLogToHistory(thoughtLogText);
 					}
-					currentHistory.push({
-						role: "model",
-						parts: [{ text: thought }],
-					});
 				}
 
 				if (!functionCall) {
-					console.warn(
-						`[SmartContextSelector] Agent returned text/thought but no function call. Retrying or Continuing.`,
+					consecutiveTextOnlyCount++;
+					console.log(
+						`[SmartContextSelector] No function call, consecutive count: ${consecutiveTextOnlyCount}`,
 					);
+
+					// Still push to history if there was a thought
+					if (thought) {
+						currentHistory.push({
+							role: "model",
+							parts: [{ text: thought }],
+						});
+					}
+
+					if (consecutiveTextOnlyCount >= 2) {
+						console.log(
+							`[SmartContextSelector] Breaking agent loop due to consecutive text-only responses.`,
+						);
+						break;
+					}
 
 					currentHistory.push({
 						role: "user",
 						parts: [
 							{
-								text: "Error: You provided thoughts but did NOT call a tool. You MUST call one of the provided tools (report_thought, run_terminal_command, lookup_workspace_symbol, or finish_selection) to proceed.",
+								text: "Note: You provided thoughts but did NOT call a tool. To finish, you MUST call `finish_selection` with an array of file paths. If no files are needed, you must call `finish_selection(selectedFiles=[])`.",
 							},
 						],
 					});
 					continue;
 				}
+
+				// Reset counter on successful tool call
+				consecutiveTextOnlyCount = 0;
 
 				// Handle
 				if (functionCall.name === "report_thought") {
@@ -1036,7 +1207,7 @@ You MUST start by calling \`report_thought\`.
 					const thoughtContent = args["thought"] as string;
 
 					// Log to Chat with [Thinking] prefix
-					const thoughtLogText = `[Thinking] ${thoughtContent}`;
+					const thoughtLogText = `<span class="thinking-prefix">[Thinking]</span> ${thoughtContent}`;
 					console.log(
 						`[SmartContextSelector] Agent thought (tool): ${thoughtContent}`,
 					);
@@ -1056,9 +1227,15 @@ You MUST start by calling \`report_thought\`.
 					}
 
 					// Update History
+					const modelParts: any[] = [];
+					if (thought) {
+						modelParts.push({ text: thought });
+					}
+					modelParts.push({ functionCall: functionCall });
+
 					currentHistory.push({
 						role: "model",
-						parts: [{ functionCall: functionCall }],
+						parts: modelParts,
 					});
 					currentHistory.push({
 						role: "function",
@@ -1078,7 +1255,17 @@ You MUST start by calling \`report_thought\`.
 						`[SmartContextSelector] Agent finished selection used tool.`,
 					);
 					const args = functionCall.args as any;
-					const selectedPaths = args["selectedFiles"];
+					let selectedPaths = args["selectedFiles"];
+
+					// Safety check: ensure selectedPaths defaults to an empty array if missing or invalid
+					if (!Array.isArray(selectedPaths)) {
+						console.warn(
+							`[SmartContextSelector] finish_selection called with invalid selectedFiles argument:`,
+							selectedPaths,
+						);
+						selectedPaths = [];
+					}
+
 					const result = _processSelectedPaths(
 						selectedPaths,
 						allScannedFiles,
@@ -1142,7 +1329,7 @@ You MUST start by calling \`report_thought\`.
 
 					// Log output to chat
 					const displayOutput =
-						output.length > 200 ? output.substring(0, 200) + "..." : output;
+						output.length > 10000 ? output.substring(0, 10000) + "..." : output;
 					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
 					if (postMessageToWebview) {
 						postMessageToWebview({
@@ -1157,9 +1344,15 @@ You MUST start by calling \`report_thought\`.
 					}
 
 					// Update History
+					const modelParts: any[] = [];
+					if (thought) {
+						modelParts.push({ text: thought });
+					}
+					modelParts.push({ functionCall: functionCall });
+
 					currentHistory.push({
 						role: "model",
-						parts: [{ functionCall: functionCall }],
+						parts: modelParts,
 					});
 					currentHistory.push({
 						role: "function",
@@ -1221,7 +1414,7 @@ You MUST start by calling \`report_thought\`.
 
 					// Log output to chat
 					const displayOutput =
-						output.length > 300 ? output.substring(0, 300) + "..." : output;
+						output.length > 10000 ? output.substring(0, 10000) + "..." : output;
 					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
 					if (postMessageToWebview) {
 						postMessageToWebview({
@@ -1236,9 +1429,15 @@ You MUST start by calling \`report_thought\`.
 					}
 
 					// Update History
+					const modelParts: any[] = [];
+					if (thought) {
+						modelParts.push({ text: thought });
+					}
+					modelParts.push({ functionCall: functionCall });
+
 					currentHistory.push({
 						role: "model",
-						parts: [{ functionCall: functionCall }],
+						parts: modelParts,
 					});
 					currentHistory.push({
 						role: "function",
@@ -1291,7 +1490,7 @@ You MUST start by calling \`report_thought\`.
 
 					// Log output to chat
 					const displayOutput =
-						output.length > 500 ? output.substring(0, 500) + "..." : output;
+						output.length > 10000 ? output.substring(0, 10000) + "..." : output;
 					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
 					if (postMessageToWebview) {
 						postMessageToWebview({
@@ -1306,9 +1505,15 @@ You MUST start by calling \`report_thought\`.
 					}
 
 					// Update History
+					const modelParts: any[] = [];
+					if (thought) {
+						modelParts.push({ text: thought });
+					}
+					modelParts.push({ functionCall: functionCall });
+
 					currentHistory.push({
 						role: "model",
-						parts: [{ functionCall: functionCall }],
+						parts: modelParts,
 					});
 					currentHistory.push({
 						role: "function",
@@ -1376,7 +1581,7 @@ You MUST start by calling \`report_thought\`.
 
 					// Log output to chat
 					const displayOutput =
-						output.length > 500 ? output.substring(0, 500) + "..." : output;
+						output.length > 10000 ? output.substring(0, 10000) + "..." : output;
 					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
 					if (postMessageToWebview) {
 						postMessageToWebview({
@@ -1389,9 +1594,15 @@ You MUST start by calling \`report_thought\`.
 					}
 
 					// Update History
+					const modelParts: any[] = [];
+					if (thought) {
+						modelParts.push({ text: thought });
+					}
+					modelParts.push({ functionCall: functionCall });
+
 					currentHistory.push({
 						role: "model",
-						parts: [{ functionCall: functionCall }],
+						parts: modelParts,
 					});
 					currentHistory.push({
 						role: "function",
@@ -1455,7 +1666,88 @@ You MUST start by calling \`report_thought\`.
 
 					// Log output to chat
 					const displayOutput =
-						output.length > 500 ? output.substring(0, 500) + "..." : output;
+						output.length > 10000 ? output.substring(0, 10000) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					// Update History
+					const modelParts: any[] = [];
+					if (thought) {
+						modelParts.push({ text: thought });
+					}
+					modelParts.push({ functionCall: functionCall });
+
+					currentHistory.push({
+						role: "model",
+						parts: modelParts,
+					});
+
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "go_to_definition",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "get_implementations") {
+					const args = functionCall.args as any;
+					const filePath = args["path"] as string;
+					const line = args["line"] as number;
+
+					// Log to Chat
+					const logText = `Finding implementations for symbol at \`${filePath}:${line}\`...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					// Execute
+					let output = "";
+					try {
+						const fullPath = path.join(projectRoot.fsPath, filePath);
+						const position = new vscode.Position(line - 1, 0);
+
+						const locations = await getImplementations(
+							vscode.Uri.file(fullPath),
+							position,
+							cancellationToken,
+						);
+
+						if (locations && locations.length > 0) {
+							const results = locations.map((l) => {
+								const relativePath = path
+									.relative(projectRoot.fsPath, l.uri.fsPath)
+									.replace(/\\/g, "/");
+								return `- ${relativePath}:${l.range.start.line + 1}`;
+							});
+							output = `Found implementation(s) at:\n${results.join("\n")}`;
+						} else {
+							output = `No implementations found for symbol at ${filePath}:${line}.`;
+						}
+					} catch (e: any) {
+						output = `Error finding implementation: ${e.message}`;
+					}
+
+					// Log output to chat
+					const displayOutput =
+						output.length > 10000 ? output.substring(0, 10000) + "..." : output;
 					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
 					if (postMessageToWebview) {
 						postMessageToWebview({
@@ -1477,17 +1769,503 @@ You MUST start by calling \`report_thought\`.
 						parts: [
 							{
 								functionResponse: {
-									name: "go_to_definition",
+									name: "get_implementations",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "get_type_definition") {
+					const args = functionCall.args as any;
+					const filePath = args["path"] as string;
+					const line = args["line"] as number;
+
+					// Log to Chat
+					const logText = `Finding type definition for symbol at \`${filePath}:${line}\`...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					// Execute
+					let output = "";
+					try {
+						const fullPath = path.join(projectRoot.fsPath, filePath);
+						const position = new vscode.Position(line - 1, 0);
+
+						const locationOrArr = await getTypeDefinition(
+							vscode.Uri.file(fullPath),
+							position,
+							cancellationToken,
+						);
+						const locations = Array.isArray(locationOrArr)
+							? locationOrArr
+							: locationOrArr
+								? [locationOrArr]
+								: [];
+
+						if (locations && locations.length > 0) {
+							const results = locations.map((l) => {
+								const relativePath = path
+									.relative(projectRoot.fsPath, l.uri.fsPath)
+									.replace(/\\/g, "/");
+								return `- ${relativePath}:${l.range.start.line + 1}`;
+							});
+							output = `Found type definition(s) at:\n${results.join("\n")}`;
+						} else {
+							output = `No type definition found for symbol at ${filePath}:${line}.`;
+						}
+					} catch (e: any) {
+						output = `Error finding type definition: ${e.message}`;
+					}
+
+					// Log output to chat
+					const displayOutput =
+						output.length > 10000 ? output.substring(0, 10000) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					// Update History
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "get_type_definition",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "get_call_hierarchy_incoming") {
+					const args = functionCall.args as any;
+					const filePath = args["path"] as string;
+					const line = args["line"] as number;
+
+					// Log to Chat
+					const logText = `Finding incoming calls for function at \`${filePath}:${line}\`...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					// Execute
+					let output = "";
+					try {
+						const fullPath = path.join(projectRoot.fsPath, filePath);
+						const position = new vscode.Position(line - 1, 0);
+
+						const items = await prepareCallHierarchy(
+							vscode.Uri.file(fullPath),
+							position,
+							cancellationToken,
+						);
+
+						if (items && items.length > 0) {
+							const incomingCalls = await resolveIncomingCalls(
+								items[0],
+								cancellationToken,
+							);
+							if (incomingCalls && incomingCalls.length > 0) {
+								const results = incomingCalls.map((c: any) => {
+									const relativePath = path
+										.relative(projectRoot.fsPath, c.from.uri.fsPath)
+										.replace(/\\/g, "/");
+									return `- ${c.from.name} (${relativePath}:${c.from.range.start.line + 1})`;
+								});
+								output = `Found ${incomingCalls.length} incoming call(s):\n${results.join("\n")}`;
+							} else {
+								output = `No incoming calls found for function "${items[0].name}".`;
+							}
+						} else {
+							output = `No call hierarchy item found at ${filePath}:${line}.`;
+						}
+					} catch (e: any) {
+						output = `Error finding incoming calls: ${e.message}`;
+					}
+
+					// Log output to chat
+					const displayOutput =
+						output.length > 10000 ? output.substring(0, 10000) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					// Update History
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "get_call_hierarchy_incoming",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "get_call_hierarchy_outgoing") {
+					const args = functionCall.args as any;
+					const filePath = args["path"] as string;
+					const line = args["line"] as number;
+
+					// Log to Chat
+					const logText = `Finding outgoing calls for function at \`${filePath}:${line}\`...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					// Execute
+					let output = "";
+					try {
+						const fullPath = path.join(projectRoot.fsPath, filePath);
+						const position = new vscode.Position(line - 1, 0);
+
+						const items = await prepareCallHierarchy(
+							vscode.Uri.file(fullPath),
+							position,
+							cancellationToken,
+						);
+
+						if (items && items.length > 0) {
+							const outgoingCalls = await resolveOutgoingCalls(
+								items[0],
+								cancellationToken,
+							);
+							if (outgoingCalls && outgoingCalls.length > 0) {
+								const results = outgoingCalls.map((c: any) => {
+									const relativePath = path
+										.relative(projectRoot.fsPath, c.to.uri.fsPath)
+										.replace(/\\/g, "/");
+									return `- Calls ${c.to.name} (${relativePath}:${c.to.range.start.line + 1})`;
+								});
+								output = `Found ${outgoingCalls.length} outgoing call(s):\n${results.join("\n")}`;
+							} else {
+								output = `No outgoing calls found for function "${items[0].name}".`;
+							}
+						} else {
+							output = `No call hierarchy item found at ${filePath}:${line}.`;
+						}
+					} catch (e: any) {
+						output = `Error finding outgoing calls: ${e.message}`;
+					}
+
+					// Log output to chat
+					const displayOutput =
+						output.length > 10000 ? output.substring(0, 10000) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					// Update History
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "get_call_hierarchy_outgoing",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "get_file_diagnostics") {
+					const args = functionCall.args as any;
+					const filePath = args["path"] as string;
+
+					// Log to Chat
+					const logText = `Checking diagnostics for \`${filePath}\`...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					// Execute
+					let output = "";
+					try {
+						const fullPath = path.join(projectRoot.fsPath, filePath);
+						const diagnostics = DiagnosticService.getDiagnosticsForUri(
+							vscode.Uri.file(fullPath),
+						);
+
+						if (diagnostics && diagnostics.length > 0) {
+							const results = diagnostics.map((d) => {
+								const severity = vscode.DiagnosticSeverity[d.severity];
+								return `[${severity}] Line ${d.range.start.line + 1}: ${d.message}`;
+							});
+							output = `Found ${diagnostics.length} diagnostic(s):\n${results.join("\n")}`;
+						} else {
+							output = `No diagnostics found for "${filePath}".`;
+						}
+					} catch (e: any) {
+						output = `Error getting diagnostics: ${e.message}`;
+					}
+
+					// Log output to chat
+					const displayOutput =
+						output.length > 10000 ? output.substring(0, 10000) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					// Update History
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "get_file_diagnostics",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "get_git_diffs") {
+					const args = functionCall.args as any;
+					const diffType = args["type"] as "staged" | "head";
+
+					// Log to Chat
+					const logText = `Getting git ${diffType} diffs...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					// Execute
+					let output = "";
+					try {
+						if (diffType === "staged") {
+							output = await getGitStagedDiff(projectRoot.fsPath);
+						} else {
+							// For 'head', we might need another function or execute shell command
+							// For now, let's just use staged as a primary example or fallback to command
+							output = await SafeCommandExecutor.execute(
+								"git diff HEAD",
+								projectRoot.fsPath,
+							);
+						}
+
+						if (!output || output.trim() === "") {
+							output = `No ${diffType} changes found.`;
+						}
+					} catch (e: any) {
+						output = `Error getting git diffs: ${e.message}`;
+					}
+
+					// Log output to chat
+					const displayOutput =
+						output.length > 10000 ? output.substring(0, 10000) + "..." : output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					// Update History
+					currentHistory.push({
+						role: "model",
+						parts: [{ functionCall: functionCall }],
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "get_git_diffs",
+									response: { result: output },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "read_file") {
+					const args = functionCall.args as any;
+					const filePath = args["path"] as string;
+					const startLine = args["startLine"] as number;
+					const endLine = args["endLine"] as number;
+
+					// Log to Chat
+					const logText = `Reading \`${filePath}\` (lines ${startLine}-${endLine})...`;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: logText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(logText);
+					}
+
+					// Execute using internal sed command via safe executor
+					let output = "";
+					try {
+						// Format: sed -n 'start,endp' file
+						const sedCommand = `sed -n '${startLine},${endLine}p' ${filePath}`;
+						output = await SafeCommandExecutor.execute(
+							sedCommand,
+							projectRoot.fsPath,
+						);
+						if (!output.trim()) {
+							output = "(No content found in this range or file is empty)";
+						}
+					} catch (e: any) {
+						output = `Error reading file: ${e.message}`;
+					}
+
+					// Log output to chat
+					const displayOutput =
+						output.length > 5000
+							? output.substring(0, 5000) + "\n... (truncated)"
+							: output;
+					const outputLogText = `\`\`\`\n${displayOutput}\n\`\`\``;
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: { text: outputLogText },
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(outputLogText);
+					}
+
+					// Update History
+					const modelParts: any[] = [];
+					if (thought) {
+						modelParts.push({ text: thought });
+					}
+					modelParts.push({ functionCall: functionCall });
+
+					currentHistory.push({
+						role: "model",
+						parts: modelParts,
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "read_file",
 									response: { result: output },
 								},
 							},
 						],
 					});
 				} else {
+					const unknownToolName = functionCall.name;
 					console.warn(
-						`[SmartContextSelector] Unknown tool: ${functionCall.name}`,
+						`[SmartContextSelector] Unknown tool: ${unknownToolName}`,
 					);
-					break;
+
+					// Provide feedback to the model instead of crashing/terminating the loop
+					const allowedTools = (tools[0] as any).functionDeclarations
+						.map((f: any) => f.name)
+						.join(", ");
+					const feedback = `Error: The tool "${unknownToolName}" is not available. Please use one of the allowed tools: ${allowedTools}.`;
+
+					const modelParts: any[] = [];
+					if (thought) {
+						modelParts.push({ text: thought });
+					}
+					modelParts.push({ functionCall: functionCall });
+
+					currentHistory.push({
+						role: "model",
+						parts: modelParts,
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: unknownToolName,
+									response: { error: feedback },
+								},
+							},
+						],
+					});
+
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: {
+								text: `<span style="color: var(--vscode-errorForeground);">[Error]</span> Attempted to use unknown tool "${unknownToolName}". Providing feedback to agent.`,
+							},
+						});
+					}
 				}
 			}
 			if (postMessageToWebview) {
@@ -1661,17 +2439,8 @@ JSON Array of selected file paths:
 			error,
 		);
 		// Fallback to priority + active file on any error
-		const fallbackFiles = new Set(preSelectedPriorityFiles || []);
-		if (activeEditorContext?.documentUri) {
-			fallbackFiles.add(activeEditorContext.documentUri);
-		}
-
 		// Map Set<vscode.Uri> to FileSelection[]
-		return Array.from(fallbackFiles).map((uri) => ({
-			uri,
-			startLine: undefined,
-			endLine: undefined,
-		}));
+		return [];
 	}
 }
 
@@ -1695,6 +2464,10 @@ function _processSelectedPaths(
 
 	// Add AI selected files with optional line ranges or symbols
 	for (const selectedPath of selectedPaths as string[]) {
+		if (!selectedPath || selectedPath.trim() === "") {
+			continue;
+		}
+
 		const {
 			path: filePath,
 			startLine,
@@ -1762,20 +2535,6 @@ function _processSelectedPaths(
 	}
 
 	let finalResultSelections = Array.from(finalSelections.values());
-
-	// Always include the active file if it exists (full file, not chunked)
-	if (
-		activeEditorContext?.documentUri &&
-		!finalResultSelections.some(
-			(sel) => sel.uri.fsPath === activeEditorContext.documentUri.fsPath,
-		)
-	) {
-		finalResultSelections.unshift({
-			uri: activeEditorContext.documentUri,
-			startLine: undefined,
-			endLine: undefined,
-		});
-	}
 
 	return finalResultSelections;
 }

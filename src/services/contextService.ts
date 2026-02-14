@@ -12,11 +12,9 @@ import {
 	HistoryEntry,
 } from "../sidebar/common/sidebarTypes";
 import { scanWorkspace, clearScanCache } from "../context/workspaceScanner";
-import { DependencyRelation } from "../utils/fileDependencyParser";
 import {
 	selectRelevantFilesAI,
 	SelectRelevantFilesAIOptions,
-	FileSelection,
 	MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION, // Import for summary length
 	clearAISelectionCache, // Import clearAISelectionCache for cache invalidation
 } from "../context/smartContextSelector";
@@ -67,6 +65,7 @@ interface ContextBuildOptions {
 	operationId?: string;
 	changedUris?: vscode.Uri[];
 	correctionMode?: boolean;
+	type?: string;
 }
 
 export interface ActiveSymbolDetailedInfo {
@@ -201,6 +200,45 @@ export class ContextService {
 				event.files.forEach((fileRename) => {
 					clearCacheForFileUri(fileRename.newUri);
 				});
+			}),
+		);
+
+		// Subscribe to diagnostic changes for ambient error detection
+		registerDisposable(
+			vscode.languages.onDidChangeDiagnostics((e) => {
+				const activeEditor = vscode.window.activeTextEditor;
+				if (!activeEditor) {
+					return;
+				}
+
+				const docUri = activeEditor.document.uri;
+				if (e.uris.some((uri) => uri.toString() === docUri.toString())) {
+					const diagnostics = vscode.languages.getDiagnostics(docUri);
+					const hasError = diagnostics.some(
+						(d) => d.severity === vscode.DiagnosticSeverity.Error,
+					);
+
+					if (hasError) {
+						console.log(
+							`[ContextService] Ambient error detected in ${docUri.fsPath}. Triggering context refresh.`,
+						);
+						this.buildProjectContext(
+							undefined,
+							undefined,
+							undefined,
+							undefined,
+							{
+								forceAISelectionRecalculation: true,
+								useAISelectionCache: false,
+								type: "AMBIENT_DIAGNOSTICS_ERROR",
+							},
+						).catch((err) => {
+							console.error(
+								`[ContextService] Failed to rebuild context on diagnostic error: ${err.message}`,
+							);
+						});
+					}
+				}
 			}),
 		);
 
@@ -1091,34 +1129,7 @@ export class ContextService {
 						});
 					} else {
 						// AI returned no relevant files or an empty selection.
-						let fallbackFiles: vscode.Uri[] = [];
-						if (editorContext?.documentUri) {
-							// Priority 1: Active file
-							fallbackFiles = [editorContext.documentUri];
-							this.postMessageToWebview({
-								type: "statusUpdate",
-								value: `AI selection yielded no relevant files. Falling back to the active file.`,
-							});
-						} else if (allScannedFiles.length > 0) {
-							fallbackFiles = allScannedFiles.slice(
-								0,
-								Math.min(allScannedFiles.length, 1), // Fallback to the first scanned file
-							);
-							this.postMessageToWebview({
-								type: "statusUpdate",
-								value: `AI selection yielded no relevant files. Falling back to the first scanned file.`,
-							});
-						} else {
-							// No files available at all
-							fallbackFiles = [];
-							this.postMessageToWebview({
-								type: "statusUpdate",
-								value: `AI selection yielded no relevant files and no files were scanned.`,
-							});
-						}
-						filesForContextBuilding = options?.correctionMode
-							? []
-							: fallbackFiles; // Assign fallback files
+						filesForContextBuilding = [];
 					}
 				} catch (error: any) {
 					console.error(
@@ -1126,39 +1137,11 @@ export class ContextService {
 					);
 					this.postMessageToWebview({
 						type: "statusUpdate",
-						value: `Smart context selection failed due to an error. Falling back to limited context.`,
+						value: `Smart context selection failed. No files selected.`,
 						isError: true,
 					});
 
-					let fallbackFiles: vscode.Uri[] = [];
-					if (editorContext?.documentUri) {
-						// Priority 1: Active file
-						fallbackFiles = [editorContext.documentUri];
-						this.postMessageToWebview({
-							type: "statusUpdate",
-							value: `Falling back to the active file.`,
-						});
-					} else if (allScannedFiles.length > 0) {
-						// Priority 2: Small subset of scanned files (e.g., first 10)
-						fallbackFiles = allScannedFiles.slice(
-							0,
-							Math.min(allScannedFiles.length, 10),
-						);
-						this.postMessageToWebview({
-							type: "statusUpdate",
-							value: `Falling back to a subset of scanned files (${fallbackFiles.length}).`,
-						});
-					} else {
-						// No files available at all
-						fallbackFiles = [];
-						this.postMessageToWebview({
-							type: "statusUpdate",
-							value: `No files available for fallback.`,
-						});
-					}
-					filesForContextBuilding = options?.correctionMode
-						? []
-						: fallbackFiles; // Assign fallback files
+					filesForContextBuilding = [];
 				} finally {
 					// Ensure log loading state is cleared
 					this.postMessageToWebview({
