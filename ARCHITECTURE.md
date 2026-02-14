@@ -63,19 +63,20 @@ This system ensures that diagnostic information, particularly 'Information' and 
   - **Sequential Project Context (`buildSequentialProjectContext`)**: Handles very large codebases by processing and summarizing files in batches using `SequentialContextService`.
   - **Priority Files Model**: The `SequentialContextService` automatically discovers uncommitted git files and passes them as priority context to the AI agent, replacing the former heuristic scoring system. This ensures the most relevant working-set files are always visible to the AI, even in truncated/optimized project views.
   - **File Line Counts**: Project structure views include per-file line counts in both optimized and full listing modes, giving the AI better awareness of file complexity during context selection.
-  - **Configurable Context Gating**: Implements user control over the file relevance engine. The `ContextService` handles various investigation states via robust fallback mechanisms, and context checks are bypassed entirely for highly specialized commands like `/commit`. A dedicated toggle button in the sidebar UI allows dynamic control.
+  - **Context Gating & Error Rebuilding**: Implements user control over the file relevance engine. The `ContextService` handles various investigation states; notably, it now **automatically triggers a context rebuild** when ambient diagnostics show an Error, ensuring the agent immediately sees the failure context. Context checks are bypassed for specialized commands like `/commit`.
   - **Context Assembly**: Integrates all collected data into a cohesive, token-optimized prompt string (`buildContextString`).
 - **Key Files**: `src/context/smartContextSelector.ts`, `src/context/fileContentProcessor.ts`, `src/services/contextService.ts`, `src/context/workspaceScanner.ts`, `src/context/contextBuilder.ts`, `src/services/symbolService.ts`, `src/utils/diagnosticUtils.ts`, `src/services/sequentialContextService.ts`, `src/context/safeCommandExecutor.ts`
 
 #### 5. Agentic Context Investigation
 
-- **Responsibility**: Enables the AI to actively explore and investigate the codebase using safe terminal commands during the context gathering phase, rather than relying solely on static file lists and summaries.
+- **Responsibility**: Enables the AI to actively explore and investigate the codebase using safe terminal commands and deep IDE symbol tools during the context gathering phase, rather than relying solely on static file lists and summaries.
 - **Key Features**:
-  - **Reasoning Loop**: The `selectRelevantFilesAI` function in `smartContextSelector.ts` implements a multi-turn agentic loop. The AI (utilizing **Gemini Flash Lite**) is given a `run_terminal_command` tool and can iteratively run commands, observe outputs, and refine its understanding before making a final file selection with `finish_selection`.
-  - **Safe Command Execution**: The `SafeCommandExecutor` class (`src/context/safeCommandExecutor.ts`) enforces strict security by allowlisting only read-only commands (`ls`, `grep`, `find`, `cat`, `git`, `sed`, `head`, `tail`, `wc`, `file`, `xargs`, `awk`, `tr`, `sort`, `uniq`, `realpath`, `readlink`) and blocking dangerous operations like chaining (`&&`), redirection (`>`, `<`), or command substitution (`` ` ``, `$(`). Pipes (`|`) are supported with per-segment validation. It also provides **automatic gitignore-aware command transformation**: recursive `grep` commands are injected with `--exclude-dir`, `--exclude`, and `--binary-files=without-match` flags; `find` commands receive directory prune clauses; and `ls -R` is rewritten to `git ls-files`. These exclusions are powered by comprehensive curated lists covering all major languages and frameworks (Node.js, Python, Java, Go, Rust, Ruby, PHP, C/C++, .NET, iOS/macOS, Terraform).
+  - **Stricter Reasoning Loop**: The `selectRelevantFilesAI` function in `smartContextSelector.ts` enforces a multi-turn agentic loop where the AI (utilizing **Gemini Flash Lite**) must use tools to discover files. Legacy heuristic fallbacks have been replaced by this stricter tool-driven exploration.
+  - **Investigation & Symbol Tools**: Beyond basic shell commands, the agent now utilizes specialized IDE tools: `get_implementations`, `get_type_definition`, `get_call_hierarchy_incoming`, `get_call_hierarchy_outgoing`, `get_file_diagnostics`, and `get_git_diffs`.
+  - **Safe Command Execution**: The `SafeCommandExecutor` class (`src/context/safeCommandExecutor.ts`) enforces strict security by allowlisting only read-only commands. File reading is performed using the `read_file` tool (replacing `sed`), mandating prior symbol lookup to minimize context waste. It also provides **automatic gitignore-aware command transformation**.
   - **Error-Aware Investigation**: When the user's request contains error-related keywords ("error", "bug", "fix"), the AI is prompted to prioritize investigation commands and actively search for relevant code paths using diagnostics and stack traces.
-  - **Transparent Logging**: Every command executed by the Context Agent and its output is logged to the chat interface, providing full transparency to the user.
-  - **Progressive Context Discovery**: For larger projects (>10 files), the agent receives a truncated "Optimized View" of the project structure (top-level folders only) and is explicitly instructed to use tools to discover files. This **Progressive Discovery** strategy mimics a human developer's exploration process and significantly reduces token usage by up to 90% for large repositories.
+  - **Transparent Logging & UI**: Every command executed by the Context Agent is logged to the chat interface with terminal-like styling (transparent backgrounds). Logs feature **collapsible code blocks** (Show Code/Hide Code toggle) to keep detailed output compact by default.
+  - **Progressive Context Discovery**: For larger projects (>10 files), the agent receives a truncated "Optimized View" of the project structure and discovers files on-demand, reducing token usage by up to 90%.
 - **Key Files**: `src/context/smartContextSelector.ts`, `src/context/safeCommandExecutor.ts`, `src/services/lightweightClassificationService.ts`
 
 #### 5. URL Context Retrieval
@@ -92,12 +93,13 @@ This system ensures that diagnostic information, particularly 'Information' and 
 #### 1. AI Model Integration (Gemini Client)
 
 - **Responsibility**: Provides the low-level interface for communicating with the Google Gemini API, including API initialization, streaming responses, error mapping, and token counting.
+- **Security & Output Sanitization**: Implements the `sanitizeAiResponse` utility to strip agent control sequences, leaked tool calls, and raw HTML from AI outputs before rendering. This is integrated into the chat and message rendering pipeline for enhanced security and output cleanup.
 - **New Error Constants**: Introduces specific error constants (`ERROR_QUOTA_EXCEEDED`, `ERROR_OPERATION_CANCELLED`, `ERROR_SERVICE_UNAVAILABLE`, `ERROR_STREAM_PARSING_FAILED`) for clearer error handling.
 - **Enhanced `initializeGenerativeAI` Logic**: Leverages `systemInstruction` (`MINO_SYSTEM_INSTRUCTION`) for consistent AI persona and tracks `currentToolsHash` for optimization.
 - **Robust Streaming (`generateContentStream`)**: Provides `AsyncIterableIterator` for real-time responses, integrates `CancellationToken` support, and includes comprehensive error handling.
 - **Function Call Generation (`generateFunctionCall`)**: Enables the AI to generate structured function calls based on `tools`, supporting `FunctionCallingMode` for fine-grained control.
 - **Lightweight Classification Service**: Performs rapid, cost-effective checks for rewrite intent and error messages using the **Flash Lite** model. This reduces reliance on slower, context-heavy operations during initial generation checks.
-- **Key Files**: `src/ai/gemini.ts`, `src/ai/prompts/systemInstructions.ts`, `src/services/lightweightClassificationService.ts`
+- **Key Files**: `src/ai/gemini.ts`, `src/ai/prompts/systemInstructions.ts`, `src/services/lightweightClassificationService.ts`, `src/sidebar/webview/utils/markdownRenderer.ts`
 
 #### 2. AI Request Orchestration & Robustness
 

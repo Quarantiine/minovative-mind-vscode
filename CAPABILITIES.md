@@ -30,7 +30,7 @@ Minovative Mind offers an intuitive chat interface for direct interaction with A
 - **Slash Command Suggestions**: Utilize intelligent suggestions for commands like `/plan`, `/fix`, and `/commit` to streamline actions.
 - **Editable History**: Edit previous messages to re-evaluate conversations with updated context.
 - **Convert to Plans**: AI-generated responses can be seamlessly converted into actionable `/plan` commands for structured execution.
-- **Plan Labels**: AI-generated plan explanations display a "Generated Plan" badge, making them easily distinguishable from regular AI responses in the chat.
+- **Plan & Agent Logs**: AI-generated plan explanations display a "Generated Plan" badge. Context Agent logs feature **terminal-like styling** and **collapsible code blocks** (Show Code/Hide Code) to keep detailed output compact.
 - **Interactive File Selector**: A dedicated "Open File List" button provides a dynamic, searchable, and navigable popup. Users can efficiently select workspace files to insert their paths directly into the chat input, complete with search, keyboard navigation, and visual enhancements.
 
 ### 1.3 Code Explanation
@@ -51,7 +51,7 @@ Minovative Mind can autonomously plan and execute complex development tasks, sig
 - **Intelligent Command Escalation**: Commands like `/fix` or general code edits can automatically escalate to a full plan execution when task complexity warrants it.
 - **Dynamic Context Refinement**: Unlike static plans, the AI re-evaluates project context _before every single step_. It investigates the codebase and reads only the specific lines of code needed for that step (e.g., "read lines 50-100 of auth.ts"), ensuring maximum accuracy and minimal token usage.
 - **Confirmation & Controls**: You'll be prompted for confirmation before a plan executes by default, but this can be skipped using the "Fast Forward" toggle for rapid execution. You can also monitor progress and cancel specific ongoing tasks.
-- **Autonomous Self-Correction**: Automatically detects and repairs issues introduced during code generation or modification. It monitors **real-time diagnostics** and uses the **exact error message text** to identify root causes and proactively generate repair plans without manual intervention.
+- **Autonomous Self-Correction & Context Rebuilding**: Automatically detects and repairs issues introduced during code generation or modification. It monitors **real-time diagnostics** and uses the **exact error message text** to identify root causes. The system now **automatically rebuilds project context** when diagnostics show an Error, ensuring the agent sees the failure context immediately.
 
 ### 2.2 Intelligent Code Modification
 
@@ -98,7 +98,8 @@ Minovative Mind builds a profound understanding of your project using comprehens
 
 ### 3.4 Agentic Context Investigation
 
-- **Active Codebase Exploration**: The Context Agent proactively "looks around" your codebase using high-performance, cost-effective models (**Gemini Flash Lite**) and safe terminal commands (`git ls-files`, `grep`, `find`, `cat`, `sed`, `head`, `tail`, `wc`, `file`) to discover relevant files that static analysis might miss. All search commands are automatically transformed to respect `.gitignore` rules through injected exclusion flags.
+- **Active Codebase Exploration**: The Context Agent proactively "looks around" your codebase using high-performance models (**Gemini Flash Lite**) and specialized tools. It leverages safe terminal commands (`git ls-files`, `grep`, `find`, `cat`, `head`, `tail`, `wc`, `file`) and deep symbol analysis tools (`get_implementations`, `get_type_definition`, `get_call_hierarchy`, `get_git_diffs`). All search commands are automatically transformed to respect `.gitignore` rules through injected exclusion flags.
+- **Stricter tool-driven loop**: To ensure accuracy, the agent now operates in a stricter agentic loop, mandating the use of investigative tools to discover files before making a selection. Legacy fallbacks have been removed in favor of this robust investigation.
 - **Progressive Discovery**: For large repositories, the agent starts with a highly efficient, truncated view of the project structure and discovers files on-demand using **Progressive Discovery**, reducing initial context token usage by up to 90%.
 - **Intent-Aware Context**: Automatically classifies the user's intent (e.g., bug fixing vs. general query) to prioritize the most relevant diagnostic or symbol information for the context.
 - **AI-Driven Error Investigation**: Automatically detects when you're asking about errors or bugs using intelligent intent classification and proactively investigates error messages, stack traces, and relevant code paths before generating a response.
@@ -128,6 +129,7 @@ Minovative Mind prioritizes user control, project security, transparent operatio
 ### 4.2 Security & Filesystem Safety
 
 - **Workspace-Bound Operations**: All file system modifications and creations are strictly confined to the user's active VS Code workspace directory, preventing unintended changes outside the project scope.
+- **AI Output Sanitization**: Implements robust sanitization of AI responses to strip agent control sequences, leaked tool calls, and raw HTML, ensuring a clean and secure output rendering in the chat interface.
 - **Shell Command Approval**: Requires explicit user confirmation for every `run_command` step within an AI-generated plan. Users have the power to allow, skip, or cancel individual execution steps.
 
 ### 4.3 Change Auditing & Reversibility
