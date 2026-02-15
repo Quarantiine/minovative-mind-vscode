@@ -627,34 +627,6 @@ export class EnhancedCodeGenerator {
 			}
 		}
 
-		// New: Check for deformed markers if still no blocks found
-		if (blocks.length === 0) {
-			const deformedReason =
-				this.searchReplaceService.getDeformedMarkerReason(rawContent);
-			if (deformedReason) {
-				return {
-					content: cleanedContent,
-					validation: {
-						isValid: false,
-						finalContent: cleanedContent,
-						issues: [
-							{
-								type: "other",
-								message: deformedReason,
-								line: 1,
-								severity: "error",
-								code: "DEFORMED_MARKERS",
-								source: "EnhancedCodeGenerator",
-							},
-						],
-						suggestions: [
-							"Ensure you use the exact SEARC#H / ===#=== / REPLAC#E format at the start of lines.",
-						],
-					},
-				};
-			}
-		}
-
 		if (blocks.length > 0) {
 			try {
 				finalModifiedContent = this.searchReplaceService.applyBlocks(
@@ -675,28 +647,13 @@ export class EnhancedCodeGenerator {
 				rawContent.match(/^<{7} SEARCH\s/m);
 
 			if (hasOldMarkers) {
-				return {
-					content: cleanedContent,
-					validation: {
-						isValid: false,
-						finalContent: cleanedContent,
-						issues: [
-							{
-								type: "other",
-								message:
-									"The AI used legacy SEARCH/REPLACE markers at the start of a line. We now strictly require SEARC#H and REPLAC#E.",
-								line: 1,
-								severity: "error",
-								code: "OLD_MARKER_FORMAT",
-								source: "EnhancedCodeGenerator",
-							},
-						],
-						suggestions: [
-							"Please ensure the AI uses the new marker format with the '#' character.",
-						],
-					},
-				};
+				// We no longer hard-fail here. Instead, we allow it as a "potential" valid rewrite
+				// and let the PlanExecutor's integrity validator make the final call.
+				console.warn(
+					`[EnhancedCodeGenerator] Legacy markers (SEARCH/REPLACE) detected in raw content for ${path.basename(filePath)}. Flagging as warning.`,
+				);
 			}
+
 			if (cleanedContent.trim().length < 5 || cleanedContent.trim() === "/") {
 				return {
 					content: cleanedContent,
@@ -715,12 +672,32 @@ export class EnhancedCodeGenerator {
 						],
 						suggestions: [
 							"Refine your prompt. The AI might be confused by the request or existing file context.",
-							"Ensure the AI is instructed to provide the full modified file content, not just a snippet or placeholder.",
 						],
 					},
 				};
 			}
-			finalModifiedContent = cleanedContent;
+
+			return {
+				content: cleanedContent,
+				validation: {
+					isValid: true, // We allow it to be valid; PlanExecutor will do the integrity check.
+					finalContent: cleanedContent,
+					issues: hasOldMarkers
+						? [
+								{
+									type: "other",
+									message:
+										"Legacy markers detected. Ensure you use SEARC#H/REPLAC#E for surgical edits.",
+									line: 1,
+									severity: "warning",
+									code: "LEGACY_MARKER_WARNING",
+									source: "EnhancedCodeGenerator",
+								},
+							]
+						: [],
+					suggestions: [],
+				},
+			};
 		}
 
 		const validation = await this._validateAndRefineModification(

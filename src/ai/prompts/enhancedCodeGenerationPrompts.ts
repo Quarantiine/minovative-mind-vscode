@@ -248,7 +248,7 @@ export function getEnhancedModificationSystemInstruction(
 		"**SEARCH/REPLACE PROTOCOL**: You MUST use the `SEARC#H`, `===#===`, and `REPLAC#E` markers for all modifications. The '#' character is a critical safety feature to prevent collisions with existing code, including code that might discuss these markers.",
 	);
 	requirementsList.push(
-		"**NO LEGACY MARKERS**: Do not use `SEARCH`, `REPLACE`, or `=======` for surgical edits. These are legacy formats and are incompatible with the extraction engine.",
+		"**NO LEGACY MARKERS**: Do not use `SEARCH`, `REPLACE`, or `=======` for surgical edits. These are legacy formats and are incompatible with the extraction engine. However, they can be mentioned in text or documentation if relevant.",
 	);
 	requirementsList.push(
 		"**Full File Rewrite**: Provide the FULL file content only if the entire file needs to be replaced. Otherwise, always use blocks.",

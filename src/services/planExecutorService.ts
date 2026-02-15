@@ -1594,20 +1594,9 @@ export class PlanExecutorService {
 				}
 			} else {
 				// No valid blocks found and no markers detected.
-				// Check for malformed markers OR suspicious fragments.
-				// We use both heuristics AND a lightweight AI check for better robustness.
-				const hasDeformedMarkers =
-					searchReplaceService.containsDeformedMarkers(rawOutput);
-				const isLikelyFragmentHeuristic =
-					searchReplaceService.isLikelyPartialSnippet(
-						rawOutput,
-						originalContent,
-					);
-
-				let isInvalid = hasDeformedMarkers || isLikelyFragmentHeuristic;
-				let invalidReason = hasDeformedMarkers
-					? "malformed SEARC#H/REPLAC#E markers"
-					: "a partial code snippet without markers";
+				// We rely on a lightweight AI check for better robustness.
+				let isInvalid = false;
+				let invalidReason = "a potential code snippet without markers";
 
 				// Secondary check using a lightweight AI model (Flash Lite) for edge cases
 				if (!isInvalid && attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
@@ -1619,7 +1608,14 @@ export class PlanExecutorService {
 							combinedToken,
 							step.step.path,
 						);
-						if (!integrityResult.isValid) {
+						if (integrityResult.isValid) {
+							// CRITICAL: If the AI integrity check says it is valid, we trust it over heuristics.
+							// This allows more freedom for full-file updates and meta-discussions.
+							isInvalid = false;
+							console.info(
+								`[PlanExecutor] Heuristics flagged output as suspicious, but AI integrity check confirmed it is valid for ${step.step.path}. Proceeding.`,
+							);
+						} else {
 							// HEURISTIC FALLBACK: If the model's text reasoning explicitly says "is VALID" but it returned false boolean,
 							// we trust the text reasoning to avoid frustrating retry loops, especially for full-file JSON updates.
 							const reasonLower = integrityResult.reason.toLowerCase();
@@ -1634,6 +1630,7 @@ export class PlanExecutorService {
 								console.info(
 									`[PlanExecutor] AI integrity boolean check was false, but text reasoning says VALID. Overriding to valid.`,
 								);
+								isInvalid = false;
 							} else {
 								isInvalid = true;
 								invalidReason = integrityResult.reason;
