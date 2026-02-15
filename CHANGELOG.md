@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.54.0] - February 14, 2026
+## [2.54.1] - February 14, 2026
 
 ### Enhanced Agent Execution, Decoupled Context, and Security-Aware Sanitization
 
