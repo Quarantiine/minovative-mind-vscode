@@ -5,7 +5,7 @@ import { RevertibleChangeSet } from "../types/workflow";
  * Formats successful change sets into a concise string for AI prompts.
  */
 export function formatSuccessfulChangesForPrompt(
-	changeSets: RevertibleChangeSet[]
+	changeSets: RevertibleChangeSet[],
 ): string {
 	if (!changeSets || changeSets.length === 0) {
 		return "";
@@ -19,7 +19,7 @@ export function formatSuccessfulChangesForPrompt(
 		const date = new Date(changeSet.timestamp).toLocaleString();
 		formattedHistory += `\n**Plan Executed on ${date} (ID: ${changeSet.id.substring(
 			0,
-			8
+			8,
 		)})**\n`;
 		if (changeSet.planSummary) {
 			formattedHistory += `Summary: ${changeSet.planSummary}\n`;
