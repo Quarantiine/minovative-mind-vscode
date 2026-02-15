@@ -76,8 +76,8 @@ ${fullText}
 			planExplanationInstructions = `Based on my custom instruction ("${editorContext.instruction}") and file context, explain a detailed plan. Interpret the request primarily through the lens of the current instruction, using selected code, chat history, and diagnostics as supplementary context. The current instruction MUST take precedence over any historical patterns or previous requests.`;
 		}
 	} else if (userRequest) {
-		specificContextContent = `My Request from Chat: ${userRequest}`;
-		planExplanationInstructions = `Based on my current request ("${userRequest}"), explain a detailed plan to fulfill it. Use the provided chat history ONLY as supplementary background context; the current request is your definitive goal and must take precedence.`;
+		specificContextContent = `My Request from Chat (invoked via /plan): ${userRequest}`;
+		planExplanationInstructions = `The user has explicitly invoked the \`/plan\` command for this request. Based on this request ("${userRequest}"), explain a detailed plan to fulfill it. Use the provided chat history ONLY as supplementary background context; the current request is your definitive goal and must take precedence.`;
 	}
 
 	const chatHistoryForPrompt =

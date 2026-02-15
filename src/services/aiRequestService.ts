@@ -102,6 +102,95 @@ export const OUTPUT_INTEGRITY_VALIDATION_TOOL: Tool = {
 	],
 };
 
+export const FILE_ANALYSIS_TOOL: Tool = {
+	functionDeclarations: [
+		{
+			name: "analyzeFile",
+			description:
+				"Analyzes a source code file to extract structured insights, complexity, and its main purpose.",
+			parameters: {
+				type: SchemaType.OBJECT,
+				properties: {
+					keyInsights: {
+						type: SchemaType.ARRAY,
+						description:
+							"An array of key insights about the file's primary purpose and core functionality (max 5).",
+						items: { type: SchemaType.STRING },
+					},
+					complexity: {
+						type: SchemaType.STRING,
+						enum: ["low", "medium", "high"],
+						format: "enum",
+						description: "The estimated complexity of the file.",
+					},
+					mainPurpose: {
+						type: SchemaType.STRING,
+						description: "A concise description of the file's main purpose.",
+					},
+				},
+				required: ["keyInsights", "complexity", "mainPurpose"],
+			},
+		},
+	],
+};
+
+export const DEPENDENCY_EXTRACTION_TOOL: Tool = {
+	functionDeclarations: [
+		{
+			name: "extractDependencies",
+			description:
+				"Extracts module dependencies (imports/requires) from source code.",
+			parameters: {
+				type: SchemaType.OBJECT,
+				properties: {
+					dependencies: {
+						type: SchemaType.ARRAY,
+						description:
+							"An array of unique module specifiers (e.g., 'react', './utils').",
+						items: { type: SchemaType.STRING },
+					},
+				},
+				required: ["dependencies"],
+			},
+		},
+	],
+};
+
+export const ENTITY_EXTRACTION_TOOL: Tool = {
+	functionDeclarations: [
+		{
+			name: "extractEntities",
+			description:
+				"Identifies code entities (functions, classes, variables, etc.) from a code snippet or diff hunk.",
+			parameters: {
+				type: SchemaType.OBJECT,
+				properties: {
+					entities: {
+						type: SchemaType.ARRAY,
+						description: "An array of identified entities.",
+						items: {
+							type: SchemaType.OBJECT,
+							properties: {
+								type: {
+									type: SchemaType.STRING,
+									description:
+										"The type of entity (e.g., 'function', 'class', 'interface', 'variable', 'enum').",
+								},
+								name: {
+									type: SchemaType.STRING,
+									description: "The name of the entity.",
+								},
+							},
+							required: ["type", "name"],
+						},
+					},
+				},
+				required: ["entities"],
+			},
+		},
+	],
+};
+
 export class AIRequestService {
 	constructor(
 		private apiKeyManager: ApiKeyManager,
@@ -210,6 +299,146 @@ ${rawTextOutput}
 		}));
 
 		return { blocks: sanitizedblocks };
+	}
+
+	/**
+	 * Analyzes a file using AI Function Calling for structured output.
+	 */
+	public async analyzeFileViaTool(
+		relativePath: string,
+		fileContent: string,
+		initialSummary: string,
+		contextInfo: string,
+		modelName: string,
+		token?: vscode.CancellationToken,
+	): Promise<{
+		keyInsights: string[];
+		complexity: "low" | "medium" | "high";
+		mainPurpose: string;
+	}> {
+		const apiKey = this.apiKeyManager.getActiveApiKey();
+		if (!apiKey) throw new Error("No API Key available.");
+
+		const contents: Content[] = [
+			{
+				role: "user",
+				parts: [
+					{
+						text: `Analyze this file and provide structured insights.
+File: ${relativePath}
+${contextInfo}
+Initial Summary: ${initialSummary}
+Content:
+${fileContent.substring(0, 30000)}`,
+					},
+				],
+			},
+		];
+
+		const result = await this.generateFunctionCall(
+			apiKey,
+			modelName,
+			contents,
+			[FILE_ANALYSIS_TOOL],
+			FunctionCallingMode.ANY,
+			"You are an expert code analyst providing structured insights about source files.",
+			undefined,
+			token,
+			"file_analysis",
+		);
+
+		if (result?.functionCall?.args) {
+			return result.functionCall.args as any;
+		}
+
+		return { keyInsights: [], complexity: "medium", mainPurpose: "Unknown" };
+	}
+
+	/**
+	 * Extracts dependencies from code using AI Function Calling.
+	 */
+	public async extractDependenciesViaTool(
+		fileContent: string,
+		fileExtension: string,
+		modelName: string,
+		token?: vscode.CancellationToken,
+	): Promise<string[]> {
+		const apiKey = this.apiKeyManager.getActiveApiKey();
+		if (!apiKey) throw new Error("No API Key available.");
+
+		const contents: Content[] = [
+			{
+				role: "user",
+				parts: [
+					{
+						text: `Extract all module dependencies (imports, requires) from this ${fileExtension} code:
+${fileContent.substring(0, 15000)}`,
+					},
+				],
+			},
+		];
+
+		const result = await this.generateFunctionCall(
+			apiKey,
+			modelName,
+			contents,
+			[DEPENDENCY_EXTRACTION_TOOL],
+			FunctionCallingMode.ANY,
+			"Extract module dependencies as a flat list of strings.",
+			undefined,
+			token,
+			"dependency_extraction",
+		);
+
+		if (result?.functionCall?.args) {
+			const args = result.functionCall.args as any;
+			return args.dependencies || [];
+		}
+
+		return [];
+	}
+
+	/**
+	 * Extracts entities (functions, classes, etc.) from code using AI Function Calling.
+	 */
+	public async extractEntitiesViaTool(
+		content: string,
+		modelName: string,
+		token?: vscode.CancellationToken,
+	): Promise<{ type: string; name: string }[]> {
+		const apiKey = this.apiKeyManager.getActiveApiKey();
+		if (!apiKey) throw new Error("No API Key available.");
+
+		const contents: Content[] = [
+			{
+				role: "user",
+				parts: [
+					{
+						text: `Identify all significant code entities (functions, classes, interfaces, enums, major variables) in the following code:
+${content.substring(0, 20000)}`,
+					},
+				],
+			},
+		];
+
+		const result = await this.generateFunctionCall(
+			apiKey,
+			modelName,
+			contents,
+			[ENTITY_EXTRACTION_TOOL],
+			FunctionCallingMode.ANY,
+			"Identify code entities and their types accurately.",
+			undefined,
+			token,
+			"entity_extraction",
+		);
+
+		if (result?.functionCall?.args) {
+			const args = result.functionCall.args as any;
+			return args.entities || [];
+		}
+
+		return [];
 	}
 
 	/**
@@ -816,26 +1045,7 @@ ${rawTextOutput}
 				: contentsText;
 
 		try {
-			// 1. Count input tokens
-			try {
-				inputTokensCount = await this.raceWithCancellation(
-					gemini.countGeminiTokens(apiKey, modelName, contents),
-					token,
-				);
-			} catch (e) {
-				if ((e as Error).message === ERROR_OPERATION_CANCELLED) {
-					status = "cancelled";
-					throw e;
-				}
-				console.warn(
-					`[AIRequestService] Failed to get accurate input token count for function call (${modelName}), falling back to estimate.`,
-					e,
-				);
-				inputTokensCount =
-					this.tokenTrackingService.estimateTokens(contentsText);
-			}
-
-			// 2. Generate function call with cancellation support
+			// 1. Generate function call with cancellation support
 			result = await this.raceWithCancellation(
 				gemini.generateFunctionCall(
 					apiKey,
@@ -850,37 +1060,66 @@ ${rawTextOutput}
 				token,
 			);
 
-			if (result.functionCall === null && !result.thought) {
-				status = "success"; // Successfully got a null response (no tool needed)
-				return result;
+			// 2. Extract token usage from metadata or fallback to counting/estimation
+			const anyResult = result as any;
+			if (anyResult.usageMetadata) {
+				inputTokensCount = anyResult.usageMetadata.promptTokenCount;
+				outputTokensCount = anyResult.usageMetadata.candidatesTokenCount;
+			} else {
+				// Fallback: If metadata is not available, count/estimate
+				// Count input tokens
+				try {
+					inputTokensCount = await this.raceWithCancellation(
+						gemini.countGeminiTokens(apiKey, modelName, contents),
+						token,
+					);
+				} catch (e) {
+					if ((e as Error).message === ERROR_OPERATION_CANCELLED) {
+						status = "cancelled";
+						throw e;
+					}
+					console.warn(
+						`[AIRequestService] Failed to get accurate input token count for function call (${modelName}), falling back to estimate.`,
+						e,
+					);
+					inputTokensCount =
+						this.tokenTrackingService.estimateTokens(contentsText);
+				}
+
+				if (result.functionCall !== null || result.thought) {
+					// Convert functionCall to string for output token estimation/counting
+					const functionCallString = JSON.stringify({
+						name: result.functionCall?.name,
+						args: result.functionCall?.args,
+						thought: result.thought,
+					});
+
+					// Count output tokens
+					try {
+						outputTokensCount = await this.raceWithCancellation(
+							gemini.countGeminiTokens(apiKey, modelName, [
+								{ role: "model", parts: [{ text: functionCallString }] },
+							]),
+							token,
+						);
+					} catch (e) {
+						if ((e as Error).message === ERROR_OPERATION_CANCELLED) {
+							status = "cancelled";
+							throw e;
+						}
+						outputTokensCount =
+							this.tokenTrackingService.estimateTokens(functionCallString);
+					}
+				}
 			}
 
-			// Convert functionCall to string for output token estimation/counting
-			const functionCallString = JSON.stringify({
-				name: result.functionCall?.name,
-				args: result.functionCall?.args,
-				thought: result.thought,
-			});
-
-			// 3. Count output tokens
-			try {
-				outputTokensCount = await this.raceWithCancellation(
-					gemini.countGeminiTokens(apiKey, modelName, [
-						{ role: "model", parts: [{ text: functionCallString }] },
-					]),
-					token,
-				);
-			} catch (e) {
-				if ((e as Error).message === ERROR_OPERATION_CANCELLED) {
-					status = "cancelled";
-					throw e;
-				}
-				outputTokensCount =
-					this.tokenTrackingService.estimateTokens(functionCallString);
+			if (result.functionCall === null && !result.thought) {
+				status = "success"; // Successfully got a null response (no tool needed)
+				return result as any;
 			}
 
 			status = "success";
-			return result;
+			return result as any;
 		} catch (error: any) {
 			if (error.message === ERROR_OPERATION_CANCELLED) {
 				status = "cancelled";

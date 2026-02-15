@@ -156,12 +156,20 @@
 
 .user-message {
 	padding: var(--message-padding);
-	background-color: var(--vscode-list-activeSelectionBackground);
+	background-color: color-mix(
+		in srgb,
+		var(--vscode-list-activeSelectionBackground),
+		transparent 40%
+	);
 	color: var(--vscode-list-activeSelectionForeground);
 	align-self: flex-end;
 	margin-left: auto;
 	min-height: fit-content;
-	border-color: var(--vscode-list-activeSelectionBackground);
+	border-color: color-mix(
+		in srgb,
+		var(--vscode-list-activeSelectionBackground),
+		transparent 40%
+	);
 	width: 90%;
 }
 

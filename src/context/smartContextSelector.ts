@@ -748,49 +748,26 @@ You will iterate using tools until you have enough information to call \`finish_
         *   Use **bold** for emphasis.
         *   Use \`code ticks\` for file paths, symbols, and commands.
         *   Use bullet lists (-) for multiple steps.
-    *   Example:
-        \`\`\`
-        [Tool Call] report_thought(thought="User mentioned **auth**. I should search for \`AuthService\` or \`LoginController\` using \`lookup_workspace_symbol\`.")
-        [Tool Call] lookup_workspace_symbol("AuthService")
-        \`\`\`
-2.  **Investigate (OPTIONAL)**: After explaining your strategy, you **MAY** use \`run_terminal_command\`, \`lookup_workspace_symbol\`, or \`get_file_symbols\` to verify file existence and content.
-    *   **Rule**: If you already have all the information you need (e.g., for a general question about your capabilities or if the relevant files are obvious), you can call \`finish_selection\` immediately.
+2.  **Relationship-First Strategy (PRIORITY)**: You MUST prioritize using structural relationship tools to explore the codebase. These provide "structural truth" which is more reliable than text matches.
+    *   **Symbol Lookup (GLOBAL)**: Use \`lookup_workspace_symbol\` as your first step to find where a specific symbol is defined.
+    *   **Graph Traversal (DEEP)**:
+        *   Use \`go_to_definition\` to see where a symbol is *defined*.
+        *   Use \`find_references\` to see where a symbol is *used* (callers).
+        *   Use \`get_implementations\` to find concrete classes/methods implementing an interface.
+        *   Use \`get_type_definition\` to see the definition of a type for a symbol.
+        *   Use \`get_call_hierarchy_incoming\`/\`get_call_hierarchy_outgoing\` to trace function calls.
+    *   **Primary Discovery**: These markers are your primary means of exploration. Only use generic searches (\`grep\`, \`find\`) as a fallback when the relationship graph is insufficient.
+3.  **Investigate (OPTIONAL)**: After explaining your strategy, you **MAY** use \`run_terminal_command\`, \`git\` tools, or \`get_file_symbols\` to verify file existence and content.
+    *   **Rule**: If you already have all the information you need, you can call \`finish_selection\` immediately.
     *   **Git Usage (POWERFUL)**: Use \`git\` (via terminal or \`get_git_diffs\`) to understand recent history and changes.
-        *   \`git status\`: See current state and modified files.
-        *   \`get_git_diffs(type='head')\`: Programmatic access to unstaged changes (Ground Truth for WIP).
-        *   \`get_git_diffs(type='staged')\`: See staged changes.
-        *   \`git log -n 5\`: See 5 most recent commit messages.
-        *   \`git ls-files\`: List all tracked files (respects .gitignore).
-3.  **Powerful Search**: Use \`grep\` or \`find\` scoped to source directories to locate code patterns. Commands are automatically filtered to exclude node_modules, dist, build artifacts, and binary files.
+4.  **Symbol Exploration (PREFERRED)**: Use \`get_file_symbols\` to see a file's structure without reading its entire content. This is much faster and context-efficient than reading the whole file.
+5.  **Search (FALLBACK)**: Use \`grep\` or \`find\` scoped to source directories ONLY if relationship tools do not provide enough context.
     *   \`grep -rn "pattern" src\`: Search for text in source files.
-    *   \`git ls-files | grep "pattern"\`: Find files by name (respects .gitignore).
-    *   \`find src -name "*pattern*"\`: Search for files by name in source directory.
-    *   **IMPORTANT**: Always scope searches to source directories (\`src/\`, \`lib/\`, etc.) instead of \`.\` (project root). Never search in \`node_modules\`, \`dist\`, \`out\`, \`build\`, or other generated directories.
-4.  **Symbol Exploration (PREFERRED)**: Use \`get_file_symbols\` to see a file's structure (functions, classes, variables) without reading its entire content. This is much faster and context-efficient than \`sed\`.
-5.  **Symbol Lookup (GLOBAL)**: Use \`lookup_workspace_symbol\` to find where a specific symbol is defined across the entire project.
-6.  **Graph Traversal & Type Exploration (DEEP)**:
-    *   Use \`find_references\` to see where a symbol is *used* (callers).
-    *   Use \`go_to_definition\` to see where a symbol is *defined*.
-    *   Use \`get_implementations\` to find all concrete classes/methods implementing an interface/abstract method.
-    *   Use \`get_type_definition\` to see the definition of a type for a symbol.
-    *   Use \`get_call_hierarchy_incoming\` and \`get_call_hierarchy_outgoing\` to trace function calls.
-    *   **Crucial**: These tools allow you to traverse the dependency graph and understand complex contracts. Use them to understand how components interact.
-7.  **Diagnostics & Git (GROUND TRUTH)**:
-    *   Use \`get_file_diagnostics\` to see compiler errors and warnings for a file. This is essential for identifying bugs or type issues.
-    *   Use \`get_git_diffs(type='staged'|'head')\` to quickly see current workspace changes.
-8.  **Strategic Independence (CRITICAL)**: You are provided with "Priority Files" (strong candidates). These are ONLY a starting guess. Do NOT assume they are correct or complete.
-    *   **Truth**: Search the codebase yourself to find the "ground truth" if the priority suggestions seem insufficient or incorrect.
-9.  **Budget-Conscious Discovery**: Be **careful** to avoid reading unnecessary code lines.
-    *   **Context is Expensive**: Every line you read consumes context tokens and slows down the analysis.
-    *   **Targeted Reading**: Use \`get_file_symbols\` FIRST to pinpoint specific areas. Never read an entire file if you only need one function.
-    *   **Performance**: Reading excessively large ranges (>1000 lines) is considered poor performance and should be avoided unless absolutely necessary for the task. Aim for surgical precision.
-10. **Loop Prevention**: Do not run the same command twice.
-11. **Read Specific Lines (MANDATORY)**: Use the \`read_file\` tool for ALL file reading.
-    *   **Workflow**: You MUST use \`get_file_symbols\` FIRST to understand the file structure and identify the EXACT line numbers you need before reading with \`read_file\`.
-    *   **Efficiency**: Reading >500 lines at once is discouraged unless you genuinely need high-level context for that entire block.
-    *   Example: \`read_file(path="src/file.ts", startLine=1, endLine=50)\`
-12. **No head/cat**: Do NOT use \`head\` or \`cat\` via \`run_terminal_command\`. Always use the \`read_file\` tool to avoid overwhelming the context.
-13. **Finalize**: Call \`finish_selection\` when you are confident you have what you need.
+    *   \`git ls-files | grep "pattern"\`: Find files by name.
+    *   **IMPORTANT**: Always scope searches to source directories instead of the root. Never search in \`node_modules\` or build directories.
+6.  **Budget-Conscious Discovery**: Be **careful** to avoid reading unnecessary code lines. Targeted reading is key—use \`get_file_symbols\` FIRST to pinpoint specific areas.
+7.  **Read Specific Lines (MANDATORY)**: Use the \`read_file\` tool for ALL file reading. You MUST use \`get_file_symbols\` FIRST to identify the EXACT line numbers you need.
+8.  **Finalize**: Call \`finish_selection\` when you are confident you have what you need.
 
 -- Project Context --
 Project Path: ${projectRoot.fsPath}

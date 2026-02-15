@@ -409,7 +409,15 @@ export async function generateFunctionCall(
 	systemInstruction?: string,
 	cachedContent?: any, // New parameter
 	token?: vscode.CancellationToken,
-): Promise<{ functionCall: FunctionCall | null; thought?: string }> {
+): Promise<{
+	functionCall: FunctionCall | null;
+	thought?: string;
+	usageMetadata?: {
+		promptTokenCount: number;
+		candidatesTokenCount: number;
+		totalTokenCount: number;
+	};
+}> {
 	if (token?.isCancellationRequested) {
 		geminiLogger.log(
 			modelName,
@@ -501,7 +509,11 @@ export async function generateFunctionCall(
 			if (thought) {
 				geminiLogger.log(modelName, `Received thought:`, thought);
 			}
-			return { functionCall, thought: thought.trim() };
+			return {
+				functionCall,
+				thought: thought.trim(),
+				usageMetadata: response.usageMetadata,
+			};
 		} else {
 			geminiLogger.warn(
 				modelName,
@@ -509,7 +521,11 @@ export async function generateFunctionCall(
 				response,
 			);
 			// Also return thought if no function call, though less useful for this specific method contract usually
-			return { functionCall: null, thought: thought.trim() };
+			return {
+				functionCall: null,
+				thought: thought.trim(),
+				usageMetadata: response.usageMetadata,
+			};
 		}
 	} catch (error: any) {
 		_handleGeminiError(error, modelName, "function call", true);

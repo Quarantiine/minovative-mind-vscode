@@ -80,7 +80,7 @@ If you are a developer looking to build from source or contribute, please refer 
   - **Skip Confirmation**: Use the "Fast Forward" toggle in the sidebar to bypass this step and execute plans automatically.
   - **Plan Labels**: AI-generated plan explanations are labeled with a "Generated Plan" badge in the chat, so you can easily identify them.
   - Monitor execution progress through VS Code notifications.
-  - **Smart Context**: The AI will automatically find and read relevant code snippets for each step of the plan using agentic investigation and symbol intelligence.
+  - **Smart Context & Structural Intelligence**: The AI will automatically find and read relevant code snippets for each step of the plan using agentic investigation and symbol intelligence. It prioritizes **structural relationships** (definitions, references) to understand your codebase as a cohesive system rather than just a collection of text files.
 - **AI-Driven Integrity Validation**: The system uses a dedicated **Integrity Validator** model (Flash Lite) to perform a final check on modified code. Instead of relying on rigid, error-prone heuristics, this move toward "AI-Trust" ensures that complete file rewrites and complex JSON objects are correctly recognized and applied without unnecessary failures.
 - **Reverting Changes**: The "Revert Changes" button, at the top right, allows you to undo AI-driven workflow actions instantly.
 - **Autonomous Self-Correction**: For errors introduced during execution, the AI initiates a "Self-Correction" cycle using real-time diagnostic feedback to repair the code autonomously.
@@ -97,7 +97,9 @@ When the AI modifies existing code, it uses a **Collision-Resistant Surgical Sea
 The protocol utilizes unique markers (`SEARC#H` / `REPLAC#E` / `===#===`) anchored to line starts to ensure precision, even when the markers themselves are mentioned in your source code documentation or discussions.
 
 - **Live Generation**: Code streams directly into the editor with real-time status updates ("Analyzing structure", "Applying code...").
-- **Smart Visual Flash**: Newly added or modified code is highlighted with a full-width green flash effect that tracks with your edits.
+- **Smart Visual Flash**: Newly added or modified code is highlighted with a full-width green flash effect. This highlight tracks with your code as you edit around it and intelligently removes itself only when you modify or delete the flashed lines.
+- **Narrative Change Summaries**: The chat interface now provides polished, single-sentence descriptions for every automated modification. These "Narrative Summaries" explain the _why_ and _how_ of a change in plain English.
+- **Precision Change Summaries**: Through AI-powered entity extraction (`ENTITY_EXTRACTION_TOOL`), the system accurately identifies exactly which functions, classes, and variables were modified. These details are reflected in technical diff summaries and commit messages, providing highly actionable feedback during your development cycle.
 - **AI-Driven Retries**: If a surgical update fails to parse correctly, the system automatically triggers an autonomous retry with clarification context, ensuring a high success rate for complex modifications.
 
 - **Live Generation**: Code generated for `create_file` and `modify_file` steps streams directly into the editor, providing immediate visual feedback.
@@ -109,7 +111,7 @@ The protocol utilizes unique markers (`SEARC#H` / `REPLAC#E` / `===#===`) anchor
     - **✓ (Success)**: Indicates a file was successfully generated or modified.
     - **⚠️ (Warning)**: Indicates a step encountered an issue but might be retrying or requires attention.
     - **Error (Red Text)**: Indicates a step has failed and requires manual intervention or self-correction.
-- **Active Exploration**: For complex queries, the **Context Agent** will automatically spring into action. It "investigates" your codebase by running safe terminal commands (`git ls-files`, `grep`, `find`, `sed`, `head`) to find relevant files that static analysis might miss. All search commands are automatically filtered to respect `.gitignore` rules and exclude build artifacts, dependencies, and binary files.
+- **Active Exploration**: For complex queries, the **Context Agent** will automatically spring into action. It "investigates" your codebase by running safe terminal commands (`git ls-files`, `grep`, `find`, `sed`, `head`) to find relevant files that static analysis might miss. It prioritizes a **Relationship-First strategy**, following the "structural graph" of your code (calling functions, checking types) to ensure absolute precision. All search commands are automatically filtered to respect `.gitignore` rules and exclude build artifacts, dependencies, and binary files.
 - **Transparent Logs**: You'll see "Context Agent" logs in the chat showing exactly what commands are being run (e.g., `grep -r "auth" src/`) and what they returned.
 - **Progressive Discovery**: In large projects, the Context Agent uses a "Progressive Discovery" strategy, starting with a truncated view of your project structure and discovering files on-the-fly to save tokens and improve performance.
 - **Error Awareness**: If you ask about an error or bug, the Context Agent automatically enters "Investigation Mode" to hunt down the root cause using the error message and real-time diagnostics.

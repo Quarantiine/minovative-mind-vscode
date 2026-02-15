@@ -13,7 +13,7 @@ A deeper analysis of the file structure, class responsibilities, and how differe
 ### Context Management (Project Understanding)
 
 - **Responsibility**: Gathers, processes, and synthesizes all relevant contextual data from the user's project and external sources to provide AI models with a deep and accurate understanding of the codebase and task at hand.
-- **Uses AI**: Yes (for smart context selection and sequential context processing/summarization, utilizing **Gemini Flash Lite** for the active investigation loops and **Progressive Discovery** for large projects)
+- **Uses AI**: Yes (for smart context selection and sequential context processing/summarization, utilizing **Gemini Flash Lite** for the active investigation loops, **Progressive Discovery** for large projects, and a **Relationship-First** exploration strategy)
 
 #### 1. Workspace File Scanning
 
@@ -58,9 +58,9 @@ This system ensures that diagnostic information, particularly 'Information' and 
 
 - **Responsibility**: Orchestrates the entire process of building highly relevant, semantic-aware contextual data for AI models. It prioritizes functional and semantic relationships between files using modern IDE symbol and reference APIs.
 - **Key Features**:
-  - **AI Prompt Engineering (`src/context/smartContextSelector.ts`)**: The AI-driven file selection mechanism is enhanced to focus on deeper semantic and functional relevance, utilizing comprehensive symbol information (including call hierarchy and reference data) and file content summaries.
-  - **Semantic Summarization (`src/context/fileContentProcessor.ts`)**: Files are intelligently summarized, capturing their core purpose and abstractions, making them more digestible and relevant for AI context building.
-  - **Sequential Project Context (`buildSequentialProjectContext`)**: Handles very large codebases by processing and summarizing files in batches using `SequentialContextService`.
+  - **AI Prompt Engineering (`src/context/smartContextSelector.ts`)**: The AI-driven file selection mechanism is enhanced to focus on deeper semantic and functional relevance. It specifically enforces a **Relationship-First Strategy**, prioritizing structural relationships (definitions, references, implementations) over generic text searches to ensure the AI operates on a reliable mental model of the codebase.
+  - **Semantic Summarization (`src/context/fileContentProcessor.ts`)**: Files are intelligently summarized, capturing their core purpose, complexity, and abstractions. This process now leverages **AI Function Calling** (`FILE_ANALYSIS_TOOL`) via `SequentialFileProcessor` to ensure structured and consistent metadata extraction across the project.
+  - **Sequential Project Context (`buildSequentialProjectContext`)**: Handles very large codebases by processing and summarizing files in batches using `SequentialContextService`. It integrates AI-powered **Dependency Extraction** (`DEPENDENCY_EXTRACTION_TOOL`) to build a reliable conceptual model of the codebase relationships.
   - **Priority Files Model**: The `SequentialContextService` automatically discovers uncommitted git files and passes them as priority context to the AI agent, replacing the former heuristic scoring system. This ensures the most relevant working-set files are always visible to the AI, even in truncated/optimized project views.
   - **File Line Counts**: Project structure views include per-file line counts in both optimized and full listing modes, giving the AI better awareness of file complexity during context selection.
   - **Context Gating & Error Rebuilding**: Implements user control over the file relevance engine. The `ContextService` handles various investigation states; notably, it now **automatically triggers a context rebuild** when ambient diagnostics show an Error. Ambient monitoring has been replaced with synchronous, trigger-based updates during plan execution and self-correction to ensure data consistency.
@@ -104,7 +104,7 @@ This system ensures that diagnostic information, particularly 'Information' and 
 #### 2. AI Request Orchestration & Robustness
 
 - **Responsibility**: Manages the overall process of making AI requests with a focus on reliability and efficiency, including retry logic, cancellation handling, parallel processing, and token usage reporting.
-- **Key Features**: Implements robust retry logic for transient errors, handles cancellation requests, orchestrates concurrent AI calls through `src/utils/parallelProcessor.ts`, and reports token usage to `src/services/tokenTrackingService.ts`. Internal backoff delays (e.g., for API quotas) are now responsive to global cancellation signals.
+- **AI Tool Implementation**: Centralizes high-level AI operations through structured function calling. This includes `analyzeFileViaTool`, `extractDependenciesViaTool`, `extractEntitiesViaTool`, and `extractSearchReplaceBlocksViaTool`, ensuring deterministic and schema-validated AI outputs for core system tasks.
 - **Function Calling Mode**: Accepts and forwards `functionCallingMode` to enforce specific modes (e.g., `FunctionCallingMode.ANY` for plan generation).
 - **API Key Dependency**: The `AIRequestService` has a dependency on `ApiKeyManager`. Methods such as `generateWithRetry` retrieve the active API key by interacting with `ApiKeyManager` to ensure the correct key is used for AI operations.
 - **Key Files**: `src/services/aiRequestService.ts` (`AIRequestService` class, `generateWithRetry`, `generateMultipleInParallel`, `generateInBatches`, `processFilesInParallel`)
@@ -186,6 +186,7 @@ The assembled payload (both the current turn and the previous history) must be t
 - **AI Interaction**: Manages core interaction with the AI model for initial generation and multi-step refinement.
 - **Advanced Configuration Support**: Accepts an optional `GenerationConfig` object to fine-tune AI model behavior (e.g., temperature, stop sequences) for specific generation tasks.
 - **Surgical Partial Updates (Function Calling)**: Utilizes `AIRequestService`'s `extractSearchReplaceBlocksViaTool` to robustly extract "Search and Replace" code blocks (`SEARC#H / ===#=== / REPLAC#E`) using **Function Calling (Tool Use)**. This replaces brittle regex parsing with structured, deterministic AI extraction (`SEARCH_REPLACE_EXTRACTION_TOOL`). A new **Output Integrity Validation** phase ensures that AI-generated snippets are complete and correctly formatted before being applied, prioritizing AI-driven consensus over rigid heuristics.
+- **Narrative Diff Summarization**: After applying changes, the system generates a professional, single-sentence **Narrative Summary** (powered by **Gemini Flash Lite**) that describes the modification in context of the user's intent, replacing raw technical diff summaries in the chat log and change logger.
 - **Key Files**: `src/ai/enhancedCodeGeneration.ts` (`EnhancedCodeGenerator` class), `src/services/aiRequestService.ts`, `src/services/searchReplaceService.ts`, `src/services/codeValidationService.ts`, `src/utils/codeAnalysisUtils.ts`, `src/utils/codeUtils.ts`
 
 ### Plan & Workflow Management
@@ -312,7 +313,8 @@ The assembled payload (both the current turn and the previous history) must be t
 
 #### 4. File Change Summarization Utilities
 
-- **Responsibility**: Generates human-readable summaries and precise diffs of file modifications using the `diff-match-patch` library, now enhanced with granular entity analysis for generating more precise change summaries. These summaries are crucial for logging changes, user feedback, and re-contextualizing AI.
+- **Responsibility**: Generates human-readable summaries and precise diffs of file modifications using the `diff-match-patch` library.
+- **Precision Entity Extraction**: Now enhanced with granular, AI-powered entity analysis (`ENTITY_EXTRACTION_TOOL`). This allows for generating highly precise change summaries by identifying exactly which functions, classes, or variables were added, modified, or removed, providing much richer context for commit messages and plan execution logs.
 - **Key Methods**: `generateFileChangeSummary`, `analyzeDiff`, `generatePreciseTextEdits`, `parseDiffHunkToTextEdits`, `applyDiffHunkToDocument`.
 - **Key Files**: `src/utils/diffingUtils.ts`
 

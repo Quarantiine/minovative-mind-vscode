@@ -30,7 +30,10 @@ import { getSymbolsInDocument } from "./symbolService";
 import { SearchReplaceService } from "./searchReplaceService";
 import { ExplorationService } from "./ExplorationService";
 import { GatekeeperService } from "./GatekeeperService";
-import { validateOutputIntegrity } from "../ai/prompts/lightweightPrompts";
+import {
+	validateOutputIntegrity,
+	generateNarrativeDiffSummary,
+} from "../ai/prompts/lightweightPrompts";
 
 export class PlanExecutorService {
 	private commandExecutionTerminals: vscode.Terminal[] = [];
@@ -1197,6 +1200,16 @@ export class PlanExecutorService {
 					existingContent,
 					newContentAfterApply,
 					step.step.path,
+					this.provider.aiRequestService,
+				);
+
+				const narrativeSummary = await generateNarrativeDiffSummary(
+					step.step.path,
+					summary,
+					formattedDiff,
+					step.step.generate_prompt ?? "Update file content",
+					this.provider.aiRequestService,
+					combinedToken,
 				);
 
 				// Replaced _logStepProgress (Modification success)
@@ -1206,10 +1219,9 @@ export class PlanExecutorService {
 					)}\``,
 				);
 
-				// 2. In the existing file modification path (the `try` block), update the `chatMessageText` string to use the format: `Step ${currentStepNumber}/${totalSteps}: Modified file: \`${path.basename(step.step.path)}\`\n\n${summary}`.
 				const chatMessageText = `Step ${currentStepNumber}/${totalSteps}: Modified file: \`${path.basename(
 					step.step.path,
-				)}\`\n\n${summary}`;
+				)}\`\n\n${narrativeSummary}`;
 				this._postChatUpdateForPlanExecution({
 					type: "appendRealtimeModelMessage",
 					value: {
@@ -1221,7 +1233,7 @@ export class PlanExecutorService {
 				changeLogger.logChange({
 					filePath: step.step.path,
 					changeType: "modified",
-					summary,
+					summary: narrativeSummary,
 					diffContent: formattedDiff,
 					timestamp: Date.now(),
 					originalContent: existingContent,
@@ -1243,6 +1255,16 @@ export class PlanExecutorService {
 					"",
 					cleanedDesiredContent,
 					step.step.path,
+					this.provider.aiRequestService,
+				);
+
+				const narrativeSummary = await generateNarrativeDiffSummary(
+					step.step.path,
+					summary,
+					formattedDiff,
+					step.step.generate_prompt ?? "Create new file",
+					this.provider.aiRequestService,
+					combinedToken,
 				);
 
 				// Replaced _logStepProgress (Creation success)
@@ -1254,7 +1276,7 @@ export class PlanExecutorService {
 
 				const chatMessageText = `Step ${currentStepNumber}/${totalSteps}: Created file: \`${path.basename(
 					step.step.path,
-				)}\`\n\n${summary}`;
+				)}\`\n\n${narrativeSummary}`;
 				this._postChatUpdateForPlanExecution({
 					type: "appendRealtimeModelMessage",
 					value: {
@@ -1266,7 +1288,7 @@ export class PlanExecutorService {
 				changeLogger.logChange({
 					filePath: step.step.path,
 					changeType: "created",
-					summary,
+					summary: narrativeSummary,
 					diffContent: formattedDiff,
 					timestamp: Date.now(),
 					originalContent: "",
@@ -1455,125 +1477,118 @@ export class PlanExecutorService {
 			/* Search and Replace Block Logic */
 			const rawOutput = cleanCodeOutput(modifiedResult.content);
 
-			// Check if the output contains SEARC#H/REPLAC#E markers (must be at start of lines)
-			const hasSearchReplaceMarkers = rawOutput.match(/^<{7}\s*SEARC#H/m);
+			const blocks = searchReplaceService.parseBlocks(rawOutput);
+			if (blocks.length > 0) {
+				try {
+					newContent = searchReplaceService.applyBlocks(
+						originalContent,
+						blocks,
+					);
+					success = true;
+				} catch (error: any) {
+					if (error.name === "AmbiguousMatchError") {
+						const ambiguousBlock = error.ambiguousBlock;
+						const lines = originalContent.split("\n");
+						const searchLines = ambiguousBlock.split("\n");
+						const matchIndices: number[] = [];
 
-			if (hasSearchReplaceMarkers) {
-				const blocks = searchReplaceService.parseBlocks(rawOutput);
-				if (blocks.length > 0) {
-					try {
-						newContent = searchReplaceService.applyBlocks(
-							originalContent,
-							blocks,
-						);
-						success = true;
-					} catch (error: any) {
-						if (error.name === "AmbiguousMatchError") {
-							const ambiguousBlock = error.ambiguousBlock;
-							const lines = originalContent.split("\n");
-							const searchLines = ambiguousBlock.split("\n");
-							const matchIndices: number[] = [];
-
-							// Find all occurrences manually to report line numbers
-							for (let i = 0; i <= lines.length - searchLines.length; i++) {
-								let match = true;
-								for (let j = 0; j < searchLines.length; j++) {
-									if (lines[i + j].trim() !== searchLines[j].trim()) {
-										match = false;
-										break;
-									}
-								}
-								if (match) {
-									matchIndices.push(i + 1); // 1-based line numbers
+						// Find all occurrences manually to report line numbers
+						for (let i = 0; i <= lines.length - searchLines.length; i++) {
+							let match = true;
+							for (let j = 0; j < searchLines.length; j++) {
+								if (lines[i + j].trim() !== searchLines[j].trim()) {
+									match = false;
+									break;
 								}
 							}
+							if (match) {
+								matchIndices.push(i + 1); // 1-based line numbers
+							}
+						}
 
-							console.warn(
-								`[PlanExecutor] Ambiguous match detected for ${step.step.path}. Matches at lines: ${matchIndices.join(", ")}. triggering AI retry.`,
-							);
+						console.warn(
+							`[PlanExecutor] Ambiguous match detected for ${step.step.path}. Matches at lines: ${matchIndices.join(", ")}. triggering AI retry.`,
+						);
 
-							if (attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
-								attempt++;
+						if (attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
+							attempt++;
 
-								// Retrieve symbols to add context
-								let symbolContext = "";
-								try {
-									const symbols = await getSymbolsInDocument(fileUri);
-									if (symbols) {
-										const matchesWithSymbols = matchIndices.map((line) => {
-											const findSymbolForLine = (
-												syms: vscode.DocumentSymbol[],
-												targetLine: number,
-											): string | undefined => {
-												for (const sym of syms) {
-													if (
-														targetLine >= sym.range.start.line + 1 &&
-														targetLine <= sym.range.end.line + 1
-													) {
-														if (sym.children && sym.children.length > 0) {
-															const childFound = findSymbolForLine(
-																sym.children,
-																targetLine,
-															);
-															if (childFound) {
-																return `${sym.name} > ${childFound}`;
-															}
+							// Retrieve symbols to add context
+							let symbolContext = "";
+							try {
+								const symbols = await getSymbolsInDocument(fileUri);
+								if (symbols) {
+									const matchesWithSymbols = matchIndices.map((line) => {
+										const findSymbolForLine = (
+											syms: vscode.DocumentSymbol[],
+											targetLine: number,
+										): string | undefined => {
+											for (const sym of syms) {
+												if (
+													targetLine >= sym.range.start.line + 1 &&
+													targetLine <= sym.range.end.line + 1
+												) {
+													if (sym.children && sym.children.length > 0) {
+														const childFound = findSymbolForLine(
+															sym.children,
+															targetLine,
+														);
+														if (childFound) {
+															return `${sym.name} > ${childFound}`;
 														}
-														return sym.name;
 													}
+													return sym.name;
 												}
-												return undefined;
-											};
-											const foundSymbol = findSymbolForLine(symbols, line);
-											return foundSymbol
-												? `Line ${line} (inside \`${foundSymbol}\`)`
-												: `Line ${line}`;
-										});
-										symbolContext = matchesWithSymbols.join(", ");
-									} else {
-										symbolContext = matchIndices
-											.map((l) => `Line ${l}`)
-											.join(", ");
-									}
-								} catch (e) {
-									console.warn(
-										"Failed to retrieve symbols for ambiguity context:",
-										e,
-									);
+											}
+											return undefined;
+										};
+										const foundSymbol = findSymbolForLine(symbols, line);
+										return foundSymbol
+											? `Line ${line} (inside \`${foundSymbol}\`)`
+											: `Line ${line}`;
+									});
+									symbolContext = matchesWithSymbols.join(", ");
+								} else {
 									symbolContext = matchIndices
 										.map((l) => `Line ${l}`)
 										.join(", ");
 								}
-
-								clarificationContext += `\n\n[AMBIGUITY ERROR]: The SEARC#H block you provided is ambiguous. It matches multiple locations in the file: ${symbolContext}.\n\nAMBIGUOUS BLOCK:\n\`\`\`\n${ambiguousBlock}\n\`\`\`\nPlease provide a new SEARC#H block that includes more unique surrounding context to uniquely identify the intended location.`;
-								await this._delay(1000, combinedToken);
-								continue;
-							} else {
-								throw new Error(
-									`Ambiguous match found at lines ${matchIndices.join(", ")} and max retries reached.`,
+							} catch (e) {
+								console.warn(
+									"Failed to retrieve symbols for ambiguity context:",
+									e,
 								);
+								symbolContext = matchIndices.map((l) => `Line ${l}`).join(", ");
 							}
-						} else if (error.name === "SearchBlockNotFoundError") {
-							const missingBlock = error.missingBlock;
-							console.warn(
-								`[PlanExecutor] SEARC#H block not found for ${step.step.path}. triggering AI retry.`,
-							);
 
-							if (attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
-								attempt++;
-								clarificationContext += `\n\n[NOT FOUND ERROR]: The SEARC#H block you provided was NOT FOUND in the file.\n\nMISSING BLOCK:\n\`\`\`\n${missingBlock}\n\`\`\`\nPlease review the file content and provide a SEARC#H block that EXACTLY matches the existing code (including whitespace and comments).`;
-								await this._delay(1000, combinedToken);
-								continue;
-							} else {
-								throw new Error(
-									`SEARC#H block not found and max retries reached.`,
-								);
-							}
+							clarificationContext += `\n\n[AMBIGUITY ERROR]: The SEARC#H block you provided is ambiguous. It matches multiple locations in the file: ${symbolContext}.\n\nAMBIGUOUS BLOCK:\n\`\`\`\n${ambiguousBlock}\n\`\`\`\nPlease provide a new SEARC#H block that includes more unique surrounding context to uniquely identify the intended location.`;
+							await this._delay(1000, combinedToken);
+							continue;
 						} else {
 							throw new Error(
-								`Failed to apply SEARC#H/REPLAC#E blocks: ${error.message}`,
+								`Ambiguous match found at lines ${matchIndices.join(", ")} and max retries reached.`,
 							);
 						}
+					} else if (error.name === "SearchBlockNotFoundError") {
+						const missingBlock = error.missingBlock;
+						console.warn(
+							`[PlanExecutor] SEARC#H block not found for ${step.step.path}. triggering AI retry.`,
+						);
+
+						if (attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
+							attempt++;
+							clarificationContext += `\n\n[NOT FOUND ERROR]: The SEARC#H block you provided was NOT FOUND in the file.\n\nMISSING BLOCK:\n\`\`\`\n${missingBlock}\n\`\`\`\nPlease review the file content and provide a SEARC#H block that EXACTLY matches the existing code (including whitespace and comments).`;
+							await this._delay(1000, combinedToken);
+							continue;
+						} else {
+							throw new Error(
+								`SEARC#H block not found and max retries reached.`,
+							);
+						}
+					} else {
+						throw new Error(
+							`Failed to apply SEARC#H/REPLAC#E blocks: ${error.message}`,
+						);
 					}
 				}
 			} else {
@@ -1674,6 +1689,16 @@ export class PlanExecutorService {
 				originalContent,
 				newContentAfterApply,
 				step.step.path,
+				this.provider.aiRequestService,
+			);
+
+			const narrativeSummary = await generateNarrativeDiffSummary(
+				step.step.path,
+				summary,
+				formattedDiff,
+				step.step.modification_prompt,
+				this.provider.aiRequestService,
+				combinedToken,
 			);
 
 			// Update the _logStepProgress message
@@ -1686,7 +1711,7 @@ export class PlanExecutorService {
 			// Update the chatMessageText string format
 			const chatMessageText = `Step ${currentStepNumber}/${totalSteps}: Modified file: \`${path.basename(
 				step.step.path,
-			)}\`\n\n${summary}`;
+			)}\`\n\n${narrativeSummary}`;
 			this._postChatUpdateForPlanExecution({
 				type: "appendRealtimeModelMessage",
 				value: {
@@ -1698,7 +1723,7 @@ export class PlanExecutorService {
 			changeLogger.logChange({
 				filePath: step.step.path,
 				changeType: "modified",
-				summary,
+				summary: narrativeSummary,
 				diffContent: formattedDiff,
 				timestamp: Date.now(),
 				originalContent: originalContent,

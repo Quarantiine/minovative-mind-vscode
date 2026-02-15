@@ -193,15 +193,13 @@ CRITICAL - CONTEXT SNIPPETS:
 - Judge completeness based ONLY on the internal structure of the AI-GENERATED OUTPUT.
 - If the output is a JSON file, check if it is a syntactically complete JSON object (properly closed with }). Do not worry if it doesn't contain all the data from the context snippet - the context snippet is just a preview.
 
-CRITICAL BOOELAN MAPPING:
+CRITICAL - SEARCH/REPLACE BLOCKS:
+- If the output correctly uses the SEARC#H/REPLAC#E marker format (<<<<<<< SEARC#H, ===#===, >>>>>>> REPLAC#E), it is **BY DEFINITION** a valid partial update.
+- **NEVER** flag an output as a fragment if it contains valid SEARC#H/REPLAC#E blocks, even if it only modifies a small part of the file.
+
+CRITICAL BOOLEAN MAPPING:
 - If you determine the output is VALID, you MUST set "isValid" to true.
 - If you determine the output is a FRAGMENT or MALFORMED, you MUST set "isValid" to false.
-
-RULES:
-- A result is a FRAGMENT if it contains "..." or "// ... rest of code" placeholders, or if it abruptly cuts off mid-sentence/mid-bracket without markers.
-- A result is MALFORMED if it attempts to use Search/Replace markers (<<<<<<< SEARC#H, ===#===, >>>>>>> REPLAC#E) but they are broken or missing parts.
-- A result is VALID if it correctly uses SEARC#H/REPLAC#E blocks OR if it provides a **Full File Implementation**.
-- **Full File Implementation**: If the output is a perfectly structured, closed JSON object/array, or a complete script/class that makes sense as a replacement for the file, it is VALID even if it doesn't use Search/Replace markers.
 `;
 
 	const userPrompt = `
@@ -270,5 +268,82 @@ ${originalContent.length > 500 ? originalContent.substring(originalContent.lengt
 			reason: `Validation failed: ${error.message}. Defaulting to valid for safety.`,
 			type: "valid",
 		};
+	}
+}
+
+/**
+ * Transforms a technical diff into a concise, professional narrative summary using the Flash Lite model.
+ * @param filePath Path of the file being changed.
+ * @param technicalSummary A low-level technical summary of changes (e.g. "added function X, modified Y").
+ * @param diffContent The actual diff content.
+ * @param intentPrompt The original user instruction/intent for this change.
+ * @param aiRequestService Service for making AI calls.
+ * @param token Cancellation token.
+ * @returns A polished narrative summary or the original technical summary as fallback.
+ */
+export async function generateNarrativeDiffSummary(
+	filePath: string,
+	technicalSummary: string,
+	diffContent: string,
+	intentPrompt: string,
+	aiRequestService: AIRequestService,
+	token?: vscode.CancellationToken,
+): Promise<string> {
+	const filename = filePath.split(/[/\\]/).pop() || filePath;
+
+	const systemInstruction = `
+You are an expert technical writer using the Gemini Flash Lite model.
+Your task is to transform a technical diff and its raw summary into a single, professional narrative sentence.
+
+FORMAT:
+The [filename] update [does something] by [doing something else]...
+
+RULES:
+1. Be concise and professional.
+2. Focus on the 'why' and the 'how' based on the user's intent and the diff.
+3. Use the provided filename: "${filename}".
+4. Output ONLY the narrative summary sentence. No preamble or conversational filler.
+`;
+
+	const userPrompt = `
+FILE: ${filePath}
+USER INTENT: ${intentPrompt}
+TECHNICAL SUMMARY: ${technicalSummary}
+
+DIFF CONTENT:
+${diffContent}
+
+NARRATIVE SUMMARY:
+`;
+
+	try {
+		const result = await aiRequestService.generateWithRetry(
+			[{ text: userPrompt }],
+			DEFAULT_FLASH_LITE_MODEL,
+			undefined,
+			"narrative diff summarization",
+			undefined,
+			undefined,
+			token,
+			false,
+			systemInstruction,
+		);
+
+		if (token?.isCancellationRequested) {
+			throw new Error(ERROR_OPERATION_CANCELLED);
+		}
+
+		if (!result || result.toLowerCase().startsWith("error:")) {
+			return technicalSummary;
+		}
+
+		return result.trim();
+	} catch (error: any) {
+		console.error("Error generating narrative diff summary:", error);
+		if (error.message === ERROR_OPERATION_CANCELLED) {
+			throw error;
+		}
+		// Fallback to technical summary on error
+		return technicalSummary;
 	}
 }

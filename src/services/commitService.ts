@@ -121,6 +121,7 @@ export class CommitService {
 					oldContent,
 					newContent,
 					filePath,
+					this.provider.aiRequestService,
 				);
 				fileSummaries.push(summary);
 			}

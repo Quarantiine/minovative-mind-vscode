@@ -747,9 +747,15 @@ export function appendMessage(
 				appState.currentAiMessageContentElement = null;
 				appState.currentAccumulatedText = "";
 
-				const sanitizedText = sanitizeAiResponse(text);
-				const renderedHtml = md.render(sanitizedText);
-				textElement.innerHTML = renderedHtml;
+				if (className.includes("user-message")) {
+					// Render user messages as plain text to follow user request
+					textElement.textContent = text;
+					textElement.style.whiteSpace = "pre-wrap";
+				} else {
+					const sanitizedText = sanitizeAiResponse(text);
+					const renderedHtml = md.render(sanitizedText);
+					textElement.innerHTML = renderedHtml;
+				}
 				// Store the original markdown text for copy functionality
 				textElement.dataset.originalMarkdown = text;
 

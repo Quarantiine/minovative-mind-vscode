@@ -61,6 +61,7 @@ export async function generateFileChangeSummary(
 	oldContent: string,
 	newContent: string,
 	filePath: string,
+	aiRequestService?: any,
 ): Promise<{
 	summary: string;
 	addedLines: string[];
@@ -168,10 +169,39 @@ export async function generateFileChangeSummary(
 	const removedEntities: Map<string, string[]> = new Map();
 
 	// Helper to extract entities from a given content string
-	const collectEntities = (
+	const collectEntities = async (
 		content: string,
 		targetMap: Map<string, string[]>,
 	) => {
+		if (content.trim().length === 0) {
+			return;
+		}
+
+		// Try AI-based entity extraction if service is available
+		if (aiRequestService) {
+			try {
+				const entities = await aiRequestService.extractEntitiesViaTool(
+					content,
+					filePath,
+				);
+				for (const entity of entities) {
+					if (!targetMap.has(entity.type)) {
+						targetMap.set(entity.type, []);
+					}
+					const namesForType = targetMap.get(entity.type)!;
+					if (!namesForType.includes(entity.name)) {
+						namesForType.push(entity.name);
+					}
+				}
+				return; // AI succeeded
+			} catch (error) {
+				console.warn(
+					`[diffingUtils] AI entity extraction failed for ${filePath}. Falling back to regex.`,
+					error,
+				);
+			}
+		}
+
 		let match;
 
 		// Helper to add entity, ensuring uniqueness within its type list
@@ -275,8 +305,8 @@ export async function generateFileChangeSummary(
 		exportLineRegex.lastIndex = 0;
 	};
 
-	collectEntities(addedContentFlat, addedEntities);
-	collectEntities(removedContentFlat, removedEntities);
+	await collectEntities(addedContentFlat, addedEntities);
+	await collectEntities(removedContentFlat, removedEntities);
 
 	const summaries: string[] = [];
 

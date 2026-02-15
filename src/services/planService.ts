@@ -602,6 +602,10 @@ export class PlanService {
 						},
 					},
 					token,
+					false,
+					`**CURRENT PHASE: CONTEXTUAL PLANNING**\nYou are currently generating a detailed textual plan explanation in response to a \`/plan\` command. 
+DO NOT direct the user to use the \`/plan\` command again. 
+Focus entirely on explaining the steps required to fulfill the following request: ${config.userRequest || config.editorContext?.instruction || "Custom Request"}`,
 				);
 
 			if (token.isCancellationRequested) {

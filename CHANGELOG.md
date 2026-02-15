@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.56.0] - February 15, 2026
+
+### AI Tool Calling for Project Intelligence & Entity Extraction
+
+This major update migrates core file analysis and dependency tracking to structured AI function calling and introduces AI-powered entity extraction for more precise change summaries.
+
+- **AI Tool Calling for Project Intelligence**:
+  - Migrated `SequentialFileProcessor` to use structured AI tool calls (`FILE_ANALYSIS_TOOL`, `DEPENDENCY_EXTRACTION_TOOL`).
+  - Improved precision in project-wide file analysis, complexity estimation, and dependency mapping.
+  - Removed deprecated internal prompt parsers, centralizing logic in `AIRequestService`.
+- **Structured Entity Extraction in Diffs**:
+  - Enhanced `generateFileChangeSummary` to utilize AI-powered entity extraction (`ENTITY_EXTRACTION_TOOL`).
+  - Automatically identifies added, modified, or removed functions, classes, and variables.
+  - Integrated these precise summaries into `PlanExecutorService` and `CommitService` for richer feedback.
+- **Improved Code Quality**:
+  - Addressed multiple linting and syntax issues across `SequentialFileProcessor`, `AIRequestService`, and `diffingUtils`.
+  - Maintained robust regex fallbacks for maximum resilience.
+
+## [2.55.2] - February 15, 2026
+
+### Narrative Change Summaries & Relationship-First Context Strategy
+
+This update introduces polished, AI-driven narrative summaries for plan execution steps and optimizes the Context Agent to prioritize structural relationships during codebase exploration.
+
+- **Narrative Change Summaries**:
+  - Implemented `generateNarrativeDiffSummary` in `lightweightPrompts.ts` using Gemini Flash Lite to transform technical diffs and technical summaries into single, professional narrative sentences.
+  - `PlanExecutorService` now uses these narrative summaries for real-time model messages and change logging, providing much clearer feedback on automated modifications.
+- **Relationship-First Context Strategy**:
+  - Updated `smartContextSelector.ts` to enforce a "Relationship-First" exploration strategy. The agent now prioritizes structural truth by using tools like `go_to_definition`, `find_references`, and `lookup_workspace_symbol` before falling back to generic text searches (`grep`, `find`).
+  - This significantly improves accuracy by leveraging the IDE's internal symbol graph for more direct and relevant discovery.
+- **Improved Plan Logic**:
+  - Enhanced `PlanExecutorService` with a more robust `_handleModifyFileStep` that handles missing files by falling back to creation and includes better telemetry for skipped modifications.
+
 ## [2.55.1] - February 15, 2026
 
 ### Robust Search/Replace Markers & Relaxed Validation Logic
