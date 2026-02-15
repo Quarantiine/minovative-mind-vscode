@@ -26,7 +26,7 @@ export async function _performModification(
 	if (isMergeOperation) {
 		// This is the core enhancement: detailed merge instructions for the AI
 		specializedMergeInstruction = `
-            You are currently resolving Git merge conflicts. Your absolute primary goal is to produce a single, coherent, and syntactically correct file with **ALL** merge conflict markers (\`<<<<<<<\`, \`=======\`, \`>>>>>>>\`, \`|||||||\`) completely removed.
+            You are currently resolving Git merge conflicts. Your absolute primary goal is to produce a single, coherent, and syntactically correct file with **ALL** merge conflict markers (\`<<<<<<<\`, \`=======\`, \`>>>>>>>\`, \`|||||||\`) completely removed. Note that these Git markers are DIFFERENT from the SEARC#H/REPLAC#E markers used for file modifications.
 
             When analyzing conflict blocks:
             -   **Prioritize Semantic Coherence:** Understand the purpose of the code and how the changes from both sides (HEAD and incoming) might interact.

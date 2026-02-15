@@ -55,7 +55,11 @@ export function handleCodeFileStreamStart(
 		) as HTMLElement | null;
 		if (statusIndicator) {
 			const displayStatus = status || "Generating";
-			statusIndicator.innerHTML = `${displayStatus}<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>`;
+			if (displayStatus === "✓" || displayStatus === "✔") {
+				statusIndicator.innerHTML = displayStatus;
+			} else {
+				statusIndicator.innerHTML = `${displayStatus}<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>`;
+			}
 		}
 		return;
 	}
@@ -77,10 +81,15 @@ export function handleCodeFileStreamStart(
 	const footer = document.createElement("div");
 	footer.classList.add("code-file-stream-footer");
 	const displayStatus = status || "Generating";
+	const statusContent =
+		displayStatus === "✓" || displayStatus === "✔"
+			? displayStatus
+			: `${displayStatus}<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>`;
+
 	footer.innerHTML = `
         <span class="file-path">${filePath}</span>
         <span class="status-indicator">
-            <span class="loading-dots">${displayStatus}<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>
+            <span class="loading-dots">${statusContent}</span>
         </span>
     `;
 	container.appendChild(footer);

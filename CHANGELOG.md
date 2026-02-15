@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.55.0] - February 15, 2026
+
+### Robust Search/Replace Markers & Unified Parsing
+
+This release hardens the code modification pipeline by introducing unique, collision-resistant markers and a more deterministic parsing architecture.
+
+- **Refined Marker Protocol**:
+  - Updated Search/Replace markers to `SEARC#H`, `REPLAC#E`, and the new `===#===` separator. This ensures maximum uniqueness and prevents collisions with source code keywords or Git merge markers.
+- **Strict Parsing Enforcement**:
+  - `SearchReplaceService` now strictly requires the new marker format. Old formats are explicitly rejected to prevent accidental parsing errors.
+  - `PlanExecutorService` and `EnhancedCodeGenerator` now utilize a unified validation loop that triggers autonomous AI retries if malformed or legacy markers are detected.
+- **Enhanced AI Prompting**:
+  - All system prompts and extraction tools have been updated to enforce the new `SEARC#H / ===#=== / REPLAC#E` protocol, ensuring consistent AI behavior across all models.
+- **Documentation Alignment**:
+  - Fully updated codebase documentation, including `ARCHITECTURE.md`, `WORKFLOW_LIFECYCLE.md`, and `USER_GUIDE.md`, to reflect the new production standards.
+
 ## [2.54.1] - February 14, 2026
 
 ### Enhanced Agent Execution, Decoupled Context, and Security-Aware Sanitization
@@ -91,7 +107,7 @@ Introduced a structured self-correction workflow and a diagnostic feedback loop 
 
 - **Structured Self-Correction**: Implemented a dedicated agentic cycle to automatically detect, investigate, and repair issues introduced during plan execution.
 - **Diagnostic Feedback Loop**: Integrated `warmUpDiagnostics` to programmatically trigger language server scans after modifications, feeding the results back into the AI for verification and repair.
-- **Search/Replace Integration**: Migrated code modification flows to use surgical Search/Replace blocks (`<<<<<<< SEARCH ... >>>>>>> REPLACE`) for faster, more token-efficient, and less error-prone updates.
+- **Search/Replace Integration**: Migrated code modification flows to use surgical Search/Replace blocks (`<<<<<<< SEARC#H ... ===#=== ... >>>>>>> REPLAC#E`) for faster, more token-efficient, and less error-prone updates.
 - **Enhanced Context Tools**: Whitelisted `sed`, `head`, `tail`, `wc`, and `file` for the Context Agent, enabling high-performance file inspection without reading full contents.
 - **Improved Token Statistics**: Updated the sidebar to display failed request counts and model-specific usage percentages for better transparency.
 

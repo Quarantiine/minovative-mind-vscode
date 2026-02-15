@@ -48,6 +48,8 @@ CRITICAL INSTRUCTION: Filter the history strictly based on the CURRENT USER REQU
 1. If the CURRENT USER REQUEST explicitly targets a specific topic, ONLY include relevant historical facts, context, or previous outputs in the summary.
 2. If the CURRENT USER REQUEST is general, summarize the *entire* provided history cohesively.
 3. The resulting summary must be brief, factual (no opinions), and structured clearly. Do not include introductory phrases.
+4. IMPORTANT: Clearly label this as historical context. The main AI agent will use this as supplementary background, and it should NOT override the user's current intent.
+5. TOPIC SHIFT: If the CURRENT USER REQUEST represents a significant shift in topic (e.g. user asks for something unrelated to previous discussion), return a minimal or empty summary emphasizing that the previous context is no longer relevant.
 `;
 
 	const userPrompt = `
@@ -186,7 +188,7 @@ Your task is to determine if the provided AI-generated code modification is a **
 
 RULES:
 - A result is a FRAGMENT if it contains only a small part of the file without Search/Replace markers, OR if it contains "..." or "// ... rest of code" placeholders that suggest omission.
-- A result is MALFORMED if it attempts to use Search/Replace markers (<<<<<<< SEARCH, =======, >>>>>>> REPLACE) but they are broken, missing parts, or incorrectly ordered.
+- A result is MALFORMED if it attempts to use Search/Replace markers (<<<<<<< SEARC#H, ===#===, >>>>>>> REPLAC#E) but they are broken, missing parts, or incorrectly ordered.
 - A result is VALID if it correctly uses Search/Replace blocks OR if it provides the full, complete file content (as long as it doesn't look like a fragment).
 `;
 

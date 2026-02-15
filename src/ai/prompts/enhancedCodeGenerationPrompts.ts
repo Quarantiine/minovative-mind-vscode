@@ -155,6 +155,9 @@ export function getEnhancedGenerationSystemInstruction(
 	requirementsList.push(
 		"**Security**: Implement secure coding practices meticulously, identifying and addressing potential vulnerabilities relevant to the language and context.",
 	);
+	requirementsList.push(
+		"**Focus on Current Intent**: Prioritize the current modification instructions over historical context or existing coding patterns if they conflict. Your primary goal is to fulfill the *current* user request.",
+	);
 	const allowedCommands = SafeCommandExecutor.getAllowedCommands().join(", ");
 	requirementsList.push(
 		`**Command Execution Format (RunCommandStep)**: For any \`RunCommandStep\` action, the \`command\` property MUST be an object \`{ executable: string, args: string[], usesShell?: boolean }\`. The \`executable\` should be the command name (e.g., 'npm', 'git') and \`args\` an array of its arguments (e.g., ['install', '--save-dev', 'package']). 
@@ -245,24 +248,27 @@ export function getEnhancedModificationSystemInstruction(
 		"**FINAL OUTPUT FORMAT: ABSOLUTELY CRITICAL**: You MUST use the **Search and Replace** block format for all modifications. **DO NOT provide only a partial code fragment or snippet without these markers.** If you do not use the markers, your changes will be REJECTED.",
 	);
 	requirementsList.push(
+		"**LEGACY FORMAT FORBIDDEN**: You MUST NOT use the old `SEARCH`/`REPLACE` or `=======` markers. Any output containing `SEARCH`, `REPLACE` (un-hashed), or the plain `=======` separator for surgical edits is STRICTLY FORBIDDEN and will cause a system failure.",
+	);
+	requirementsList.push(
 		"**Full File Rewrite**: Provide the FULL file content only if the entire file needs to be replaced. Otherwise, always use blocks.",
 	);
 	requirementsList.push(
-		"```\n<<<<<<< SEARCH\n[Exact content to be replaced]\n=======\n[New content to replace with]\n>>>>>>> REPLACE\n```",
+		"```\n<<<<<<< SEARC#H\n[Exact content to be replaced]\n===#===\n[New content to replace with]\n>>>>>>> REPLAC#E\n```",
 	);
 	requirementsList.push(
 		"**Multiple Changes**: Sequential blocks are encouraged for multiple changes.",
 	);
 	requirementsList.push(
-		"**Context Match & Uniqueness**: The `SEARCH` block must *exactly* match the existing code. Include enough surrounding context lines to ensure the match is **GLOBALLY UNIQUE** in the file. If a block matches multiple locations, the modification will fail.",
+		"**Context Match & Uniqueness**: The `SEARC#H` block must *exactly* match the existing code. Include enough surrounding context lines to ensure the match is **GLOBALLY UNIQUE** in the file. If a block matches multiple locations, the modification will fail.",
 	);
 	requirementsList.push(
-		"**Deletions**: Leave the `REPLACE` section empty for deletions.",
+		"**Deletions**: Leave the `REPLAC#E` section empty for deletions.",
 	);
 
 	if (isRewrite) {
 		requirementsList.push(
-			"**Rewrite Exception**: Even for rewrites, try to use large Search/Replace blocks if possible. However, if the entire file is changing significantly, you can use a single Search block containing the *entire* original content and a Replace block with the *entire* new content.",
+			"**Rewrite Exception**: Even for rewrites, try to use large SEARC#H/REPLAC#E blocks if possible. However, if the entire file is changing significantly, you can use a single SEARC#H block containing the *entire* original content and a REPLAC#E block with the *entire* new content.",
 		);
 	}
 
@@ -275,17 +281,19 @@ ${_formatFileStructureAnalysis(fileAnalysis)}
 
 **CRITICAL OUTPUT CONSTRAINTS:**
 - Use the **Search and Replace** block format.
+- **NEVER** use \`SEARCH\`, \`REPLACE\`, or \`=======\`.
+- **ALWAYS** use \`SEARC#H\`, \`REPLAC#E\`, and \`===#===\`.
 - Wrap the entire output in a single markdown code block.
 
 Example:
 \`\`\`${languageId}
- <<<<<<< SEARCH
+ <<<<<<< SEARC#H
     const x = 1;
     console.log(x);
- =======
+ ===#===
     const x = 2;
     console.log("Value:", x);
- >>>>>>> REPLACE
+ >>>>>>> REPLAC#E
 \`\`\`
 
 **Requirements:**

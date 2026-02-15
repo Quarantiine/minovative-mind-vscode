@@ -73,11 +73,11 @@ Full Content of Affected File:
 \`\`\`${languageId}
 ${fullText}
 \`\`\`${diagnostics}`;
-			planExplanationInstructions = `Based on my custom instruction ("${editorContext.instruction}") and file context, explain a detailed plan. Interpret the request in the context of selected code, chat history, and diagnostics.`;
+			planExplanationInstructions = `Based on my custom instruction ("${editorContext.instruction}") and file context, explain a detailed plan. Interpret the request primarily through the lens of the current instruction, using selected code, chat history, and diagnostics as supplementary context. The current instruction MUST take precedence over any historical patterns or previous requests.`;
 		}
 	} else if (userRequest) {
 		specificContextContent = `My Request from Chat: ${userRequest}`;
-		planExplanationInstructions = `Based on my request ("${userRequest}") and chat history, explain a detailed plan to fulfill it.`;
+		planExplanationInstructions = `Based on my current request ("${userRequest}"), explain a detailed plan to fulfill it. Use the provided chat history ONLY as supplementary background context; the current request is your definitive goal and must take precedence.`;
 	}
 
 	const chatHistoryForPrompt =
@@ -225,10 +225,10 @@ ${fullText}
 Instructions for Function Call:
 - You MUST call the \`generateExecutionPlan\` tool.
 - \`plan\`: Use the entire detailed textual plan explanation below.
-- \`user_request\`: Original user's request or editor instruction.
-- \`project_context\`: Entire broader project context.
-- \`chat_history\`: Entire recent chat history.
-- \`recent_changes\`: Entire recent project changes.
+- \`user_request\`: Original user's request (PRIORITY: This is your definitive goal).
+- \`project_context\`: Entire broader project context (Supplementary info).
+- \`chat_history\`: Recent chat history (Background context only - do not let historical patterns override the current \`user_request\`).
+- \`recent_changes\`: Entire recent project changes (Supplementary info).
 - \`url_context_string\`: Any provided URL context.
 
 Crucial Rules for \`generateExecutionPlan\` Tool:
@@ -316,7 +316,8 @@ Diagnostics: ${editorContext.diagnosticsString || "None"}
 
 	return `You are an expert software engineer. A previous attempt to fulfill a request has resulted in errors or incomplete implementation. Your task is to analyze the provided context (focused on recently changed files) and the summary of previous changes/errors to propose a fix strategy.
 
-STRATEGY PRIORITIZATION RULES:
+**STRATEGY PRIORITIZATION RULES (PRIORITY ORDER):**
+0. **CURRENT INTENT**: Your absolute priority is to fix the errors reported in the last attempt. Do not be distracted by earlier historical context if it conflicts with the current fix requirements.
 1. **CRITICAL**: Your primary goal is to fix all reported ERRORS in the "FILES WITH ERRORS" list.
 2. **SKIP CLEAN FILES**: Do NOT suggest modifications for files listed as "CLEAN FILES" or "HAS NO DIAGNOSTICS" unless a change there is MATHEMATICALLY NECESSARY to fix a diagnostic in an error file (e.g., updating an import, changing a function signature used by the error file).
 3. **DIAGNOSTIC FOCUS**: Carefully read the "Self-Correction Diagnostic Summary" and "Relevant Diagnostics" for each file. Your plan must address EVERY reported error.
@@ -384,7 +385,7 @@ Diagnostics: ${editorContext.diagnosticsString || "None"}`;
 
 	return `You are an expert software engineer AI. Generate a structured execution plan to fix specific issues identified in the textual strategy while considering the recent changes by calling the \`generateExecutionPlan\` function.
 
-Goal: Implement the "Correction Strategy" while carefully considering the "Summary of Recent Changes/Errors" to avoid repeating mistakes.
+Goal: Implement the "Correction Strategy" while carefully considering the "Summary of Recent Changes/Errors" to avoid repeating mistakes. **PRIORITY**: The "Correction Strategy" is your definitive goal.
 
 Instructions for Function Call:
 - You MUST call the \`generateExecutionPlan\` tool.

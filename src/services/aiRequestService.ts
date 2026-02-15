@@ -40,7 +40,7 @@ export const SEARCH_REPLACE_EXTRACTION_TOOL: Tool = {
 		{
 			name: "extractSearchReplaceBlocks",
 			description:
-				"Extracts intended code changes from raw text output using the <<<<< SEARCH / ======= / >>>>> REPLACE marker format. Returns an array of objects, each containing 'search' (the text to find) and 'replace' (the text to substitute).",
+				"Extracts intended code changes from raw text output using the <<<<<<< SEARC#H / ===#=== / >>>>>>> REPLAC#E marker format. Returns an array of objects, each containing 'search' (the text to find) and 'replace' (the text to substitute).",
 			parameters: {
 				type: SchemaType.OBJECT,
 				properties: {
@@ -135,7 +135,15 @@ export class AIRequestService {
 				role: "user",
 				parts: [
 					{
-						text: `Analyze the following raw output text and extract all requested search and replace code segments using the provided tool definition. If no markers are found, return an empty array for the blocks list. Ensure that 'search' and 'replace' content derived from the markers are accurately captured and trimmed.
+						text: `Analyze the following raw output text and extract all search and replace code segments.
+IMPORTANT: You MUST ONLY extract segments that use the EXACT marker format:
+<<<<<<< SEARC#H
+[existing code]
+===#===
+[new code]
+>>>>>>> REPLAC#E
+
+If the output uses old separators (like "=======" without the '#'), or is missing the '#' character (like "SEARCH" or "REPLACE"), DO NOT extract them and return an empty blocks array. We are strictly enforcing the SEARC#H, ===#=== and REPLAC#E format for uniqueness. Any use of the legacy SEARCH/REPLACE/======= format is a system error.
 
 Raw Output Text:
 """

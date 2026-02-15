@@ -29,10 +29,10 @@ export class ProjectChangeLogger {
 				// Remove the trailing separator to prevent potential recursive directory deletion on revert.
 				entry.filePath = normalizedPath.replace(
 					new RegExp(`[${path.sep}/]$`),
-					""
+					"",
 				);
 				console.warn(
-					`[ProjectChangeLogger] Warning: Normalized created path. Removed trailing separator from '${normalizedPath}' to '${entry.filePath}' to ensure it's treated as a file path.`
+					`[ProjectChangeLogger] Warning: Normalized created path. Removed trailing separator from '${normalizedPath}' to '${entry.filePath}' to ensure it's treated as a file path.`,
 				);
 			}
 		}
@@ -44,7 +44,7 @@ export class ProjectChangeLogger {
 		) {
 			const inversePatch = createInversePatch(
 				entry.originalContent,
-				entry.newContent
+				entry.newContent,
 			);
 			entry.inversePatch = inversePatch;
 		}
@@ -53,7 +53,7 @@ export class ProjectChangeLogger {
 		console.log(
 			`[ProjectChangeLogger] Logged change for ${entry.filePath}: ${
 				entry.summary.split("\n")[0]
-			}...`
+			}...`,
 		);
 	}
 
@@ -90,11 +90,11 @@ export class ProjectChangeLogger {
 			};
 			this._completedPlanChangeSets.push(changeSet);
 			console.log(
-				`[ProjectChangeLogger] Saved ${this.changes.length} changes as completed plan set with ID: ${changeSet.id}`
+				`[ProjectChangeLogger] Saved ${this.changes.length} changes as completed plan set with ID: ${changeSet.id}`,
 			);
 		} else {
 			console.log(
-				"[ProjectChangeLogger] No changes to save as completed plan."
+				"[ProjectChangeLogger] No changes to save as completed plan.",
 			);
 		}
 		this.changes = []; // Clear current changes regardless of whether anything was saved
@@ -131,7 +131,7 @@ export class ProjectChangeLogger {
 		const poppedSet = this._completedPlanChangeSets.pop();
 		if (poppedSet) {
 			console.log(
-				`[ProjectChangeLogger] Popped completed plan set with ID: ${poppedSet.id}`
+				`[ProjectChangeLogger] Popped completed plan set with ID: ${poppedSet.id}`,
 			);
 		} else {
 			console.log("[ProjectChangeLogger] No completed plan sets to pop.");
@@ -145,7 +145,7 @@ export class ProjectChangeLogger {
 	public clearAllCompletedPlanChanges(): void {
 		this._completedPlanChangeSets = [];
 		console.log(
-			"[ProjectChangeLogger] All completed plan change sets cleared."
+			"[ProjectChangeLogger] All completed plan change sets cleared.",
 		);
 	}
 }

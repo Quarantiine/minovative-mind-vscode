@@ -91,13 +91,21 @@ If you are a developer looking to build from source or contribute, please refer 
 - **Triggering Commit**: Use the `/commit` command in the chat interface.
 - **Process**: The AI analyzes your staged changes, generates a commit message, and prompts you for review and edits before committing.
 
-### 4.5 Code Streaming & Modification
+### 4.5 Code Streaming & Intelligent Modification
+
+When the AI modifies existing code, it uses a **Surgical Search and Replace** system. You'll see "Analyzing structure" as the AI reads the file context, followed by "Generating code..." as it streams the specific changes.
+
+The system utilizes a collision-resistant marker protocol (`SEARC#H` / `REPLAC#E`) to ensure that even complex or repetitive code blocks are updated with precision. If the AI detects its output was malformed, it will display a "Retrying..." status and automatically attempt a cleaner generation.
 
 - **Live Generation**: Code generated for `create_file` and `modify_file` steps streams directly into the editor, providing immediate visual feedback.
 - **Smart Visual Flash**: Newly added or modified code is highlighted with a full-width green flash effect. This highlight tracks with your code as you edit around it and intelligently removes itself only when you modify or delete the flashed lines.
 - **Applying Changes**: AI modifications are applied to your editor, often involving diff analysis and intelligent application of changes.
-- **Real-time Status**: Watch the system analyzed, plan, and execute in real-time with granular status updates (e.g., "Analyzing file structure...", "Applying edits...").
-
+- **Real-time Status**:
+  - **Active Step Monitoring**: The currently executing step is highlighted in your sidebar. You can see live status updates (e.g., "Designing change", "Applying code...") and even **auto-retry progress** (e.g., `(Auto-retry 1/3)`) if the AI encounters transient issues.
+  - **Visual Feedback**:
+    - **✓ (Success)**: Indicates a file was successfully generated or modified.
+    - **⚠️ (Warning)**: Indicates a step encountered an issue but might be retrying or requires attention.
+    - **Error (Red Text)**: Indicates a step has failed and requires manual intervention or self-correction.
 - **Active Exploration**: For complex queries, the **Context Agent** will automatically spring into action. It "investigates" your codebase by running safe terminal commands (`git ls-files`, `grep`, `find`, `sed`, `head`) to find relevant files that static analysis might miss. All search commands are automatically filtered to respect `.gitignore` rules and exclude build artifacts, dependencies, and binary files.
 - **Transparent Logs**: You'll see "Context Agent" logs in the chat showing exactly what commands are being run (e.g., `grep -r "auth" src/`) and what they returned.
 - **Progressive Discovery**: In large projects, the Context Agent uses a "Progressive Discovery" strategy, starting with a truncated view of your project structure and discovering files on-the-fly to save tokens and improve performance.

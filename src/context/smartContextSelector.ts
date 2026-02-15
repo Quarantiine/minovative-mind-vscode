@@ -779,15 +779,17 @@ You will iterate using tools until you have enough information to call \`finish_
     *   Use \`get_git_diffs(type='staged'|'head')\` to quickly see current workspace changes.
 8.  **Strategic Independence (CRITICAL)**: You are provided with "Priority Files" (strong candidates). These are ONLY a starting guess. Do NOT assume they are correct or complete.
     *   **Truth**: Search the codebase yourself to find the "ground truth" if the priority suggestions seem insufficient or incorrect.
-9.  **Loop Prevention**: Do not run the same command twice.
-10. **Read Specific Lines (MANDATORY)**: Use the \`read_file\` tool for ALL file reading.
-    *   **Workflow**: You MUST use \`get_file_symbols\` FIRST to understand the file structure and identify the EXACT line numbers you need before reading with \`read_file\`. Using \`read_file\` blindly on large ranges is a waste of context.
-    *   **Limits**: Focus on small, targeted ranges.
-        *   **Recommended**: 300-500 lines at most.
-        *   **Inefficient**: Reading >1000 lines at once is highly discouraged and wastes context. If you need that much code, your strategy might be too broad.
+9.  **Budget-Conscious Discovery**: Be **careful** to avoid reading unnecessary code lines.
+    *   **Context is Expensive**: Every line you read consumes context tokens and slows down the analysis.
+    *   **Targeted Reading**: Use \`get_file_symbols\` FIRST to pinpoint specific areas. Never read an entire file if you only need one function.
+    *   **Performance**: Reading excessively large ranges (>1000 lines) is considered poor performance and should be avoided unless absolutely necessary for the task. Aim for surgical precision.
+10. **Loop Prevention**: Do not run the same command twice.
+11. **Read Specific Lines (MANDATORY)**: Use the \`read_file\` tool for ALL file reading.
+    *   **Workflow**: You MUST use \`get_file_symbols\` FIRST to understand the file structure and identify the EXACT line numbers you need before reading with \`read_file\`.
+    *   **Efficiency**: Reading >500 lines at once is discouraged unless you genuinely need high-level context for that entire block.
     *   Example: \`read_file(path="src/file.ts", startLine=1, endLine=50)\`
-11. **No head/cat**: Do NOT use \`head\` or \`cat\` via \`run_terminal_command\`. Always use the \`read_file\` tool to avoid overwhelming the context.
-12. **Finalize**: Call \`finish_selection\` when you are confident you have what you need to complete the user's task. You determine the point of completion based on whether your findings are sufficient to solve the problem.
+12. **No head/cat**: Do NOT use \`head\` or \`cat\` via \`run_terminal_command\`. Always use the \`read_file\` tool to avoid overwhelming the context.
+13. **Finalize**: Call \`finish_selection\` when you are confident you have what you need.
 
 -- Project Context --
 Project Path: ${projectRoot.fsPath}
@@ -1072,7 +1074,7 @@ You MUST start by calling \`report_thought\`.
 					{
 						name: "read_file",
 						description:
-							"Read a specific range of lines from a file. Use this AFTER identifying relevant lines with get_file_symbols.",
+							"Read a specific range of lines from a file. Use this AFTER identifying relevant lines with get_file_symbols. BE CAREFUL to avoid reading unnecessary code lines to save context budget.",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {

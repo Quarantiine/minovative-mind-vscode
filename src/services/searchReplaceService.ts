@@ -31,37 +31,36 @@ export class SearchReplaceService {
 	/**
 	 * Parses the raw AI output to extract search/replace blocks.
 	 * Expected format:
-	 * <<<<<<< SEARCH
+	 * <<<<<<< SEARC#H
 	 * ... content to search ...
-	 * =======
+	 * ===#===
 	 * ... content to replace ...
-	 * >>>>>>> REPLACE
+	 * >>>>>>> REPLAC#E
 	 */
 	public parseBlocks(rawOutput: string): SearchReplaceBlock[] {
 		const blocks: SearchReplaceBlock[] = [];
 		const lines = rawOutput.split(/\r?\n/);
 		let currentSearch: string[] | null = null;
 		let currentReplace: string[] | null = null;
-		let state: "NONE" | "SEARCH" | "REPLACE" = "NONE";
+		let state: "NONE" | "SEARC#H" | "REPLAC#E" = "NONE";
 
 		for (const line of lines) {
 			const trimmedLine = line.trim();
+
 			// Robust check for markers: allow leading/trailing whitespace and optional multiple characters
-			if (trimmedLine.match(/^<{5,}\s*SEARCH/i)) {
-				if (state !== "NONE") {
-					// recursive or broken block, ignore or reset?
-					// Let's reset for robustness
-				}
-				state = "SEARCH";
+			// We only transition out of NONE if we see a SEARC#H marker
+			if (state === "NONE" && trimmedLine.match(/^<{5,}\s*SEARC#H$/i)) {
+				state = "SEARC#H";
 				currentSearch = [];
 				currentReplace = null;
-			} else if (trimmedLine.match(/^={5,}/)) {
-				if (state === "SEARCH") {
-					state = "REPLACE";
-					currentReplace = [];
-				}
-			} else if (trimmedLine.match(/^>{5,}\s*REPLACE/i)) {
-				if (state === "REPLACE" && currentSearch && currentReplace) {
+			} else if (state === "SEARC#H" && trimmedLine.match(/^===#===$/)) {
+				state = "REPLAC#E";
+				currentReplace = [];
+			} else if (
+				state === "REPLAC#E" &&
+				trimmedLine.match(/^>{5,}\s*REPLAC#E$/i)
+			) {
+				if (currentSearch && currentReplace) {
 					blocks.push({
 						search: currentSearch.join("\n"),
 						replace: currentReplace.join("\n"),
@@ -71,9 +70,9 @@ export class SearchReplaceService {
 				currentSearch = null;
 				currentReplace = null;
 			} else {
-				if (state === "SEARCH") {
+				if (state === "SEARC#H") {
 					currentSearch?.push(line);
-				} else if (state === "REPLACE") {
+				} else if (state === "REPLAC#E") {
 					currentReplace?.push(line);
 				}
 			}
@@ -89,12 +88,12 @@ export class SearchReplaceService {
 	public containsDeformedMarkers(content: string): boolean {
 		// Look for fragments of markers that are NOT valid markers
 		const patterns = [
-			/SEARCH\s*$/m,
-			/^=======/m,
-			/REPLACE\s*$/m,
+			/SEARC#H\s*$/m,
+			/^===#===/m,
+			/REPLAC#E\s*$/m,
 			/<<<<<[^<]/,
 			/>>>>>[^>]/,
-			/SEARCH\n.*={5,}\n.*REPLACE/s, // marker names without enough arrows
+			/SEARC#H\n.*={5,}\n.*REPLAC#E/s, // marker names with legacy/broken separator
 		];
 
 		// First check if any VALID blocks exist. If they do, we don't necessarily flag as "deformed"
@@ -104,11 +103,10 @@ export class SearchReplaceService {
 			// But for simplicity, if it has markers it's usually good.
 		}
 
-		// A more robust check: does it have "SEARCH" or "REPLACE" or "=======" but NO valid blocks?
 		const hasKeywords =
-			content.includes("SEARCH") ||
-			content.includes("REPLACE") ||
-			content.includes("=======");
+			content.includes("SEARC#H") ||
+			content.includes("REPLAC#E") ||
+			content.includes("===#===");
 		if (hasKeywords && this.parseBlocks(content).length === 0) {
 			return true;
 		}
@@ -198,7 +196,7 @@ export class SearchReplaceService {
 					// AMBIGUITY RESOLUTION:
 					// Instead of throwing, we now default to the First Match.
 					// This allows sequential blocks to work (Block 1 replaces Occurrence 1, Block 2 replaces Occurrence 2).
-					const warningMsg = `Ambiguous match for SEARCH block (Exact Match): found multiple occurrences. Using the first one.\nBlock:\n${block.search}`;
+					const warningMsg = `Ambiguous match for SEARC#H block (Exact Match): found multiple occurrences. Using the first one.\nBlock:\n${block.search}`;
 					if (this.changeLogger) {
 						console.warn(`[SearchReplaceService] ${warningMsg}`);
 					}
@@ -221,7 +219,7 @@ export class SearchReplaceService {
 			}
 
 			if (!matchRange) {
-				const errorMsg = `SEARCH block not found in file using fuzzy matching.\nBlock:\n${block.search}`;
+				const errorMsg = `SEARC#H block not found in file using fuzzy matching.\nBlock:\n${block.search}`;
 				if (this.changeLogger) {
 					console.error(`[SearchReplaceService] ${errorMsg}`);
 				}

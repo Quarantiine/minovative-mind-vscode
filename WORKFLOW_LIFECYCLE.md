@@ -81,7 +81,11 @@ sequenceDiagram
 The `PlanExecutorService` takes over to orchestrate the approved steps:
 
 - **Dynamic Context Refinement**: Before _every single step_, the Context Agent performs a mini-lookup. For example, before modifying `UserService.ts`, it might quickly read the file's current state to ensure the edit is precise.
-- **Surgical Edits**: Modifications are applied using **Search/Replace blocks**. The system matches the `SEARCH` block fuzzily against your file and replaces it with the `REPLACE` block.
+- **Streaming Modification**: Changes are applied via Search/Replace blocks with live streaming status updates in the sidebar ("Analyzing structure", "Applying code...", "Retrying...").
+  - **Visual Feedback Loop**: The plan timeline provides real-time progress indicators:
+    - **Active Step**: Highlighting and live status messages.
+    - **Resilience**: `(Auto-retry X/Y)` indicator displayed during transient failures.
+    - **Validation**: `✓` (Success) or `⚠️` (Warning) icons appear next to file paths as they are processed.
 - **Streaming Edits**: You see the code being typed into your editor in real-time.
 
 ### Phase 5: Validation & Self-Correction

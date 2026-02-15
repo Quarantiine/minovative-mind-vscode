@@ -61,7 +61,8 @@ export class EnhancedCodeGenerator {
 		context: EnhancedGenerationContext,
 		modelName: string,
 		token?: vscode.CancellationToken,
-		generationConfig?: GenerationConfig, // New parameter
+		generationConfig?: GenerationConfig,
+		isRetry: boolean = false,
 	): Promise<{
 		content: string;
 		validation: CodeValidationResult;
@@ -88,8 +89,18 @@ export class EnhancedCodeGenerator {
 				token,
 				undefined, // Explicitly pass undefined for onCodeChunkCallback
 				generationConfig,
+				isRetry,
 			);
 			if (!initialResult.isValid) {
+				this.postMessageToWebview({
+					type: "codeFileStreamEnd",
+					value: {
+						streamId,
+						filePath: `/${path.basename(initialResult.actualPath || filePath)}`,
+						success: false,
+						error: initialResult.issues?.[0]?.message || "Validation failed",
+					},
+				});
 				return {
 					content: initialResult.finalContent,
 					validation: initialResult,
@@ -145,6 +156,7 @@ export class EnhancedCodeGenerator {
 		context: EnhancedGenerationContext,
 		modelName: string,
 		token?: vscode.CancellationToken,
+		isRetry: boolean = false,
 	): Promise<{ content: string; validation: CodeValidationResult }> {
 		const streamId = crypto.randomUUID();
 
@@ -178,6 +190,8 @@ export class EnhancedCodeGenerator {
 				modelName,
 				streamId,
 				token,
+				undefined, // onCodeChunkCallback
+				isRetry,
 			);
 			this.postMessageToWebview({
 				type: "codeFileStreamEnd",
@@ -258,6 +272,7 @@ export class EnhancedCodeGenerator {
 		token?: vscode.CancellationToken,
 		onCodeChunkCallback?: (chunk: string) => Promise<void> | void,
 		generationConfig?: GenerationConfig,
+		isRetry: boolean = false,
 	): Promise<CodeValidationResult & { actualPath?: string }> {
 		// Modified return type
 		const systemInstruction = getEnhancedGenerationSystemInstruction(
@@ -276,7 +291,7 @@ export class EnhancedCodeGenerator {
 				streamId,
 				filePath: `/${path.basename(filePath)}`,
 				languageId,
-				status: "Loading",
+				status: isRetry ? "Retrying..." : "Loading",
 			},
 		});
 
@@ -299,7 +314,7 @@ export class EnhancedCodeGenerator {
 									streamId,
 									filePath: `/${path.basename(filePath)}`,
 									languageId,
-									status: "Generating code",
+									status: isRetry ? "Retrying..." : "Generating code...",
 								},
 							});
 						}
@@ -441,7 +456,7 @@ export class EnhancedCodeGenerator {
 					streamId,
 					filePath: `/${path.basename(finalPath)}`,
 					languageId,
-					status: "✓",
+					status: validationResult.isValid ? "✓" : "⚠️",
 				},
 			});
 
@@ -465,6 +480,7 @@ export class EnhancedCodeGenerator {
 		streamId: string,
 		token?: vscode.CancellationToken,
 		onCodeChunkCallback?: (chunk: string) => Promise<void> | void,
+		isRetry: boolean = false,
 	): Promise<{ content: string; validation: CodeValidationResult }> {
 		const fileAnalysis = await analyzeFileStructure(filePath, currentContent);
 		const contextWithAnalysis: EnhancedGenerationContext = {
@@ -493,7 +509,7 @@ export class EnhancedCodeGenerator {
 				streamId,
 				filePath: `/${path.basename(filePath)}`,
 				languageId,
-				status: "Loading",
+				status: isRetry ? "Retrying..." : "Loading",
 			},
 		});
 
@@ -515,7 +531,7 @@ export class EnhancedCodeGenerator {
 								streamId,
 								filePath: `/${path.basename(filePath)}`,
 								languageId,
-								status: "Generating code",
+								status: isRetry ? "Retrying..." : "Generating code...",
 							},
 						});
 					}
@@ -539,7 +555,7 @@ export class EnhancedCodeGenerator {
 				streamId,
 				filePath: `/${path.basename(filePath)}`,
 				languageId,
-				status: "Applying changes",
+				status: "Applying code...",
 			},
 		});
 
@@ -593,9 +609,23 @@ export class EnhancedCodeGenerator {
 		}
 
 		let finalModifiedContent: string;
-		// Wait for the extraction result that was started in parallel
-		const extractionResult = await extractionPromise;
-		const blocks = extractionResult.blocks;
+		let blocks = this.searchReplaceService.parseBlocks(rawContent);
+
+		if (blocks.length === 0) {
+			// If regex parsing failed, check if we should even bother with the tool
+			// (e.g. if new markers are there, maybe regex missed them somehow?)
+			const hasNewMarkers =
+				rawContent.match(/^<{5,}\s*SEARC#H$/im) ||
+				rawContent.includes("<<<<<<<" + " SEARC#H");
+
+			if (hasNewMarkers) {
+				console.log(
+					"[EnhancedCodeGenerator] Regex parsing failed but new markers detected. Falling back to AI tool extraction...",
+				);
+				const extractionResult = await extractionPromise;
+				blocks = extractionResult.blocks;
+			}
+		}
 
 		if (blocks.length > 0) {
 			try {
@@ -610,6 +640,35 @@ export class EnhancedCodeGenerator {
 				throw new Error(`Failed to apply code changes: ${error.message}`);
 			}
 		} else {
+			// No blocks found with regex or tool.
+			// Explicitly check for OLD markers to prevent them from slipping through via full rewrite
+			const hasOldMarkers =
+				rawContent.match(/^<{5,}\s*SEARCH$/im) ||
+				rawContent.includes("<<<<<<<" + " SEARCH");
+
+			if (hasOldMarkers) {
+				return {
+					content: cleanedContent,
+					validation: {
+						isValid: false,
+						finalContent: cleanedContent,
+						issues: [
+							{
+								type: "other",
+								message:
+									"The AI used the old SEARCH/REPLACE format. We now strictly require SEARC#H and REPLAC#E.",
+								line: 1,
+								severity: "error",
+								code: "OLD_MARKER_FORMAT",
+								source: "EnhancedCodeGenerator",
+							},
+						],
+						suggestions: [
+							"Please ensure the AI uses the new marker format with the '#' character.",
+						],
+					},
+				};
+			}
 			if (cleanedContent.trim().length < 5 || cleanedContent.trim() === "/") {
 				return {
 					content: cleanedContent,

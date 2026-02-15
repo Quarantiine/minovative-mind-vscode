@@ -185,7 +185,7 @@ The assembled payload (both the current turn and the previous history) must be t
 - **Code Utility Integration**: Employs `src/utils/codeUtils.ts` for tasks like stripping markdown fences (`cleanCodeOutput`) and applying precise text edits (`applyAITextEdits`).
 - **AI Interaction**: Manages core interaction with the AI model for initial generation and multi-step refinement.
 - **Advanced Configuration Support**: Accepts an optional `GenerationConfig` object to fine-tune AI model behavior (e.g., temperature, stop sequences) for specific generation tasks.
-- **Efficient Partial Updates (Function Calling)**: Utilizes `AIRequestService`'s `extractSearchReplaceBlocksViaTool` to robustly extract "Search and Replace" code blocks (`<<<<<<< SEARCH ... >>>>>>> REPLACE`) using **Function Calling (Tool Use)**. This replaces brittle regex parsing with structured, deterministic AI extraction (`SEARCH_REPLACE_EXTRACTION_TOOL`). A new **Output Integrity Validation** phase ensures that AI-generated snippets are complete and correctly formatted before being applied.
+- **Efficient Partial Updates (Function Calling)**: Utilizes `AIRequestService`'s `extractSearchReplaceBlocksViaTool` to robustly extract "Search and Replace" code blocks (`<<<<<<< SEARC#H ... ===#=== ... >>>>>>> REPLAC#E`) using **Function Calling (Tool Use)**. This replaces brittle regex parsing with structured, deterministic AI extraction (`SEARCH_REPLACE_EXTRACTION_TOOL`). A new **Output Integrity Validation** phase ensures that AI-generated snippets are complete and correctly formatted before being applied.
 - **Key Files**: `src/ai/enhancedCodeGeneration.ts` (`EnhancedCodeGenerator` class), `src/services/aiRequestService.ts`, `src/services/searchReplaceService.ts`, `src/services/codeValidationService.ts`, `src/utils/codeAnalysisUtils.ts`, `src/utils/codeUtils.ts`
 
 ### Plan & Workflow Management
@@ -218,8 +218,9 @@ The assembled payload (both the current turn and the previous history) must be t
 - **Self-Correction Workflow**: Implemented a dedicated cycle to automatically detect and repair issues in recently modified files. This includes collecting **precise error status text and diagnostics** from affected files, preparing a correction strategy with the AI using this specific error context, and generating a new structured plan for repair.
 - **Diagnostic Stabilization**: The self-correction workflow now calls `waitForDiagnosticsToStabilize` on each modified file before collecting error status, ensuring language server data is fully settled and reducing false positives from stale diagnostics.
 - **Diagnostic Feedback Loop**: Utilizes `warmUpDiagnostics` to programmatically trigger language server scans on modified files and wait for stability. The resulting diagnostics are then fed back into the AI to verify the success of the changes or drive self-correction.
-- **Search & Replace Application**: `PlanExecutorService` integrates with `SearchReplaceService` to intercept AI modification outputs. If Search/Replace blocks (`<<<<<<< SEARCH ... >>>>>>> REPLACE`) are detected, it applies them using fuzzy matching; otherwise, it falls back to full file rewrites for backward compatibility.
+- **Search & Replace Application**: `PlanExecutorService` integrates with `SearchReplaceService` to intercept AI modification outputs. If Search/Replace blocks (`<<<<<<< SEARC#H ... ===#=== ... >>>>>>> REPLAC#E`) are detected, it applies them using fuzzy matching; otherwise, it falls back to full file rewrites for backward compatibility.
 - **Partial File Intelligence**: The system supports reading only relevant **line ranges** (e.g., `interface definition`) or symbols instead of full files.
+- **Intent-Aware Sync**: During multi-step plan execution, the Context Manager synchronizes changes after each step. If a file is modified, its new state is immediately available for the next step's analysis, preventing "stale context" errors.
 - **Key Files**: `src/services/planService.ts` (`PlanService` class), `src/ai/workflowPlanner.ts`, `src/services/aiRequestService.ts`, `src/ai/enhancedCodeGeneration.ts`, `src/utils/commandExecution.ts`, `src/workflow/ProjectChangeLogger.ts`, `src/services/RevertService.ts`, `src/services/planExecutorService.ts`, `src/services/searchReplaceService.ts`
 
 #### 3. Project Change Logging
@@ -317,7 +318,7 @@ The assembled payload (both the current turn and the previous history) must be t
 
 #### 5. Search & Replace Logic
 
-- **Responsibility**: Parses and applies partial code updates using a standard `SEARCH`/`REPLACE` block format. It specifically handles "fuzzy" matching (ignoring whitespace variations) to make AI-generated patches robust against minor indentation errors.
+- **Responsibility**: Parses and applies partial code updates using a standard `SEARC#H`/`REPLAC#E` block format. It specifically handles "fuzzy" matching (ignoring whitespace variations) to make AI-generated patches robust against minor indentation errors.
 - **Key Methods**: `parseBlocks`, `applyBlocks`, `findFuzzyMatch`.
 - **Key Files**: `src/services/searchReplaceService.ts`
 

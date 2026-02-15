@@ -65,7 +65,7 @@ export function formatUserFacingErrorMessage(
 	} else if (
 		message.includes("ENOENT: no such file or directory") ||
 		((message.includes("not found") || message.includes("EntryNotFound")) &&
-			!message.includes("SEARCH block"))
+			!message.includes("SEARC#H block"))
 	) {
 		message =
 			"File or directory not found: The specified file or directory does not exist or is inaccessible. Please verify the path and ensure the file/directory exists.";

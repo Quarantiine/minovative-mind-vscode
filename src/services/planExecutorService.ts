@@ -1090,6 +1090,8 @@ export class PlanExecutorService {
 							generationContext,
 							this.provider.settingsManager.getSelectedModelName(),
 							combinedToken,
+							undefined, // generationConfig
+							attempt > 0, // isRetry
 						);
 					success = true;
 				} catch (error: any) {
@@ -1392,7 +1394,7 @@ export class PlanExecutorService {
 				throw new Error(ERROR_OPERATION_CANCELLED);
 			}
 
-			let modifiedResult: { content: string } | undefined;
+			let modifiedResult: { content: string; validation?: any } | undefined;
 			try {
 				modifiedResult = await this.enhancedCodeGenerator.modifyFileContent(
 					step.step.path,
@@ -1401,6 +1403,7 @@ export class PlanExecutorService {
 					modificationContext,
 					this.provider.settingsManager.getSelectedModelName(),
 					combinedToken,
+					attempt > 0, // isRetry
 				);
 			} catch (error: any) {
 				const errorMsg = formatUserFacingErrorMessage(error, "", "", rootUri);
@@ -1431,13 +1434,31 @@ export class PlanExecutorService {
 				);
 			}
 
+			// If the generator already flagged it as invalid (e.g. old markers used), trigger retry
+			if (
+				modifiedResult.validation &&
+				!modifiedResult.validation.isValid &&
+				attempt < this.MAX_TRANSIENT_STEP_RETRIES
+			) {
+				attempt++;
+				const issues = modifiedResult.validation.issues
+					.map((i: any) => i.message)
+					.join("\n");
+				console.warn(
+					`[PlanExecutor] Generator reported invalid output for ${step.step.path}: ${issues}. triggering AI retry.`,
+				);
+				clarificationContext += `\n\n[OUTPUT VALIDATION ERROR]: ${issues}. Please ensure you use the EXACT Search/Replace format (<<<<<<< SEARC#H / ===#=== / >>>>>>> REPLAC#E).`;
+				await this._delay(1000, combinedToken);
+				continue;
+			}
+
 			/* Search and Replace Block Logic */
 			const rawOutput = cleanCodeOutput(modifiedResult.content);
 
 			// Check if the output contains search/replace blocks or hints of markers
 			const hasSearchReplaceMarkers =
-				rawOutput.match(/^<{5,}\s*SEARCH/i) ||
-				rawOutput.includes("<<<<<<< SEARCH");
+				rawOutput.match(/^<{5,}\s*SEARC#H$/im) ||
+				rawOutput.includes("<<<<<<<" + " SEARC#H");
 
 			if (hasSearchReplaceMarkers) {
 				try {
@@ -1449,7 +1470,9 @@ export class PlanExecutorService {
 								`[PlanExecutor] Detected Search/Replace markers but failed to parse any valid blocks for ${step.step.path}. triggering AI retry.`,
 							);
 							clarificationContext +=
-								"\n\n[PARSING ERROR]: I detected Search/Replace markers in your output, but they were malformed and I couldn't parse them. Please ensure you use the exact format:\n<<<<<<< SEARCH\n[existing code]\n=======\n[new code]\n>>>>>>> REPLACE";
+								"\n\n[PARSING ERROR]: I detected Search/Replace markers in your output, but they were malformed and I couldn't parse them. Please ensure you use the exact format:\n<<<<<<<" +
+								" SEARC#H\n[existing code]\n===#===\n[new code]\n>>>>>>>" +
+								" REPLAC#E";
 							await this._delay(1000, combinedToken);
 							continue;
 						} else {
@@ -1539,7 +1562,7 @@ export class PlanExecutorService {
 								symbolContext = matchIndices.map((l) => `Line ${l}`).join(", ");
 							}
 
-							clarificationContext += `\n\n[AMBIGUITY ERROR]: The SEARCH block you provided is ambiguous. It matches multiple locations in the file: ${symbolContext}.\n\nAMBIGUOUS BLOCK:\n\`\`\`\n${ambiguousBlock}\n\`\`\`\nPlease provide a new SEARCH block that includes more unique surrounding context to uniquely identify the intended location.`;
+							clarificationContext += `\n\n[AMBIGUITY ERROR]: The SEARC#H block you provided is ambiguous. It matches multiple locations in the file: ${symbolContext}.\n\nAMBIGUOUS BLOCK:\n\`\`\`\n${ambiguousBlock}\n\`\`\`\nPlease provide a new SEARC#H block that includes more unique surrounding context to uniquely identify the intended location.`;
 							await this._delay(1000, combinedToken);
 							continue;
 						} else {
@@ -1550,17 +1573,17 @@ export class PlanExecutorService {
 					} else if (error.name === "SearchBlockNotFoundError") {
 						const missingBlock = error.missingBlock;
 						console.warn(
-							`[PlanExecutor] SEARCH block not found for ${step.step.path}. triggering AI retry.`,
+							`[PlanExecutor] SEARC#H block not found for ${step.step.path}. triggering AI retry.`,
 						);
 
 						if (attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
 							attempt++;
-							clarificationContext += `\n\n[NOT FOUND ERROR]: The SEARCH block you provided was NOT FOUND in the file.\n\nMISSING BLOCK:\n\`\`\`\n${missingBlock}\n\`\`\`\nPlease review the file content and provide a SEARCH block that EXACTLY matches the existing code (including whitespace and comments).`;
+							clarificationContext += `\n\n[NOT FOUND ERROR]: The SEARC#H block you provided was NOT FOUND in the file.\n\nMISSING BLOCK:\n\`\`\`\n${missingBlock}\n\`\`\`\nPlease review the file content and provide a SEARC#H block that EXACTLY matches the existing code (including whitespace and comments).`;
 							await this._delay(1000, combinedToken);
 							continue;
 						} else {
 							throw new Error(
-								`SEARCH block not found and max retries reached.`,
+								`SEARC#H block not found and max retries reached.`,
 							);
 						}
 					} else {

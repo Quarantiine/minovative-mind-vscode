@@ -58,7 +58,7 @@ export class ChatService {
 			const fileList = lastModelResponse.relevantFiles
 				.map((p) => `\`${p}\``)
 				.join(", ");
-			focusReminder = `--- Conversational Focus Reminder ---\nThe previous exchange focused on these files: ${fileList}. Maintain this context unless the new prompt explicitly directs otherwise.\n--- End Focus Reminder ---`;
+			focusReminder = `--- Conversational Background ---\nNote: The previous exchange touched on these files: ${fileList}. Consider this context as you fulfill the *current* request, but do not feel restricted by it if the user is moving in a new direction.\n--- End Background ---`;
 		}
 
 		return { historicallyRelevantFiles, focusReminder };
@@ -203,18 +203,15 @@ export class ChatService {
 
 			// Prepend History Summary if available
 			if (historySummaryContent) {
-				systemInstruction = `**CONVERSATIONAL HISTORY SUMMARY (Use this as primary memory)**:\n${historySummaryContent}\n\n${systemInstruction}`;
+				systemInstruction = `**HISTORICAL CONTEXT (Reference only - prioritize current user request)**:\n${historySummaryContent}\n\n${systemInstruction}`;
 			}
 
-			const focusReminderPart: HistoryEntryPart[] = [];
+			// Prepend Focus Reminder to system instruction instead of user turn
 			if (focusReminder) {
-				focusReminderPart.push({ text: focusReminder });
+				systemInstruction = `${focusReminder}\n\n${systemInstruction}`;
 			}
 
-			const fullUserTurnContents: HistoryEntryPart[] = [
-				...focusReminderPart,
-				...userContentParts,
-			];
+			const fullUserTurnContents: HistoryEntryPart[] = [...userContentParts];
 
 			let accumulatedResponse = "";
 
@@ -482,7 +479,7 @@ export class ChatService {
 				},
 			});
 
-			const systemInstruction = `Project Context:\n${projectContext.contextString}`;
+			const systemInstruction = `**PRIORITY: REGENERATE RESPONSE BASED ON CURRENT USER TURN**\nProject Context:\n${projectContext.contextString}`;
 
 			const fullUserTurnContents: HistoryEntryPart[] = [
 				...userContentPartsForRegen,
