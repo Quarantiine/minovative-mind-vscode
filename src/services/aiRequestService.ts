@@ -143,7 +143,11 @@ IMPORTANT: You MUST ONLY extract segments that use the EXACT marker format:
 [new code]
 >>>>>>> REPLAC#E
 
-If the output uses old separators (like "=======" without the '#'), or is missing the '#' character (like "SEARCH" or "REPLACE"), DO NOT extract them and return an empty blocks array. We are strictly enforcing the SEARC#H, ===#=== and REPLAC#E format for uniqueness. Any use of the legacy SEARCH/REPLACE/======= format is a system error.
+Extraction Rules:
+1. Extract ALL valid SEARC#H/REPLAC#E blocks found.
+2. If a block uses old markers (SEARCH/REPLACE) or the old separator (=======), DO NOT extract that specific block.
+3. Presence of legacy terminology (SEARCH, REPLACE) in the EXPLANATORY TEXT outside of markers should NOT prevent you from extracting otherwise valid SEARC#H blocks.
+4. We are strictly enforcing the '#' character in markers for production safety.
 
 Raw Output Text:
 """

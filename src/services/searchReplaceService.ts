@@ -83,35 +83,47 @@ export class SearchReplaceService {
 
 	/**
 	 * Checks if the content contains strings that look like markers but are malformed.
-	 * This helps detect if the AI tried but failed to produce a valid block.
+	 * Returns a descriptive reason if deformed markers are found, null otherwise.
 	 */
-	public containsDeformedMarkers(content: string): boolean {
-		// Look for fragments of markers that are NOT valid markers
-		const patterns = [
-			/SEARC#H\s*$/m,
-			/^===#===/m,
-			/REPLAC#E\s*$/m,
-			/<<<<<[^<]/,
-			/>>>>>[^>]/,
-			/SEARC#H\n.*={5,}\n.*REPLAC#E/s, // marker names with legacy/broken separator
-		];
-
-		// First check if any VALID blocks exist. If they do, we don't necessarily flag as "deformed"
-		// unless there are OTHER things that look like broken markers.
-		if (this.parseBlocks(content).length > 0) {
-			// If we found valid blocks, we only care if there are OTHER broken things.
-			// But for simplicity, if it has markers it's usually good.
-		}
-
-		const hasKeywords =
+	public getDeformedMarkerReason(content: string): string | null {
+		const hasNewKeywords =
 			content.includes("SEARC#H") ||
 			content.includes("REPLAC#E") ||
 			content.includes("===#===");
-		if (hasKeywords && this.parseBlocks(content).length === 0) {
-			return true;
+
+		// 1. Check for hybrid markers: new keyword but old separator (very common failure)
+		if (
+			(content.includes("SEARC#H") || content.includes("REPLAC#E")) &&
+			content.match(/^={7,}\s*$/m)
+		) {
+			return "Hybrid markers detected: You used SEARC#H/REPLAC#E but the old '=======' separator. You MUST use '===#===' instead.";
 		}
 
-		return false;
+		// 2. Check for missing Hash in keywords
+		if (
+			content.match(/^<{7} SEARCH\s*$/m) ||
+			content.match(/^>{7} REPLACE\s*$/m)
+		) {
+			return "Legacy markers detected: You used SEARCH/REPLACE without the '#' character. Use SEARC#H and REPLAC#E.";
+		}
+
+		// 3. Keywords present but no blocks parsed (likely indentation or formatting issue)
+		if (hasNewKeywords && this.parseBlocks(content).length === 0) {
+			// Check if markers are maybe not at start of line
+			if (content.includes("SEARC#H") && !content.match(/^<{7} SEARC#H/m)) {
+				return "Markers found but not at the start of the line. Ensure <<<<<<< SEARC#H begins exactly at the line start.";
+			}
+			return "Markers present but formatting is incorrect. Check line breaks and exact spelling.";
+		}
+
+		return null;
+	}
+
+	/**
+	 * Legacy compatibility or simplified check.
+	 */
+	public containsDeformedMarkers(content: string): boolean {
+		return this.getDeformedMarkerReason(content) !== null;
 	}
 
 	/**

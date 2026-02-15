@@ -168,7 +168,7 @@ export class EnhancedCodeGenerator {
 				streamId,
 				filePath: `/${path.basename(filePath)}`,
 				languageId,
-				status: "Analyzing structure",
+				status: isRetry ? "Retrying..." : "Analyzing structure",
 			},
 		});
 
@@ -627,6 +627,34 @@ export class EnhancedCodeGenerator {
 			}
 		}
 
+		// New: Check for deformed markers if still no blocks found
+		if (blocks.length === 0) {
+			const deformedReason =
+				this.searchReplaceService.getDeformedMarkerReason(rawContent);
+			if (deformedReason) {
+				return {
+					content: cleanedContent,
+					validation: {
+						isValid: false,
+						finalContent: cleanedContent,
+						issues: [
+							{
+								type: "other",
+								message: deformedReason,
+								line: 1,
+								severity: "error",
+								code: "DEFORMED_MARKERS",
+								source: "EnhancedCodeGenerator",
+							},
+						],
+						suggestions: [
+							"Ensure you use the exact SEARC#H / ===#=== / REPLAC#E format at the start of lines.",
+						],
+					},
+				};
+			}
+		}
+
 		if (blocks.length > 0) {
 			try {
 				finalModifiedContent = this.searchReplaceService.applyBlocks(
@@ -643,8 +671,8 @@ export class EnhancedCodeGenerator {
 			// No blocks found with regex or tool.
 			// Explicitly check for OLD markers to prevent them from slipping through via full rewrite
 			const hasOldMarkers =
-				rawContent.match(/^<{5,}\s*SEARCH$/im) ||
-				rawContent.includes("<<<<<<<" + " SEARCH");
+				rawContent.match(/^<{7} SEARCH$/m) ||
+				rawContent.match(/^<{7} SEARCH\s/m);
 
 			if (hasOldMarkers) {
 				return {
@@ -656,7 +684,7 @@ export class EnhancedCodeGenerator {
 							{
 								type: "other",
 								message:
-									"The AI used the old SEARCH/REPLACE format. We now strictly require SEARC#H and REPLAC#E.",
+									"The AI used legacy SEARCH/REPLACE markers at the start of a line. We now strictly require SEARC#H and REPLAC#E.",
 								line: 1,
 								severity: "error",
 								code: "OLD_MARKER_FORMAT",
@@ -713,7 +741,7 @@ export class EnhancedCodeGenerator {
 				streamId,
 				filePath: `/${path.basename(filePath)}`,
 				languageId,
-				status: "✓",
+				status: validation.isValid ? "✓" : "⚠️",
 			},
 		});
 

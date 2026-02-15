@@ -245,10 +245,10 @@ export function getEnhancedModificationSystemInstruction(
 	const requirementsList: string[] = [];
 
 	requirementsList.push(
-		"**FINAL OUTPUT FORMAT: ABSOLUTELY CRITICAL**: You MUST use the **Search and Replace** block format for all modifications. **DO NOT provide only a partial code fragment or snippet without these markers.** If you do not use the markers, your changes will be REJECTED.",
+		"**SEARCH/REPLACE PROTOCOL**: You MUST use the `SEARC#H`, `===#===`, and `REPLAC#E` markers for all modifications. The '#' character is a critical safety feature to prevent collisions with existing code, including code that might discuss these markers.",
 	);
 	requirementsList.push(
-		"**LEGACY FORMAT FORBIDDEN**: You MUST NOT use the old `SEARCH`/`REPLACE` or `=======` markers. Any output containing `SEARCH`, `REPLACE` (un-hashed), or the plain `=======` separator for surgical edits is STRICTLY FORBIDDEN and will cause a system failure.",
+		"**NO LEGACY MARKERS**: Do not use `SEARCH`, `REPLACE`, or `=======` for surgical edits. These are legacy formats and are incompatible with the extraction engine.",
 	);
 	requirementsList.push(
 		"**Full File Rewrite**: Provide the FULL file content only if the entire file needs to be replaced. Otherwise, always use blocks.",
@@ -280,9 +280,9 @@ Language: ${languageId}
 ${_formatFileStructureAnalysis(fileAnalysis)}
 
 **CRITICAL OUTPUT CONSTRAINTS:**
-- Use the **Search and Replace** block format.
-- **NEVER** use \`SEARCH\`, \`REPLACE\`, or \`=======\`.
-- **ALWAYS** use \`SEARC#H\`, \`REPLAC#E\`, and \`===#===\`.
+- Use the **Search and Replace** block format exclusively.
+- **Protocol**: \`SEARC#H\`, \`REPLAC#E\`, and \`===#===\`.
+- **Meta-Discussion Tip**: If you are writing code that *mentions* these markers (e.g., in a changelog or variable name), do not get confused. The *functional* markers that the system extracts MUST always be on their own line at the start of the line.
 - Wrap the entire output in a single markdown code block.
 
 Example:
