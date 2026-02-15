@@ -177,6 +177,7 @@ export async function validateOutputIntegrity(
 	originalContent: string,
 	aiRequestService: AIRequestService,
 	token?: vscode.CancellationToken,
+	filePath?: string,
 ): Promise<{
 	isValid: boolean;
 	reason: string;
@@ -184,15 +185,27 @@ export async function validateOutputIntegrity(
 }> {
 	const systemInstruction = `
 You are an expert code integrity validator using the Gemini Flash Lite model.
-Your task is to determine if the provided AI-generated code modification is a **complete and valid** result or an **unintended fragment/broken output**.
+Your task is to determine if the provided AI-GENERATED OUTPUT is a **complete and valid** result or an **unintended fragment/broken output**.
+
+CRITICAL - CONTEXT SNIPPETS:
+- The "ORIGINAL CONTENT CONTEXT" provided is intentionally a TRUNCATED SNIPPET (top/bottom) of the original file.
+- **NEVER** conclude the AI-GENERATED OUTPUT is a fragment just because it is shorter than the full original file or because the context snippet itself is incomplete.
+- Judge completeness based ONLY on the internal structure of the AI-GENERATED OUTPUT.
+- If the output is a JSON file, check if it is a syntactically complete JSON object (properly closed with }). Do not worry if it doesn't contain all the data from the context snippet - the context snippet is just a preview.
+
+CRITICAL BOOELAN MAPPING:
+- If you determine the output is VALID, you MUST set "isValid" to true.
+- If you determine the output is a FRAGMENT or MALFORMED, you MUST set "isValid" to false.
 
 RULES:
-- A result is a FRAGMENT if it contains only a small part of the file without Search/Replace markers, OR if it contains "..." or "// ... rest of code" placeholders that suggest omission.
-- A result is MALFORMED if it attempts to use Search/Replace markers (<<<<<<< SEARC#H, ===#===, >>>>>>> REPLAC#E) but they are broken, missing parts, or incorrectly ordered.
-- A result is VALID if it correctly uses Search/Replace blocks OR if it provides the full, complete file content (as long as it doesn't look like a fragment).
+- A result is a FRAGMENT if it contains "..." or "// ... rest of code" placeholders, or if it abruptly cuts off mid-sentence/mid-bracket without markers.
+- A result is MALFORMED if it attempts to use Search/Replace markers (<<<<<<< SEARC#H, ===#===, >>>>>>> REPLAC#E) but they are broken or missing parts.
+- A result is VALID if it correctly uses SEARC#H/REPLAC#E blocks OR if it provides a **Full File Implementation**.
+- **Full File Implementation**: If the output is a perfectly structured, closed JSON object/array, or a complete script/class that makes sense as a replacement for the file, it is VALID even if it doesn't use Search/Replace markers.
 `;
 
 	const userPrompt = `
+${filePath ? `TARGET FILE: ${filePath}\n` : ""}
 AI-GENERATED OUTPUT TO VALIDATE:
 """
 ${rawOutput}
@@ -200,8 +213,11 @@ ${rawOutput}
 
 ORIGINAL CONTENT CONTEXT:
 Size: ${originalContent.length} characters
-Snippet:
+Start of file:
 ${originalContent.substring(0, 500)}
+...
+End of file:
+${originalContent.length > 500 ? originalContent.substring(originalContent.length - 500) : ""}
 `;
 
 	try {

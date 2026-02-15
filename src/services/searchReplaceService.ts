@@ -145,10 +145,11 @@ export class SearchReplaceService {
 
 		// If we have original content, we can compare sizes
 		if (originalContent && originalContent.length > 500) {
-			// If original is large and new is tiny (and not explicitly a deletion?)
-			if (trimmed.length < originalContent.length * 0.1) {
-				// 90% reduction in size without markers might be suspicious
-				// BUT some tasks are deletions. However, deletions of 90% are rare without blocks.
+			// If original is large and new is tiny
+			// For JSON, 10% might be too strict if it's a huge data file.
+			const ratio = trimmed.length / originalContent.length;
+			if (ratio < 0.05) {
+				// Less than 5% of original size is very suspicious for a full rewrite
 				return true;
 			}
 		}

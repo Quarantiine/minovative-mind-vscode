@@ -1447,7 +1447,7 @@ export class PlanExecutorService {
 				console.warn(
 					`[PlanExecutor] Generator reported invalid output for ${step.step.path}: ${issues}. triggering AI retry.`,
 				);
-				clarificationContext += `\n\n[OUTPUT VALIDATION ERROR]: ${issues}. Please ensure you use the EXACT Search/Replace format (<<<<<<< SEARC#H / ===#=== / >>>>>>> REPLAC#E).`;
+				clarificationContext += `\n\n[OUTPUT VALIDATION ERROR]: ${issues}. Please ensure you use the EXACT SEARC#H/REPLAC#E format (<<<<<<< SEARC#H / ===#=== / >>>>>>> REPLAC#E).`;
 				await this._delay(1000, combinedToken);
 				continue;
 			}
@@ -1455,7 +1455,7 @@ export class PlanExecutorService {
 			/* Search and Replace Block Logic */
 			const rawOutput = cleanCodeOutput(modifiedResult.content);
 
-			// Check if the output contains search/replace blocks or hints of markers
+			// Check if the output contains SEARC#H/REPLAC#E blocks or hints of markers
 			const hasSearchReplaceMarkers =
 				rawOutput.match(/^<{5,}\s*SEARC#H$/im) ||
 				rawOutput.includes("<<<<<<<" + " SEARC#H");
@@ -1467,17 +1467,17 @@ export class PlanExecutorService {
 						if (attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
 							attempt++;
 							console.warn(
-								`[PlanExecutor] Detected Search/Replace markers but failed to parse any valid blocks for ${step.step.path}. triggering AI retry.`,
+								`[PlanExecutor] Detected SEARC#H/REPLAC#E markers but failed to parse any valid blocks for ${step.step.path}. triggering AI retry.`,
 							);
 							clarificationContext +=
-								"\n\n[PARSING ERROR]: I detected Search/Replace markers in your output, but they were malformed and I couldn't parse them. Please ensure you use the exact format:\n<<<<<<<" +
+								"\n\n[PARSING ERROR]: I detected SEARC#H/REPLAC#E markers in your output, but they were malformed and I couldn't parse them. Please ensure you use the exact format:\n<<<<<<<" +
 								" SEARC#H\n[existing code]\n===#===\n[new code]\n>>>>>>>" +
 								" REPLAC#E";
 							await this._delay(1000, combinedToken);
 							continue;
 						} else {
 							throw new Error(
-								"Detected Search/Replace markers but failed to parse any valid blocks after multiple attempts.",
+								"Detected SEARC#H/REPLAC#E markers but failed to parse any valid blocks after multiple attempts.",
 							);
 						}
 					}
@@ -1588,7 +1588,7 @@ export class PlanExecutorService {
 						}
 					} else {
 						throw new Error(
-							`Failed to apply Search/Replace blocks: ${error.message}`,
+							`Failed to apply SEARC#H/REPLAC#E blocks: ${error.message}`,
 						);
 					}
 				}
@@ -1606,7 +1606,7 @@ export class PlanExecutorService {
 
 				let isInvalid = hasDeformedMarkers || isLikelyFragmentHeuristic;
 				let invalidReason = hasDeformedMarkers
-					? "malformed Search/Replace markers"
+					? "malformed SEARC#H/REPLAC#E markers"
 					: "a partial code snippet without markers";
 
 				// Secondary check using a lightweight AI model (Flash Lite) for edge cases
@@ -1617,10 +1617,27 @@ export class PlanExecutorService {
 							originalContent,
 							this.provider.aiRequestService,
 							combinedToken,
+							step.step.path,
 						);
 						if (!integrityResult.isValid) {
-							isInvalid = true;
-							invalidReason = integrityResult.reason;
+							// HEURISTIC FALLBACK: If the model's text reasoning explicitly says "is VALID" but it returned false boolean,
+							// we trust the text reasoning to avoid frustrating retry loops, especially for full-file JSON updates.
+							const reasonLower = integrityResult.reason.toLowerCase();
+							const isExplicitlyValidInText =
+								(reasonLower.includes("is valid") ||
+									reasonLower.includes("it is valid") ||
+									reasonLower.includes("therefore, it is valid")) &&
+								!reasonLower.includes("invalid") &&
+								!reasonLower.includes("fragment");
+
+							if (isExplicitlyValidInText) {
+								console.info(
+									`[PlanExecutor] AI integrity boolean check was false, but text reasoning says VALID. Overriding to valid.`,
+								);
+							} else {
+								isInvalid = true;
+								invalidReason = integrityResult.reason;
+							}
 						}
 					} catch (e) {
 						console.warn("[PlanExecutor] AI integrity check failed:", e);
@@ -1633,14 +1650,14 @@ export class PlanExecutorService {
 						`[PlanExecutor] Detected ${invalidReason} for ${step.step.path}. triggering AI retry.`,
 					);
 
-					clarificationContext += `\n\n[OUTPUT INTEGRITY ERROR]: Your previous output was rejected. Reason: ${invalidReason}. Please ensure you use the exact Search/Replace block format or provide the FULL file content if intended.`;
+					clarificationContext += `\n\n[OUTPUT INTEGRITY ERROR]: Your previous output was rejected. Reason: ${invalidReason}. Please ensure you use the exact SEARC#H/REPLAC#E block format or provide the FULL file content if intended.`;
 					await this._delay(1000, combinedToken);
 					continue;
 				}
 
 				// Fallback to full file rewrite if no blocks detected and all sanity checks pass
 				console.warn(
-					`[PlanExecutor] No Search/Replace blocks detected for ${step.step.path}. Passed heuristics and AI integrity check. Treating as full file rewrite.`,
+					`[PlanExecutor] No SEARC#H/REPLAC#E blocks detected for ${step.step.path}. Passed heuristics and AI integrity check. Treating as full file rewrite.`,
 				);
 				newContent = rawOutput;
 				success = true;

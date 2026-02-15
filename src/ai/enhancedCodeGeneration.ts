@@ -620,7 +620,7 @@ export class EnhancedCodeGenerator {
 
 			if (hasNewMarkers) {
 				console.log(
-					"[EnhancedCodeGenerator] Regex parsing failed but new markers detected. Falling back to AI tool extraction...",
+					"[EnhancedCodeGenerator] Regex parsing failed but new SEARC#H markers detected. Falling back to AI tool extraction...",
 				);
 				const extractionResult = await extractionPromise;
 				blocks = extractionResult.blocks;
@@ -663,7 +663,7 @@ export class EnhancedCodeGenerator {
 				);
 			} catch (error: any) {
 				console.error(
-					`[EnhancedCodeGenerator] Failed to apply Search/Replace blocks: ${error.message}`,
+					`[EnhancedCodeGenerator] Failed to apply SEARC#H/REPLAC#E blocks: ${error.message}`,
 				);
 				throw new Error(`Failed to apply code changes: ${error.message}`);
 			}

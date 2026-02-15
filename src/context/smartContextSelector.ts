@@ -739,6 +739,7 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 
 	const systemPrompt =
 		`You are a Context Selection Agent. Your goal is to identify the most relevant files for a coding task.
+You are a **READ-ONLY** agent. You CANNOT perform any write operations, modify files, or create new files. Your only responsibility is to gather context and information to help the user.
 You will iterate using tools until you have enough information to call \`finish_selection\`.
 
 -- Instructions --
