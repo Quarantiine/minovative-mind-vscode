@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.55.0] - February 15, 2026
+## [2.55.1] - February 15, 2026
 
 ### Robust Search/Replace Markers & Relaxed Validation Logic
 
