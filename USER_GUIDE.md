@@ -80,22 +80,25 @@ If you are a developer looking to build from source or contribute, please refer 
   - **Skip Confirmation**: Use the "Fast Forward" toggle in the sidebar to bypass this step and execute plans automatically.
   - **Plan Labels**: AI-generated plan explanations are labeled with a "Generated Plan" badge in the chat, so you can easily identify them.
   - Monitor execution progress through VS Code notifications.
-  - **Smart Context**: The AI will automatically find and read relevant code snippets for each step of the plan using agentic investigation and symbol intelligence, ensuring it has the full picture before writing code.
-  - Plans can be cancelled if needed during execution.
-- **Output Integrity Validation**: The system now performs smarter validation of AI outputs, checking for malformed markers or partial fragments to ensure code integrity before applying changes.
-- **Reverting Changes**: The "Revert Changes" button, at the top right, allows you to undo AI-driven workflow actions if necessary.
-- **Autonomous Self-Correction**: For long-running plans, the AI now automatically monitors for errors or missing functionality using a diagnostic feedback loop. If an issue is detected, it captures the **specific error message** and initiates an automatic "Self-Correction" cycle to repair the code without requiring a new manual request.
+  - **Smart Context**: The AI will automatically find and read relevant code snippets for each step of the plan using agentic investigation and symbol intelligence.
+- **AI-Driven Integrity Validation**: The system uses a dedicated **Integrity Validator** model (Flash Lite) to perform a final check on modified code. Instead of relying on rigid, error-prone heuristics, this move toward "AI-Trust" ensures that complete file rewrites and complex JSON objects are correctly recognized and applied without unnecessary failures.
+- **Reverting Changes**: The "Revert Changes" button, at the top right, allows you to undo AI-driven workflow actions instantly.
+- **Autonomous Self-Correction**: For errors introduced during execution, the AI initiates a "Self-Correction" cycle using real-time diagnostic feedback to repair the code autonomously.
 
 ### 4.4 Git Commit Generation
 
 - **Triggering Commit**: Use the `/commit` command in the chat interface.
-- **Process**: The AI analyzes your staged changes, generates a commit message, and prompts you for review and edits before committing.
+- **Process**: The AI analyzes staged changes and generates a descriptive commit message for your review.
 
-### 4.5 Code Streaming & Intelligent Modification
+### 4.5 Code Streaming & Surgical Modification
 
-When the AI modifies existing code, it uses a **Surgical Search and Replace** system. You'll see "Analyzing structure" as the AI reads the file context, followed by "Generating code..." as it streams the specific changes.
+When the AI modifies existing code, it uses a **Collision-Resistant Surgical Search and Replace** system.
 
-The system utilizes a collision-resistant marker protocol (`SEARC#H` / `REPLAC#E`) to ensure that even complex or repetitive code blocks are updated with precision. If the AI detects its output was malformed, it will display a "Retrying..." status and automatically attempt a cleaner generation.
+The protocol utilizes unique markers (`SEARC#H` / `REPLAC#E` / `===#===`) anchored to line starts to ensure precision, even when the markers themselves are mentioned in your source code documentation or discussions.
+
+- **Live Generation**: Code streams directly into the editor with real-time status updates ("Analyzing structure", "Applying code...").
+- **Smart Visual Flash**: Newly added or modified code is highlighted with a full-width green flash effect that tracks with your edits.
+- **AI-Driven Retries**: If a surgical update fails to parse correctly, the system automatically triggers an autonomous retry with clarification context, ensuring a high success rate for complex modifications.
 
 - **Live Generation**: Code generated for `create_file` and `modify_file` steps streams directly into the editor, providing immediate visual feedback.
 - **Smart Visual Flash**: Newly added or modified code is highlighted with a full-width green flash effect. This highlight tracks with your code as you edit around it and intelligently removes itself only when you modify or delete the flashed lines.

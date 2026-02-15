@@ -60,7 +60,7 @@ Minovative Mind can autonomously plan and execute complex development tasks, sig
 - **Symbol-Aware Context**: Leverages detailed symbol information (functions, classes, types) from your codebase to ensure accurate and contextually relevant modifications.
 - **Quality & Production-Ready Code**: Generates modular, maintainable, and production-ready code, often using diff analysis to validate output quality.
 - **Output Validation**: Employs sophisticated heuristics to sanitize and validate AI-generated code snippets, ensuring functional and high-quality output.
-- **Surgical Code Editing & Integrity Validation**: Uses an intelligent "Search and Replace" block system (`SEARC#H / ===#=== / REPLAC#E`) to update only specific parts of a file. This hardened protocol ensures maximum uniqueness and prevents collisions. **Output Integrity Validation** checks for malformed markers or partial fragments, autonomously retrying if output is corrupted.
+- **Surgical Code Editing & Integrity Validation**: Uses an intelligent and anchored search/replace block system (`SEARC#H / ===#=== / REPLAC#E`) to update specific file segments. This protocol ensures maximum uniqueness and avoids collisions with source code documentation. **AI-Driven Integrity Validation** checks for completeness by leveraging the Flash Lite model, prioritizing model consensus over rigid, error-prone heuristics.
 - **Full File Regeneration**: For massive rewrites or new files, the AI can still generate full content when necessary.
 
 ### 2.3 Code Streaming

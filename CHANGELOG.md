@@ -4,19 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [2.55.0] - February 15, 2026
 
-### Robust Search/Replace Markers & Unified Parsing
+### Robust Search/Replace Markers & Relaxed Validation Logic
 
-This release hardens the code modification pipeline by introducing unique, collision-resistant markers and a more deterministic parsing architecture.
+This release hardens the code modification pipeline with collision-resistant markers and transitions the system from rigid heuristic-based validation to a more flexible, AI-trusting model.
 
 - **Refined Marker Protocol**:
-  - Updated Search/Replace markers to `SEARC#H`, `REPLAC#E`, and the new `===#===` separator. This ensures maximum uniqueness and prevents collisions with source code keywords or Git merge markers.
-- **Strict Parsing Enforcement**:
-  - `SearchReplaceService` now strictly requires the new marker format. Old formats are explicitly rejected to prevent accidental parsing errors.
-  - `PlanExecutorService` and `EnhancedCodeGenerator` now utilize a unified validation loop that triggers autonomous AI retries if malformed or legacy markers are detected.
+  - Migrated Search/Replace markers to `SEARC#H`, `REPLAC#E`, and the new `===#===` separator. These are anchored to line-starts to prevent collisions with source code documentation or conversational text.
+- **Ultimate Validation Relaxation**:
+  - Removed several aggressive legacy heuristics, including `isLikelyPartialSnippet` (fragment detection), `getDeformedMarkerReason`, and `containsDeformedMarkers`.
+  - The system now relies on actual parsing success and the **AI Integrity Validator** for fragment detection, providing the AI with maximum freedom while maintaining safety.
+- **Strict Parsing & Unified Validation**:
+  - `SearchReplaceService` now focuses on deterministic parsing of the new hashed markers.
+  - `PlanExecutorService` and `EnhancedCodeGenerator` now utilize a unified validation loop that prioritizes AI-driven integrity checks over rigid rule-based rejections.
 - **Enhanced AI Prompting**:
-  - All system prompts and extraction tools have been updated to enforce the new `SEARC#H / ===#=== / REPLAC#E` protocol, ensuring consistent AI behavior across all models.
-- **Documentation Alignment**:
-  - Fully updated codebase documentation, including `ARCHITECTURE.md`, `WORKFLOW_LIFECYCLE.md`, and `USER_GUIDE.md`, to reflect the new production standards.
+  - Updated all system prompts and extraction tools to enforce the new `SEARC#H / ===#=== / REPLAC#E` protocol and allow for meta-discussion about markers.
+- **Documentation Sweep**:
+  - Fully updated project-wide documentation, including `ARCHITECTURE.md`, `WORKFLOW_LIFECYCLE.md`, and `USER_GUIDE.md`, to reflect the new production standards.
 
 ## [2.54.1] - February 14, 2026
 

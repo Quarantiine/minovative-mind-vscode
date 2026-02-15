@@ -185,7 +185,7 @@ The assembled payload (both the current turn and the previous history) must be t
 - **Code Utility Integration**: Employs `src/utils/codeUtils.ts` for tasks like stripping markdown fences (`cleanCodeOutput`) and applying precise text edits (`applyAITextEdits`).
 - **AI Interaction**: Manages core interaction with the AI model for initial generation and multi-step refinement.
 - **Advanced Configuration Support**: Accepts an optional `GenerationConfig` object to fine-tune AI model behavior (e.g., temperature, stop sequences) for specific generation tasks.
-- **Efficient Partial Updates (Function Calling)**: Utilizes `AIRequestService`'s `extractSearchReplaceBlocksViaTool` to robustly extract "Search and Replace" code blocks (`<<<<<<< SEARC#H ... ===#=== ... >>>>>>> REPLAC#E`) using **Function Calling (Tool Use)**. This replaces brittle regex parsing with structured, deterministic AI extraction (`SEARCH_REPLACE_EXTRACTION_TOOL`). A new **Output Integrity Validation** phase ensures that AI-generated snippets are complete and correctly formatted before being applied.
+- **Surgical Partial Updates (Function Calling)**: Utilizes `AIRequestService`'s `extractSearchReplaceBlocksViaTool` to robustly extract "Search and Replace" code blocks (`SEARC#H / ===#=== / REPLAC#E`) using **Function Calling (Tool Use)**. This replaces brittle regex parsing with structured, deterministic AI extraction (`SEARCH_REPLACE_EXTRACTION_TOOL`). A new **Output Integrity Validation** phase ensures that AI-generated snippets are complete and correctly formatted before being applied, prioritizing AI-driven consensus over rigid heuristics.
 - **Key Files**: `src/ai/enhancedCodeGeneration.ts` (`EnhancedCodeGenerator` class), `src/services/aiRequestService.ts`, `src/services/searchReplaceService.ts`, `src/services/codeValidationService.ts`, `src/utils/codeAnalysisUtils.ts`, `src/utils/codeUtils.ts`
 
 ### Plan & Workflow Management
@@ -318,7 +318,7 @@ The assembled payload (both the current turn and the previous history) must be t
 
 #### 5. Search & Replace Logic
 
-- **Responsibility**: Parses and applies partial code updates using a standard `SEARC#H`/`REPLAC#E` block format. It specifically handles "fuzzy" matching (ignoring whitespace variations) to make AI-generated patches robust against minor indentation errors.
+- **Responsibility**: Parses and applies partial code updates using an anchored `SEARC#H`/`REPLAC#E` block format. It specifically handles "fuzzy" matching (ignoring whitespace variations) to make AI-generated patches robust against minor indentation errors.
 - **Key Methods**: `parseBlocks`, `applyBlocks`, `findFuzzyMatch`.
 - **Key Files**: `src/services/searchReplaceService.ts`
 
