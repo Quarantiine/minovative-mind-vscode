@@ -7,7 +7,7 @@ Minovative Mind is a powerful AI-augmented Visual Studio Code extension that int
 - **Intelligent AI Chat Interface**: Multimodal interaction, context-aware Q&A, **Contextual History Summarization**, and rich file interactions.
 - **Autonomous AI Workflows**: AI-driven planning, execution of multi-step tasks, intelligent code modification, and **Autonomous Self-Correction**.
 - **Project Context & Intelligence**: Deep codebase analysis, Symbol Intelligence, **Progressive Discovery** for large projects, and **Intent-Aware Context** classification.
-- **Reliability, Control & Performance**: Centralized concurrency, secure filesystem operations, reversible changes, and optimized resource handling.
+- **Reliability, Control & Performance**: Centralized concurrency, secure filesystem operations, **Output Integrity Validation**, and optimized resource handling.
 - **Flexible Customization**: API key management, model selection, and granular context filtering.
 
 ---
@@ -30,7 +30,7 @@ Minovative Mind offers an intuitive chat interface for direct interaction with A
 - **Slash Command Suggestions**: Utilize intelligent suggestions for commands like `/plan`, `/fix`, and `/commit` to streamline actions.
 - **Editable History**: Edit previous messages to re-evaluate conversations with updated context.
 - **Convert to Plans**: AI-generated responses can be seamlessly converted into actionable `/plan` commands for structured execution.
-- **Plan & Agent Logs**: AI-generated plan explanations display a "Generated Plan" badge. Context Agent logs feature **terminal-like styling** and **collapsible code blocks** (Show Code/Hide Code) to keep detailed output compact.
+- **Plan & Agent Logs**: AI-generated plan explanations display a "Generated Plan" badge. Context Agent logs feature **terminal-like styling** and **collapsible code blocks** (Show Code/Hide Code) to keep detailed output compact. The sidebar UI includes **collapsible sections** for organized navigation during inactivity.
 - **Interactive File Selector**: A dedicated "Open File List" button provides a dynamic, searchable, and navigable popup. Users can efficiently select workspace files to insert their paths directly into the chat input, complete with search, keyboard navigation, and visual enhancements.
 
 ### 1.3 Code Explanation
@@ -60,7 +60,7 @@ Minovative Mind can autonomously plan and execute complex development tasks, sig
 - **Symbol-Aware Context**: Leverages detailed symbol information (functions, classes, types) from your codebase to ensure accurate and contextually relevant modifications.
 - **Quality & Production-Ready Code**: Generates modular, maintainable, and production-ready code, often using diff analysis to validate output quality.
 - **Output Validation**: Employs sophisticated heuristics to sanitize and validate AI-generated code snippets, ensuring functional and high-quality output.
-- **Surgical Code Editing**: Uses an intelligent "Search and Replace" block system to update only the specific parts of a file that need changing. This drastically reduces token usage and latency compared to full file rewrites, while using fuzzy matching to ensure reliability.
+- **Surgical Code Editing & Integrity Validation**: Uses an intelligent "Search and Replace" block system to update only specific parts of a file. **Output Integrity Validation** checks for malformed markers or partial fragments, autonomously retrying if output is corrupted.
 - **Full File Regeneration**: For massive rewrites or new files, the AI can still generate full content when necessary.
 
 ### 2.3 Code Streaming

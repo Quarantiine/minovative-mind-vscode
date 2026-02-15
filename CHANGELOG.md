@@ -4,25 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [2.54.0] - February 14, 2026
 
-### Enhanced Agent Execution and Security-Aware Sanitization
+### Enhanced Agent Execution, Decoupled Context, and Security-Aware Sanitization
 
 This release significantly refactors the Context Agent for better robustness, introduces specialized investigation tools, and implements security-focused output sanitization.
 
+- **Context Refinement & Decoupling**:
+  - Removed `ContextRefresherService` and retired ambient diagnostic monitoring from `ContextService`.
+  - Context updates are now driven synchronously during plan execution or self-correction, ensuring the agent always operates on the most stable and relevant data state.
+- **Improved Plan Execution & Validation**:
+  - `PlanExecutorService` now integrates post-execution diagnostic checking to determine if self-correction should be triggered.
+  - Introduced `validateOutputIntegrity` using a specialized lightweight prompt to robustly check for partial fragments or malformed search/replace markers before committing changes.
+  - Cleaned up marker detection and partial snippet heuristics in `SearchReplaceService` for higher precision.
 - **Agent Execution Overhaul**:
   - Replaced legacy fallbacks in `smartContextSelector.ts` with a stricter agentic loop, enforcing tool use for codebase exploration.
   - Introduced new specialized investigation tools: `get_implementations`, `get_type_definition`, `get_call_hierarchy_incoming`, `get_call_hierarchy_outgoing`, `get_file_diagnostics`, and `get_git_diffs`.
   - Replaced `sed` with a safer `read_file` tool, requiring prior symbol lookup to minimize context waste.
   - Removed aggressive heuristic fallbacks in `ContextService` if AI selection fails.
-
 - **Security & Output Cleanup**:
   - Implemented `sanitizeAiResponse` utility to strip agent control sequences, leaked tool calls, and raw HTML from AI outputs, ensuring clean and secure rendering.
-
-- **UI/CSS Improvements**:
+- **UI/CSS Enhancements**:
+  - Implemented **collapsible sections** for "empty chat" placeholders in the sidebar to improve organization.
   - Context Agent logs now feature terminal-like styling with transparent backgrounds.
-  - Implemented collapsible code blocks (Show Code/Hide Code toggle) within context logs to keep detailed output compact by default.
-
+  - Implemented collapsible code blocks (Show Code/Hide Code toggle) within context logs.
 - **Error Handling & Resilience**:
-  - Added automatic context rebuilding in `ContextService` when diagnostics show an Error, ensuring the agent sees the failure context immediately.
+  - Added automatic context rebuilding in `ContextService` when diagnostics show an Error.
   - Exported constants from `safeCommandExecutor.ts` for external utility.
 
 ## [2.52.1] - February 12, 2026

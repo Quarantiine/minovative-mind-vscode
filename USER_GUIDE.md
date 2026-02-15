@@ -62,6 +62,7 @@ If you are a developer looking to build from source or contribute, please refer 
 - **Interpreting AI Responses**: AI responses are rendered with code snippets, markdown, and diffs for clarity. You can easily copy code blocks or use the \"Apply to Editor\" functionality to integrate changes directly.
 - **Message Interaction**: Refine AI context or regenerate responses by editing your previous messages.
 - **Context Summarization**: For long conversations, the AI automatically summarizes previous discussions to maintain a clear focus on the current task.
+- **Organized Sidebar**: The sidebar features **collapsible sections** for "empty chat" placeholders, keeping your workspace clean and focused during inactivity.
 - **Token Usage**: A display feature shows current token usage, including request counts and failed requests, optimized for scannability.
 
 ### 4.2 Code Explanation
@@ -81,6 +82,7 @@ If you are a developer looking to build from source or contribute, please refer 
   - Monitor execution progress through VS Code notifications.
   - **Smart Context**: The AI will automatically find and read relevant code snippets for each step of the plan using agentic investigation and symbol intelligence, ensuring it has the full picture before writing code.
   - Plans can be cancelled if needed during execution.
+- **Output Integrity Validation**: The system now performs smarter validation of AI outputs, checking for malformed markers or partial fragments to ensure code integrity before applying changes.
 - **Reverting Changes**: The "Revert Changes" button, at the top right, allows you to undo AI-driven workflow actions if necessary.
 - **Autonomous Self-Correction**: For long-running plans, the AI now automatically monitors for errors or missing functionality using a diagnostic feedback loop. If an issue is detected, it captures the **specific error message** and initiates an automatic "Self-Correction" cycle to repair the code without requiring a new manual request.
 
