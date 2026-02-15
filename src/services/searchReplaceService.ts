@@ -46,7 +46,8 @@ export class SearchReplaceService {
 
 		for (const line of lines) {
 			const trimmedLine = line.trim();
-			if (trimmedLine.startsWith("<<<<<<< SEARCH")) {
+			// Robust check for markers: allow leading/trailing whitespace and optional multiple characters
+			if (trimmedLine.match(/^<{5,}\s*SEARCH/i)) {
 				if (state !== "NONE") {
 					// recursive or broken block, ignore or reset?
 					// Let's reset for robustness
@@ -54,12 +55,12 @@ export class SearchReplaceService {
 				state = "SEARCH";
 				currentSearch = [];
 				currentReplace = null;
-			} else if (trimmedLine.startsWith("=======")) {
+			} else if (trimmedLine.match(/^={5,}/)) {
 				if (state === "SEARCH") {
 					state = "REPLACE";
 					currentReplace = [];
 				}
-			} else if (trimmedLine.startsWith(">>>>>>> REPLACE")) {
+			} else if (trimmedLine.match(/^>{5,}\s*REPLACE/i)) {
 				if (state === "REPLACE" && currentSearch && currentReplace) {
 					blocks.push({
 						search: currentSearch.join("\n"),
@@ -79,6 +80,87 @@ export class SearchReplaceService {
 		}
 
 		return blocks;
+	}
+
+	/**
+	 * Checks if the content contains strings that look like markers but are malformed.
+	 * This helps detect if the AI tried but failed to produce a valid block.
+	 */
+	public containsDeformedMarkers(content: string): boolean {
+		// Look for fragments of markers that are NOT valid markers
+		const patterns = [
+			/SEARCH\s*$/m,
+			/^=======/m,
+			/REPLACE\s*$/m,
+			/<<<<<[^<]/,
+			/>>>>>[^>]/,
+			/SEARCH\n.*={5,}\n.*REPLACE/s, // marker names without enough arrows
+		];
+
+		// First check if any VALID blocks exist. If they do, we don't necessarily flag as "deformed"
+		// unless there are OTHER things that look like broken markers.
+		if (this.parseBlocks(content).length > 0) {
+			// If we found valid blocks, we only care if there are OTHER broken things.
+			// But for simplicity, if it has markers it's usually good.
+		}
+
+		// A more robust check: does it have "SEARCH" or "REPLACE" or "=======" but NO valid blocks?
+		const hasKeywords =
+			content.includes("SEARCH") ||
+			content.includes("REPLACE") ||
+			content.includes("=======");
+		if (hasKeywords && this.parseBlocks(content).length === 0) {
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Heuristic to determine if the content is likely a partial code snippet rather than a full file.
+	 * Used to prevent accidental full-file rewrites with fragments.
+	 */
+	public isLikelyPartialSnippet(
+		content: string,
+		originalContent?: string,
+	): boolean {
+		const trimmed = content.trim();
+
+		// Too short to be a meaningful full file (heuristic)
+		if (trimmed.length < 20 && trimmed.length > 0) {
+			return true;
+		}
+
+		// Starts with comment or import but ends abruptly? (Hard to tell)
+
+		// If we have original content, we can compare sizes
+		if (originalContent && originalContent.length > 500) {
+			// If original is large and new is tiny (and not explicitly a deletion?)
+			if (trimmed.length < originalContent.length * 0.1) {
+				// 90% reduction in size without markers might be suspicious
+				// BUT some tasks are deletions. However, deletions of 90% are rare without blocks.
+				return true;
+			}
+		}
+
+		// Look for common "fragment" signs:
+		// 1. Starts with "..." or has "..." in a way that suggests omitted code (outside of strings)
+		if (trimmed.startsWith("...") || trimmed.endsWith("...")) {
+			return true;
+		}
+
+		// 2. Contains common AI placeholders like "// ... rest of code"
+		const placeholders = [
+			/\/\/ \.\.\./,
+			/\* \.\.\./,
+			/\/\/ rest of (the )?code/i,
+			/\/\* rest of (the )?code/i,
+		];
+		if (placeholders.some((p) => p.test(content))) {
+			return true;
+		}
+
+		return false;
 	}
 
 	/**

@@ -28,6 +28,21 @@ import {
 import { hideSuggestions } from "./ui/commandSuggestions";
 
 /**
+ * Initializes collapsible sections in the empty chat placeholder.
+ */
+function initializeCollapsibleSections(): void {
+	const sectionTitles = document.querySelectorAll(".empty-chat-list-title");
+	sectionTitles.forEach((title) => {
+		title.addEventListener("click", () => {
+			const section = title.closest(".empty-chat-section");
+			if (section) {
+				section.classList.toggle("collapsed");
+			}
+		});
+	});
+}
+
+/**
  * Updates token usage display with current statistics
  */
 function updateTokenUsageDisplay(_elements: RequiredDomElements): void {
@@ -601,6 +616,7 @@ function initializeWebview(): void {
 	// Add call to createClearChatConfirmationUI
 	createClearChatConfirmationUI(elements, postMessageToExtension);
 	updateEmptyChatPlaceholderVisibility(elements);
+	initializeCollapsibleSections();
 
 	// Apply the initial loading state (which is typically false on startup)
 	// This will correctly enable/disable buttons based on initial appState values

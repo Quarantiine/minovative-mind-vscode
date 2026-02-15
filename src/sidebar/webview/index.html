@@ -76,47 +76,58 @@
       <img class="empty-chat-logo" src="__LOGO_URI__">
 
       <div class="empty-chat-container empty-chat-text">
-        <div class="empty-chat-list-title">
+        <div class="empty-chat-section collapsed">
+          <div class="empty-chat-list-title">
+            <h4>Community & Updates: <span class="collapse-icon"></span></h4>
+          </div>
           <ul class="empty-chat-list">
-            <h4>Rate Us w/ 1 question: <a href="https://forms.gle/64gLRZ1jJrdAm3oA7">Rate Now</a></h4>
+            <li>Rate w/ 1 question: <a href="https://forms.gle/64gLRZ1jJrdAm3oA7">Rate Now</a></li>
+            <li>Updates: <a href="https://www.minovativemind.dev/updates">Release Notes</a>
+            </li>
           </ul>
         </div>
 
-        <ul class="empty-chat-list">
+        <div class="empty-chat-section collapsed">
           <div class="empty-chat-list-title">
-            <h4>Get your API key to start: </h4>
+            <h4>Get your API key to start: <span class="collapse-icon"></span></h4>
           </div>
+          <ul class="empty-chat-list">
+            <li>Gemini API Key (Required): <a href="https://aistudio.google.com/apikey">AI Studio</a></li>
+            <li>Your AI Quota: <a
+                href="https://console.cloud.google.com/apis/api/cloudaicompanion.googleapis.com/quotas?project=">Check
+                Quota</a></li>
+          </ul>
+        </div>
 
-
-          <li>Gemini API Key (Required): <a href="https://aistudio.google.com/apikey">AI Studio</a></li>
-          <li>Your GCP: <a href="https://console.cloud.google.com/">Google Cloud Platform</a></li>
-        </ul>
-
-        <ul class="empty-chat-list">
+        <div class="empty-chat-section collapsed">
           <div class="empty-chat-list-title">
-            <h4>Chat commands: </h4>
+            <h4>Chat commands: <span class="collapse-icon"></span></h4>
           </div>
+          <ul class="empty-chat-list">
+            <li><code>/plan [your request]</code> <span style="font-weight: 800; font-size: x-small;">(AGENT ✓)</span>:
+              Generate code across multiple files</li>
+            <li><code>/commit</code>: AI generated
+              commit message.</li>
+          </ul>
+        </div>
 
-          <li><code>/plan [your request]</code> <span style="font-weight: 800; font-size: x-small;">(AGENT ✓)</span>:
-            Generate code across multiple files</li>
-          <li><code>/commit</code>: AI generated
-            commit message.</li>
-        </ul>
-
-        <ul class="empty-chat-list">
+        <div class="empty-chat-section collapsed">
           <div class="empty-chat-list-title">
-            <h4>By using <code>CMD/CTRL + M</code> in a file:</h4>
+            <h4>In-file selection <code>CMD/CRTL/M</code>: <span class="collapse-icon"></span></h4>
           </div>
-          <li><code>/fix</code> <span style="font-weight: 800; font-size: x-small;">(AGENT ✓)</span>: Fixing bugs
-          </li>
-          <li><code>/docs</code> <span style="font-weight: 800; font-size: x-small;">(AGENT ✓)</span>: Adding docs
-          </li>
-          <li><code>chat</code>: General conversations with the AI
-          </li>
-          <li><code>custom prompt</code> <span style="font-weight: 800; font-size: x-small;">(AGENT ✓)</span>: Input any
-            specific instruction
-          </li>
-        </ul>
+          <ul class="empty-chat-list">
+            <li><code>/fix</code> <span style="font-weight: 800; font-size: x-small;">(AGENT ✓)</span>: Fixing bugs
+            </li>
+            <li><code>/docs</code> <span style="font-weight: 800; font-size: x-small;">(AGENT ✓)</span>: Adding docs
+            </li>
+            <li><code>chat</code>: General conversations with the AI
+            </li>
+            <li><code>custom prompt</code> <span style="font-weight: 800; font-size: x-small;">(AGENT ✓)</span>: Input
+              any
+              specific instruction
+            </li>
+          </ul>
+        </div>
         <p style="color: white; opacity: 0.3; font-style: italic; font-weight: bold;">AI can make mistakes
         </p>
       </div>

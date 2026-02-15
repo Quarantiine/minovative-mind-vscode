@@ -203,45 +203,6 @@ export class ContextService {
 			}),
 		);
 
-		// Subscribe to diagnostic changes for ambient error detection
-		registerDisposable(
-			vscode.languages.onDidChangeDiagnostics((e) => {
-				const activeEditor = vscode.window.activeTextEditor;
-				if (!activeEditor) {
-					return;
-				}
-
-				const docUri = activeEditor.document.uri;
-				if (e.uris.some((uri) => uri.toString() === docUri.toString())) {
-					const diagnostics = vscode.languages.getDiagnostics(docUri);
-					const hasError = diagnostics.some(
-						(d) => d.severity === vscode.DiagnosticSeverity.Error,
-					);
-
-					if (hasError) {
-						console.log(
-							`[ContextService] Ambient error detected in ${docUri.fsPath}. Triggering context refresh.`,
-						);
-						this.buildProjectContext(
-							undefined,
-							undefined,
-							undefined,
-							undefined,
-							{
-								forceAISelectionRecalculation: true,
-								useAISelectionCache: false,
-								type: "AMBIENT_DIAGNOSTICS_ERROR",
-							},
-						).catch((err) => {
-							console.error(
-								`[ContextService] Failed to rebuild context on diagnostic error: ${err.message}`,
-							);
-						});
-					}
-				}
-			}),
-		);
-
 		console.log("[ContextService] Workspace file system watchers registered.");
 	}
 

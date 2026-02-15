@@ -18,6 +18,7 @@ export interface ProjectConfigContext {
 		module?: string;
 	};
 	frameworkHints?: string[];
+	engines?: Record<string, string>;
 }
 
 // Cache for config context
@@ -54,6 +55,7 @@ export async function gatherProjectConfigContext(
 
 			context.projectName = packageJson.name;
 			context.scripts = packageJson.scripts;
+			context.engines = packageJson.engines;
 
 			// Extract key dependencies (top 15 by importance)
 			const deps = packageJson.dependencies || {};
@@ -116,6 +118,18 @@ export async function gatherProjectConfigContext(
 			}
 			if (deps["electron"] || devDeps["electron"]) {
 				frameworkHints.push("Electron");
+			}
+			if (deps["tailwindcss"] || devDeps["tailwindcss"]) {
+				frameworkHints.push("Tailwind CSS");
+			}
+			if (deps["jest"] || devDeps["jest"]) {
+				frameworkHints.push("Jest");
+			}
+			if (deps["eslint"] || devDeps["eslint"]) {
+				frameworkHints.push("ESLint");
+			}
+			if (deps["prettier"] || devDeps["prettier"]) {
+				frameworkHints.push("Prettier");
 			}
 		} catch (e) {
 			console.warn(
@@ -219,6 +233,13 @@ export function formatProjectConfigForPrompt(
 
 	if (config.frameworkHints && config.frameworkHints.length > 0) {
 		lines.push(`Framework: ${config.frameworkHints.join(", ")}`);
+	}
+
+	if (config.engines && Object.keys(config.engines).length > 0) {
+		const enginesInfo = Object.entries(config.engines)
+			.map(([engine, version]) => `${engine}: ${version}`)
+			.join(", ");
+		lines.push(`Engines: ${enginesInfo}`);
 	}
 
 	if (config.scripts && Object.keys(config.scripts).length > 0) {

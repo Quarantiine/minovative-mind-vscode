@@ -12,7 +12,6 @@ import {
 import { cleanCodeOutput } from "../utils/codeUtils";
 import { ExtensionToWebviewMessages } from "../sidebar/common/sidebarTypes";
 import { ProjectChangeLogger } from "../workflow/ProjectChangeLogger";
-import { ContextRefresherService } from "../services/contextRefresherService";
 import {
 	analyzeFileStructure,
 	getLanguageId,
@@ -49,7 +48,6 @@ export class EnhancedCodeGenerator {
 		private postMessageToWebview: (message: ExtensionToWebviewMessages) => void,
 		private changeLogger: ProjectChangeLogger,
 		private codeValidationService: CodeValidationService,
-		private contextRefresherService: ContextRefresherService,
 		private lightweightClassificationService: LightweightClassificationService,
 		private searchReplaceService: SearchReplaceService,
 	) {}

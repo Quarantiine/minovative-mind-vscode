@@ -72,12 +72,49 @@ export const SEARCH_REPLACE_EXTRACTION_TOOL: Tool = {
 	],
 };
 
+export const OUTPUT_INTEGRITY_VALIDATION_TOOL: Tool = {
+	functionDeclarations: [
+		{
+			name: "validateOutputIntegrity",
+			description:
+				"Validates the integrity of AI-generated code modifications.",
+			parameters: {
+				type: SchemaType.OBJECT,
+				properties: {
+					isValid: {
+						type: SchemaType.BOOLEAN,
+						description:
+							"Whether the output is considered a complete and valid modification.",
+					},
+					reason: {
+						type: SchemaType.STRING,
+						description:
+							"Detailed explanation of why the output is valid or invalid.",
+					},
+					type: {
+						type: SchemaType.STRING,
+						description: "The category of the output integrity result.",
+					},
+				},
+				required: ["isValid", "reason", "type"],
+			},
+		},
+	],
+};
+
 export class AIRequestService {
 	constructor(
 		private apiKeyManager: ApiKeyManager,
 		private postMessageToWebview: (message: any) => void,
 		private tokenTrackingService: TokenTrackingService, // Made tokenTrackingService a required dependency
 	) {}
+
+	/**
+	 * Returns the currently active API key.
+	 */
+	public getActiveApiKey(): string | undefined {
+		return this.apiKeyManager.getActiveApiKey();
+	}
 
 	/**
 	 * Extracts structured search/replace blocks from raw LLM text output using Function Calling/Tool Use.

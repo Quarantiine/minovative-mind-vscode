@@ -30,6 +30,7 @@ import { getSymbolsInDocument } from "./symbolService";
 import { SearchReplaceService } from "./searchReplaceService";
 import { ExplorationService } from "./ExplorationService";
 import { GatekeeperService } from "./GatekeeperService";
+import { validateOutputIntegrity } from "../ai/prompts/lightweightPrompts";
 
 export class PlanExecutorService {
 	private commandExecutionTerminals: vscode.Terminal[] = [];
@@ -228,6 +229,8 @@ export class PlanExecutorService {
 						}
 
 						// --- GATEKEEPER VERIFICATION ---
+						let shouldTriggerSelfCorrection = false;
+
 						if (
 							!combinedToken.isCancellationRequested &&
 							affectedUris.size > 0
@@ -290,6 +293,17 @@ export class PlanExecutorService {
 										`[MinovativeMind] Skipping verification. Reason: ${riskDecision.reason}`,
 									);
 								}
+
+								// CRITICAL CHECK: Run diagnostics post-execution on affected files for potential self-correction
+								// We do this EVEN IF automated verification passed, as there might be UI or type errors not caught by the verification command.
+								const diagnosticUris =
+									await this._checkDiagnosticsForSelfCorrection(
+										affectedUris,
+										combinedToken,
+									);
+								if (diagnosticUris.length > 0) {
+									shouldTriggerSelfCorrection = true;
+								}
 							} finally {
 								signalDisposable.dispose();
 							}
@@ -297,7 +311,14 @@ export class PlanExecutorService {
 						// --- END GATEKEEPER ---
 
 						if (!combinedToken.isCancellationRequested) {
-							this.provider.currentExecutionOutcome = "success";
+							if (shouldTriggerSelfCorrection) {
+								this.provider.currentExecutionOutcome = "success_with_errors";
+								console.log(
+									"[PlanExecutorService] Plan execution succeeded but found post-execution errors. Setting outcome to success_with_errors.",
+								);
+							} else {
+								this.provider.currentExecutionOutcome = "success";
+							}
 						} else {
 							this.provider.currentExecutionOutcome = "cancelled";
 						}
@@ -341,7 +362,7 @@ export class PlanExecutorService {
 				type: "reenableInput",
 			});
 
-			let outcome: sidebarTypes.ExecutionOutcome;
+			let outcome: sidebarTypes.ExecutionOutcome | undefined;
 			if (this.provider.currentExecutionOutcome === undefined) {
 				outcome = "failed";
 			} else {
@@ -356,6 +377,15 @@ export class PlanExecutorService {
 				type: "planExecutionEnded",
 			});
 
+			if (
+				(this.provider.currentExecutionOutcome as any) === "success_with_errors"
+			) {
+				console.log(
+					"[PlanExecutorService] Outcome set to success_with_errors. Triggering self-correction workflow.",
+				);
+				await this.provider.triggerSelfCorrectionWorkflow();
+			}
+
 			// Clear plan state
 			this.provider.currentPlanSteps = [];
 			this.provider.currentPlanStepIndex = -1;
@@ -367,11 +397,15 @@ export class PlanExecutorService {
 			const isOperationSuperseded =
 				this.provider.currentActiveChatOperationId !== originalOperationId;
 
+			console.log(
+				`[PlanExecutorService] Final check: currentActiveChatOperationId=${this.provider.currentActiveChatOperationId}, originalOperationId=${originalOperationId}, isOperationSuperseded=${isOperationSuperseded}`,
+			);
+
 			if (!isOperationSuperseded) {
 				await this.provider.endUserOperation(outcome);
 			} else {
 				console.log(
-					`[PlanExecutorService] Skipping endUserOperation because operation ID changed (Original: ${originalOperationId}, Current: ${this.provider.currentActiveChatOperationId}). Assumption: Self-correction triggered.`,
+					`[PlanExecutorService] Skipping endUserOperation because operation ID changed. Assumption: Self-correction or new operation started.`,
 				);
 			}
 
@@ -1400,14 +1434,29 @@ export class PlanExecutorService {
 			/* Search and Replace Block Logic */
 			const rawOutput = cleanCodeOutput(modifiedResult.content);
 
-			// Check if the output contains search/replace blocks
-			if (rawOutput.includes("<<<<<<< SEARCH")) {
+			// Check if the output contains search/replace blocks or hints of markers
+			const hasSearchReplaceMarkers =
+				rawOutput.match(/^<{5,}\s*SEARCH/i) ||
+				rawOutput.includes("<<<<<<< SEARCH");
+
+			if (hasSearchReplaceMarkers) {
 				try {
 					const blocks = searchReplaceService.parseBlocks(rawOutput);
 					if (blocks.length === 0) {
-						throw new Error(
-							"Detected Search/Replace markers but failed to parse any valid blocks.",
-						);
+						if (attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
+							attempt++;
+							console.warn(
+								`[PlanExecutor] Detected Search/Replace markers but failed to parse any valid blocks for ${step.step.path}. triggering AI retry.`,
+							);
+							clarificationContext +=
+								"\n\n[PARSING ERROR]: I detected Search/Replace markers in your output, but they were malformed and I couldn't parse them. Please ensure you use the exact format:\n<<<<<<< SEARCH\n[existing code]\n=======\n[new code]\n>>>>>>> REPLACE";
+							await this._delay(1000, combinedToken);
+							continue;
+						} else {
+							throw new Error(
+								"Detected Search/Replace markers but failed to parse any valid blocks after multiple attempts.",
+							);
+						}
 					}
 					newContent = searchReplaceService.applyBlocks(
 						originalContent,
@@ -1521,9 +1570,54 @@ export class PlanExecutorService {
 					}
 				}
 			} else {
-				// Fallback to full file rewrite if no blocks detected
+				// No valid blocks found and no markers detected.
+				// Check for malformed markers OR suspicious fragments.
+				// We use both heuristics AND a lightweight AI check for better robustness.
+				const hasDeformedMarkers =
+					searchReplaceService.containsDeformedMarkers(rawOutput);
+				const isLikelyFragmentHeuristic =
+					searchReplaceService.isLikelyPartialSnippet(
+						rawOutput,
+						originalContent,
+					);
+
+				let isInvalid = hasDeformedMarkers || isLikelyFragmentHeuristic;
+				let invalidReason = hasDeformedMarkers
+					? "malformed Search/Replace markers"
+					: "a partial code snippet without markers";
+
+				// Secondary check using a lightweight AI model (Flash Lite) for edge cases
+				if (!isInvalid && attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
+					try {
+						const integrityResult = await validateOutputIntegrity(
+							rawOutput,
+							originalContent,
+							this.provider.aiRequestService,
+							combinedToken,
+						);
+						if (!integrityResult.isValid) {
+							isInvalid = true;
+							invalidReason = integrityResult.reason;
+						}
+					} catch (e) {
+						console.warn("[PlanExecutor] AI integrity check failed:", e);
+					}
+				}
+
+				if (isInvalid && attempt < this.MAX_TRANSIENT_STEP_RETRIES) {
+					attempt++;
+					console.warn(
+						`[PlanExecutor] Detected ${invalidReason} for ${step.step.path}. triggering AI retry.`,
+					);
+
+					clarificationContext += `\n\n[OUTPUT INTEGRITY ERROR]: Your previous output was rejected. Reason: ${invalidReason}. Please ensure you use the exact Search/Replace block format or provide the FULL file content if intended.`;
+					await this._delay(1000, combinedToken);
+					continue;
+				}
+
+				// Fallback to full file rewrite if no blocks detected and all sanity checks pass
 				console.warn(
-					`[PlanExecutor] No Search/Replace blocks detected for ${step.step.path}. Treating as full file rewrite.`,
+					`[PlanExecutor] No Search/Replace blocks detected for ${step.step.path}. Passed heuristics and AI integrity check. Treating as full file rewrite.`,
 				);
 				newContent = rawOutput;
 				success = true;
@@ -1902,5 +1996,63 @@ export class PlanExecutorService {
 
 		// Fallback: Return the exact join (traditional behavior)
 		return exactUri;
+	}
+
+	private async _checkDiagnosticsForSelfCorrection(
+		urisToWatch: Set<vscode.Uri>,
+		token: vscode.CancellationToken,
+	): Promise<vscode.Uri[]> {
+		const rootUri = this.workspaceRootUri;
+		if (!rootUri) return [];
+
+		console.log(
+			`[PlanExecutorService] Checking diagnostics on ${urisToWatch.size} affected URIs post-plan execution.`,
+		);
+
+		// 1. Wait for diagnostics to stabilize on all affected files
+		// We use the same _warmUpDiagnostics helper that is already in use for "Finalizing" status.
+		if (urisToWatch.size > 0) {
+			this.postMessageToWebview({
+				type: "statusUpdate",
+				value: `Verifying file stability (${urisToWatch.size} files)...`,
+			});
+			await this._warmUpDiagnostics(urisToWatch, token);
+		}
+
+		const errorFiles: vscode.Uri[] = [];
+
+		for (const uri of urisToWatch) {
+			if (token.isCancellationRequested) {
+				throw new Error(ERROR_OPERATION_CANCELLED);
+			}
+			try {
+				const diagnostics = vscode.languages.getDiagnostics(uri);
+				const hasErrors = diagnostics.some(
+					(d) => d.severity === vscode.DiagnosticSeverity.Error,
+				);
+
+				if (hasErrors) {
+					errorFiles.push(uri);
+				}
+			} catch (e) {
+				console.warn(
+					`[PlanExecutorService] Could not check diagnostics for ${uri.fsPath}: ${e}`,
+				);
+			}
+		}
+
+		if (errorFiles.length > 0) {
+			console.log(
+				`[PlanExecutorService] Found ${errorFiles.length} files with errors post-execution.`,
+			);
+			// Notify the sidebar provider to trigger the UI/workflow change
+			this.postMessageToWebview({
+				type: "statusUpdate",
+				value: `Plan execution succeeded but detected ${errorFiles.length} file(s) with errors. Triggering self-correction.`,
+				isError: true,
+			});
+		}
+
+		return errorFiles;
 	}
 }

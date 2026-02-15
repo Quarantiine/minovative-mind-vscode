@@ -504,7 +504,11 @@ export interface PersistedPlanData {
 	textualPlanExplanation: string; // The full text of the generated plan (crucial for re-display)
 }
 
-export type ExecutionOutcome = "success" | "cancelled" | "failed";
+export type ExecutionOutcome =
+	| "success"
+	| "cancelled"
+	| "failed"
+	| "success_with_errors";
 
 export interface EditorContext {
 	instruction: string;

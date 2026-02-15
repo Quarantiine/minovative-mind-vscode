@@ -25,7 +25,6 @@ import {
 
 import { CodeValidationService } from "../services/codeValidationService";
 import { DiagnosticService } from "../utils/diagnosticUtils";
-import { ContextRefresherService } from "../services/contextRefresherService";
 import { EnhancedCodeGenerator } from "../ai/enhancedCodeGeneration";
 import { LightweightClassificationService } from "../services/lightweightClassificationService";
 import { SearchReplaceService } from "../services/searchReplaceService";
@@ -205,8 +204,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	private enhancedCodeGenerator: EnhancedCodeGenerator;
 	/** Service for validating generated code snippets against workspace context. */
 	private codeValidationService: CodeValidationService;
-	/** Service for watching workspace changes and refreshing context caches. */
-	private contextRefresherService: ContextRefresherService;
 	/** Service for lightweight AI-based classification of intent and errors. */
 	private lightweightClassificationService: LightweightClassificationService;
 	/** Service for exploring the codebase to gather context. */
@@ -324,11 +321,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		this.codeValidationService = new CodeValidationService(
 			new DiagnosticService(),
 		);
-		this.contextRefresherService = new ContextRefresherService(
-			this.contextService,
-			this.changeLogger,
-			this.workspaceRootUri || vscode.Uri.file("/"),
-		);
 
 		this.lightweightClassificationService =
 			new LightweightClassificationService(this.aiRequestService);
@@ -340,7 +332,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			this.postMessageToWebview.bind(this),
 			this.changeLogger,
 			this.codeValidationService,
-			this.contextRefresherService,
 			this.lightweightClassificationService,
 			searchReplaceService,
 		);
@@ -867,12 +858,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 	 * It creates a new `CancellationTokenSource` and sets a unique `currentActiveChatOperationId`.
 	 * @param operationType Descriptive type of the operation (e.g., "plan", "chat", "commit").
 	 */
-	public async startUserOperation(operationType: string): Promise<void> {
+	public async startUserOperation(
+		operationType: string,
+		force: boolean = false,
+	): Promise<void> {
 		// Generate a new unique operationId at the very beginning
 		const newOperationId = crypto.randomUUID();
 
 		// Concurrency check: If an operation is truly in progress (ID set and token active), warn and exit.
-		if (this._isOperationActive) {
+		if (this._isOperationActive && !force) {
 			console.warn(
 				`[SidebarProvider] Attempted to start operation '${operationType}' (new ID: ${newOperationId}) while an operation ` +
 					`(current ID: ${this.currentActiveChatOperationId}) is already active. Ignoring duplicate request.`,
@@ -881,7 +875,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		}
 
 		// If operation is inactive, but a stale operation ID exists (e.g., failed to clear ID on crash), clear it now
-		if (this.currentActiveChatOperationId !== null) {
+		if (this.currentActiveChatOperationId !== null && !force) {
 			console.warn(
 				`[SidebarProvider] Detected stale active operation ID (${this.currentActiveChatOperationId}) while no token was active. Resetting state for new operation.`,
 			);
@@ -1015,6 +1009,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 				case "success":
 					statusMessage = "Operation completed successfully.";
 					break;
+				case "success_with_errors":
+					statusMessage = "Plan execution finished with diagnostic errors.";
+					// Do not set isError = true here because we want a neutral success message
+					// but with the specific "errors exist" context.
+					break;
 				case "cancelled":
 					statusMessage = "Operation cancelled."; // More explicit message
 					isError = true;
@@ -1026,6 +1025,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 				case "review":
 					statusMessage =
 						"Operation paused for user review. Please review the proposed changes.";
+					break;
+				case "success_with_errors":
+					statusMessage = "Plan execution finished with diagnostic errors.";
+					// Do not set isError = true here to keep it neutral
 					break;
 				default:
 					statusMessage = `Operation ended with unknown outcome: ${outcome}.`;
@@ -1285,45 +1288,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
 		const diagnosticsErrorsExist = this._checkDiagnosticsForErrors();
 
-		// NEW TRIGGER: Successful execution but with detected errors -> Self Correction
-		if (outcome === "success" && diagnosticsErrorsExist) {
-			console.log(
-				"[SidebarProvider] Plan success with diagnostics errors. Triggering self-correction.",
-			);
-
-			const planSummary = this.lastPlanGenerationContext?.textualPlanExplanation
-				? `Original Attempt: ${this.lastPlanGenerationContext.textualPlanExplanation}`
-				: "Successful Plan Execution (Triggered Self-Correction)";
-
-			try {
-				await this.changeLogger.saveChangesAsLastCompletedPlan(planSummary);
-			} catch (err) {
-				console.error(
-					"[SidebarProvider] Failed to checkpoint changes before self-correction:",
-					err,
-				);
-			}
-
-			this.postMessageToWebview({
-				type: "planExecutionFinished",
-				hasRevertibleChanges: true,
-			});
-
-			this.postMessageToWebview({
-				type: "statusUpdate",
-				value: "Plan succeeded but diagnostics indicate errors",
-				isError: true,
-			});
-
-			// Delegate lifecycle management (cancellation of old op, start of new op) to PlanService
-			await this.planService.triggerSelfCorrectionWorkflow();
-			return;
-		}
-
 		switch (outcome) {
 			case "success":
 				message = `Plan completed successfully!`;
 				isError = false;
+				break;
+			case "success_with_errors":
+				message = `Plan completed but with diagnostic errors.`;
+				isError = true;
 				break;
 			case "cancelled":
 				message = `Plan was cancelled.`;

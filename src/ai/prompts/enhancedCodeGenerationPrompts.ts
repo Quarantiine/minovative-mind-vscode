@@ -242,19 +242,22 @@ export function getEnhancedModificationSystemInstruction(
 	const requirementsList: string[] = [];
 
 	requirementsList.push(
-		"**FINAL OUTPUT FORMAT: IMPORTANT**: You must use the **Search and Replace** block format to modify the code. Do NOT return the full file. Use the following format for *every* change:",
+		"**FINAL OUTPUT FORMAT: ABSOLUTELY CRITICAL**: You MUST use the **Search and Replace** block format for all modifications. **DO NOT provide only a partial code fragment or snippet without these markers.** If you do not use the markers, your changes will be REJECTED.",
 	);
 	requirementsList.push(
-		"```\n<<<<<<< SEARCH\n[Exact content to be replaced, including correct indentation]\n=======\n[New content to replace with]\n>>>>>>> REPLACE\n```",
+		"**Full File Rewrite**: Provide the FULL file content only if the entire file needs to be replaced. Otherwise, always use blocks.",
 	);
 	requirementsList.push(
-		"**Multiple Changes**: If you need to make multiple changes, provide multiple blocks in sequence.",
+		"```\n<<<<<<< SEARCH\n[Exact content to be replaced]\n=======\n[New content to replace with]\n>>>>>>> REPLACE\n```",
 	);
 	requirementsList.push(
-		"**Context Match & Uniqueness**: The content in the `SEARCH` block must *exactly* match the existing code (including whitespace). **CRITICAL**: You MUST include enough surrounding context lines to make the match **GLOBALLY UNIQUE** within the file. Never use generic blocks like `try {` or `}` or `if (x) {` alone; always include unique preceding or following lines (like function declarations or specific logic) to guarantee the search block matches ONLY the intended target.",
+		"**Multiple Changes**: Sequential blocks are encouraged for multiple changes.",
 	);
 	requirementsList.push(
-		"**Deletions**: To delete code, leave the `REPLACE` section empty (or just containing newline if needed).",
+		"**Context Match & Uniqueness**: The `SEARCH` block must *exactly* match the existing code. Include enough surrounding context lines to ensure the match is **GLOBALLY UNIQUE** in the file. If a block matches multiple locations, the modification will fail.",
+	);
+	requirementsList.push(
+		"**Deletions**: Leave the `REPLACE` section empty for deletions.",
 	);
 
 	if (isRewrite) {

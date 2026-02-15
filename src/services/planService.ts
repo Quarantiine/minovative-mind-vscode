@@ -177,10 +177,10 @@ export class PlanService {
 		const modelName = this.provider.settingsManager.getSelectedModelName();
 		const apiKey = this.provider.apiKeyManager.getActiveApiKey();
 
-		await this.provider.startUserOperation("self-correction");
+		await this.provider.startUserOperation("self-correction", true);
 
 		vscode.window.showInformationMessage(
-			"Initiating automatic self-correction cycle based on recent changes.",
+			"Initiating self-correction cycle based on recent execution errors...",
 			{ modal: false },
 		);
 
@@ -320,7 +320,7 @@ export class PlanService {
 					freshToken,
 					modelName,
 					operationId as string,
-					"Applying self-correction based on recent changes.",
+					"Analyze diagnostics and recent changes from the last failed execution. Generate a NEW plan focused ONLY on resolving the reported errors.",
 					undefined,
 					diagnosticsString || undefined,
 					{
@@ -420,7 +420,7 @@ export class PlanService {
 					isComplete: true,
 				});
 			}
-			this.provider.clearActiveOperationState();
+			await this.provider.clearActiveOperationState();
 		}
 	}
 
@@ -737,7 +737,7 @@ export class PlanService {
 
 			disposable?.dispose();
 			this.provider.chatHistoryManager.restoreChatHistoryToWebview();
-			this.provider.clearActiveOperationState();
+			await this.provider.clearActiveOperationState();
 		}
 	}
 
