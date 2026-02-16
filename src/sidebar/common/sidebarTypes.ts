@@ -21,6 +21,12 @@ export interface HistoryEntry extends Omit<Content, "parts"> {
 	isContextAgentLog?: boolean;
 }
 
+export interface ChatSessionMetadata {
+	id: string;
+	name: string;
+	lastModified: number;
+}
+
 export interface ToggleRelevantFilesDisplayMessage {
 	type: "toggleRelevantFilesDisplay";
 	messageIndex: number;

@@ -5,31 +5,254 @@ import {
 	UpdateRelevantFilesDisplayMessage,
 	HistoryEntryPart,
 	ImageInlineData,
+	ChatSessionMetadata,
 } from "../common/sidebarTypes";
+import { v4 as uuidv4 } from "uuid";
 
-const CHAT_HISTORY_STORAGE_KEY = "minovativeMindChatHistory";
+const CHAT_HISTORY_STORAGE_KEY = "minovativeMindChatHistory"; // Legacy key
+const SESSIONS_METADATA_KEY = "minovativeMindChatSessions";
+const CURRENT_SESSION_ID_KEY = "minovativeMindCurrentSessionId";
+const HISTORY_KEY_PREFIX = "minovativeMindChatHistory_";
 const MAX_HISTORY_ITEMS = 100;
 
 export class ChatHistoryManager {
 	private _chatHistory: HistoryEntry[] = [];
+	private _sessions: ChatSessionMetadata[] = [];
+	private _currentSessionId: string | null = null;
 	private _workspaceState: vscode.Memento;
 
 	constructor(
 		workspaceState: vscode.Memento,
-		private readonly postMessageToWebview: (message: any) => void
+		private readonly postMessageToWebview: (message: any) => void,
 	) {
 		this._workspaceState = workspaceState;
-		this.loadHistoryFromStorage();
+		this.initializeSessions();
 	}
 
 	public getChatHistory(): readonly HistoryEntry[] {
 		return this._chatHistory;
 	}
 
+	public getSessions(): readonly ChatSessionMetadata[] {
+		return this._sessions;
+	}
+
+	public getCurrentSessionId(): string | null {
+		return this._currentSessionId;
+	}
+
+	private async initializeSessions(): Promise<void> {
+		await this.loadSessionsMetadata();
+		const legacyHistory = this._workspaceState.get<string>(
+			CHAT_HISTORY_STORAGE_KEY,
+		);
+
+		if (legacyHistory && this._sessions.length === 0) {
+			console.log("Migrating legacy chat history to new session storage.");
+			const defaultSessionId = uuidv4();
+			const defaultSession: ChatSessionMetadata = {
+				id: defaultSessionId,
+				name: "Default Session",
+				lastModified: Date.now(),
+			};
+			this._sessions = [defaultSession];
+			this._currentSessionId = defaultSessionId;
+			await this.saveSessionsMetadata();
+			await this._workspaceState.update(CHAT_HISTORY_STORAGE_KEY, undefined);
+			await this._workspaceState.update(
+				HISTORY_KEY_PREFIX + defaultSessionId,
+				legacyHistory,
+			);
+		}
+
+		if (this._sessions.length === 0) {
+			await this.createNewSession("New Chat");
+		} else {
+			this._currentSessionId =
+				this._workspaceState.get<string>(CURRENT_SESSION_ID_KEY) ||
+				this._sessions[0].id;
+			// Ensure currentSessionId is valid
+			if (!this._sessions.find((s) => s.id === this._currentSessionId)) {
+				this._currentSessionId = this._sessions[0].id;
+			}
+		}
+
+		await this.loadHistoryFromStorage();
+	}
+
+	private async loadSessionsMetadata(): Promise<void> {
+		this._sessions = this._workspaceState.get<ChatSessionMetadata[]>(
+			SESSIONS_METADATA_KEY,
+			[],
+		);
+	}
+
+	private async saveSessionsMetadata(): Promise<void> {
+		await this._workspaceState.update(SESSIONS_METADATA_KEY, this._sessions);
+	}
+
+	public async createNewSession(name: string = "New Chat"): Promise<string> {
+		const id = uuidv4();
+		const newSession: ChatSessionMetadata = {
+			id,
+			name,
+			lastModified: Date.now(),
+		};
+		this._sessions.unshift(newSession);
+		this._currentSessionId = id;
+		this._chatHistory = [];
+		await this.saveSessionsMetadata();
+		await this._workspaceState.update(CURRENT_SESSION_ID_KEY, id);
+		await this.saveHistoryToStorage();
+		this.restoreChatHistoryToWebview();
+		return id;
+	}
+
+	public async switchSession(sessionId: string): Promise<void> {
+		if (this._currentSessionId === sessionId) return;
+		const session = this._sessions.find((s) => s.id === sessionId);
+		if (!session) return;
+
+		this._currentSessionId = sessionId;
+		await this._workspaceState.update(CURRENT_SESSION_ID_KEY, sessionId);
+		await this.loadHistoryFromStorage();
+	}
+
+	public async deleteSession(sessionId: string): Promise<void> {
+		const index = this._sessions.findIndex((s) => s.id === sessionId);
+		if (index === -1) return;
+
+		this._sessions.splice(index, 1);
+		await this._workspaceState.update(
+			HISTORY_KEY_PREFIX + sessionId,
+			undefined,
+		);
+
+		if (this._sessions.length === 0) {
+			await this.createNewSession();
+		} else if (this._currentSessionId === sessionId) {
+			await this.switchSession(this._sessions[0].id);
+		} else {
+			await this.saveSessionsMetadata();
+		}
+	}
+
+	public async renameSession(
+		sessionId: string,
+		newName: string,
+	): Promise<void> {
+		const session = this._sessions.find((s) => s.id === sessionId);
+		if (!session) return;
+		session.name = newName;
+		await this.saveSessionsMetadata();
+	}
+
+	public async pickSessionAndLoad(): Promise<void> {
+		const items: (vscode.QuickPickItem & {
+			sessionId?: string;
+			action?: string;
+		})[] = [
+			{
+				label: "$(add) New Session...",
+				action: "new",
+				alwaysShow: true,
+			},
+			{
+				label: "$(file-code) Load from JSON file...",
+				action: "load_file",
+				alwaysShow: true,
+			},
+			{
+				label: "",
+				kind: vscode.QuickPickItemKind.Separator,
+			},
+		];
+
+		const sessionItems = this._sessions.map((s) => ({
+			label: s.name,
+			description: s.id === this._currentSessionId ? "(Active)" : "",
+			detail: `Last modified: ${new Date(s.lastModified).toLocaleString()}`,
+			sessionId: s.id,
+			buttons: [
+				{
+					iconPath: new vscode.ThemeIcon("save"),
+					tooltip: "Save Session to File",
+				},
+				{
+					iconPath: new vscode.ThemeIcon("edit"),
+					tooltip: "Rename Session",
+				},
+				{
+					iconPath: new vscode.ThemeIcon("trash"),
+					tooltip: "Delete Session",
+				},
+			],
+		}));
+
+		const quickPick = vscode.window.createQuickPick<(typeof items)[0]>();
+		quickPick.items = [...items, ...sessionItems];
+		quickPick.placeholder = "Select a chat session or action";
+		quickPick.title = "Minovative Mind: Chat Sessions";
+
+		quickPick.onDidTriggerItemButton(async (e) => {
+			const item = e.item;
+			if (!item.sessionId) return;
+
+			if (e.button.tooltip === "Save Session to File") {
+				await this.saveSessionToFile(item.sessionId);
+			} else if (e.button.tooltip === "Rename Session") {
+				const newName = await vscode.window.showInputBox({
+					prompt: "Enter a new name for the chat session",
+					value: item.label,
+				});
+				if (newName) {
+					await this.renameSession(item.sessionId, newName);
+					quickPick.hide();
+					await this.pickSessionAndLoad(); // Refresh
+				}
+			} else if (e.button.tooltip === "Delete Session") {
+				const confirm = await vscode.window.showWarningMessage(
+					`Are you sure you want to delete the session "${item.label}"?`,
+					{ modal: true },
+					"Delete",
+				);
+				if (confirm === "Delete") {
+					await this.deleteSession(item.sessionId);
+					quickPick.hide();
+					await this.pickSessionAndLoad(); // Refresh
+				}
+			}
+		});
+
+		quickPick.onDidAccept(async () => {
+			const selection = quickPick.selectedItems[0];
+			quickPick.hide();
+
+			if (selection) {
+				if (selection.action === "new") {
+					const name = await vscode.window.showInputBox({
+						prompt: "Enter a name for the new chat session",
+						placeHolder: "New Chat",
+					});
+					if (name !== undefined) {
+						await this.createNewSession(name || "New Chat");
+					}
+				} else if (selection.action === "load_file") {
+					await this.loadChat();
+				} else if (selection.sessionId) {
+					await this.switchSession(selection.sessionId);
+				}
+			}
+		});
+
+		quickPick.show();
+	}
+
 	private async loadHistoryFromStorage(): Promise<void> {
+		if (!this._currentSessionId) return;
 		try {
 			const storedHistoryString = this._workspaceState.get<string>(
-				CHAT_HISTORY_STORAGE_KEY
+				HISTORY_KEY_PREFIX + this._currentSessionId,
 			);
 			if (storedHistoryString) {
 				const loadedHistory: HistoryEntry[] = JSON.parse(storedHistoryString);
@@ -51,7 +274,7 @@ export class ChatHistoryManager {
 										typeof p.inlineData === "object" &&
 										p.inlineData !== null &&
 										typeof p.inlineData.mimeType === "string" &&
-										typeof p.inlineData.data === "string")
+										typeof p.inlineData.data === "string"),
 							) &&
 							// Add validation for diffContent, relevantFiles, and isRelevantFilesExpanded
 							(item.diffContent === undefined ||
@@ -59,7 +282,7 @@ export class ChatHistoryManager {
 							(item.relevantFiles === undefined ||
 								(Array.isArray(item.relevantFiles) &&
 									item.relevantFiles.every(
-										(f: any) => typeof f === "string"
+										(f: any) => typeof f === "string",
 									))) &&
 							(item.isRelevantFilesExpanded === undefined ||
 								typeof item.isRelevantFilesExpanded === "boolean") &&
@@ -68,7 +291,7 @@ export class ChatHistoryManager {
 							(item.isPlanStepUpdate === undefined ||
 								typeof item.isPlanStepUpdate === "boolean") &&
 							(item.isContextAgentLog === undefined ||
-								typeof item.isContextAgentLog === "boolean")
+								typeof item.isContextAgentLog === "boolean"),
 					)
 				) {
 					// Map loaded history to apply defensive defaults where needed
@@ -83,7 +306,7 @@ export class ChatHistoryManager {
 					console.log("Chat history loaded from workspace state.");
 				} else {
 					console.warn(
-						"Stored chat history format is invalid. Clearing history."
+						"Stored chat history format is invalid. Clearing history.",
 					);
 					this._chatHistory = [];
 					this.saveHistoryToStorage();
@@ -99,14 +322,27 @@ export class ChatHistoryManager {
 	}
 
 	private async saveHistoryToStorage(): Promise<void> {
+		if (!this._currentSessionId) return;
 		try {
 			// HistoryEntry objects already contain relevantFiles and isRelevantFilesExpanded if present.
 			// JSON.stringify will correctly serialize these properties into the stored string.
 			await this._workspaceState.update(
-				CHAT_HISTORY_STORAGE_KEY,
-				JSON.stringify(this._chatHistory)
+				HISTORY_KEY_PREFIX + this._currentSessionId,
+				JSON.stringify(this._chatHistory),
 			);
-			console.log("Chat history saved to workspace state.");
+
+			// Update lastModified
+			const session = this._sessions.find(
+				(s) => s.id === this._currentSessionId,
+			);
+			if (session) {
+				session.lastModified = Date.now();
+				await this.saveSessionsMetadata();
+			}
+
+			console.log(
+				`Chat history saved to workspace state for session ${this._currentSessionId}.`,
+			);
 		} catch (error) {
 			console.error("Error saving chat history to storage:", error);
 		}
@@ -120,7 +356,7 @@ export class ChatHistoryManager {
 		isRelevantFilesExpanded?: boolean,
 		isPlanExplanation: boolean = false,
 		isPlanStepUpdate: boolean = false,
-		isContextAgentLog: boolean = false
+		isContextAgentLog: boolean = false,
 	): void {
 		let parts: HistoryEntryPart[];
 		let contentForDuplicateCheck: string;
@@ -178,7 +414,7 @@ export class ChatHistoryManager {
 				) {
 					console.log(
 						"Skipping potential duplicate history entry:",
-						contentForDuplicateCheck
+						contentForDuplicateCheck,
 					);
 					return;
 				}
@@ -197,19 +433,124 @@ export class ChatHistoryManager {
 					isRelevantFilesExpanded !== undefined
 						? isRelevantFilesExpanded
 						: relevantFiles.length <= 3
-						? true
-						: false,
+							? true
+							: false,
 			}),
 			isPlanExplanation: isPlanExplanation,
 			isPlanStepUpdate: isPlanStepUpdate,
 			isContextAgentLog: isContextAgentLog,
 		};
 
+		// Auto-naming logic for first user message
+		if (role === "user" && this._chatHistory.length === 0) {
+			const session = this._sessions.find(
+				(s) => s.id === this._currentSessionId,
+			);
+			if (session && session.name === "New Chat") {
+				let truncatedName = contentForDuplicateCheck.trim();
+				if (truncatedName.length > 40) {
+					truncatedName = truncatedName.substring(0, 37) + "...";
+				}
+				if (truncatedName) {
+					session.name = truncatedName;
+					this.saveSessionsMetadata();
+				}
+			}
+		}
+
 		this._chatHistory.push(newEntry);
 		if (this._chatHistory.length > MAX_HISTORY_ITEMS) {
 			this._chatHistory.splice(0, this._chatHistory.length - MAX_HISTORY_ITEMS);
 		}
 		this.saveHistoryToStorage();
+	}
+
+	public async saveSessionToFile(sessionId: string): Promise<void> {
+		let historyToSave: HistoryEntry[];
+		let sessionName: string = "chat";
+
+		const session = this._sessions.find((s) => s.id === sessionId);
+		if (session) {
+			sessionName = session.name;
+		}
+
+		if (sessionId === this._currentSessionId) {
+			historyToSave = this._chatHistory;
+		} else {
+			const storedHistoryString = this._workspaceState.get<string>(
+				HISTORY_KEY_PREFIX + sessionId,
+			);
+			if (storedHistoryString) {
+				try {
+					historyToSave = JSON.parse(storedHistoryString);
+				} catch (e) {
+					console.error("Failed to parse history for saving:", e);
+					return;
+				}
+			} else {
+				return;
+			}
+		}
+
+		const options: vscode.SaveDialogOptions = {
+			saveLabel: "Save Chat History",
+			filters: { "JSON Files": ["json"] },
+			defaultUri: vscode.workspace.workspaceFolders
+				? vscode.Uri.joinPath(
+						vscode.workspace.workspaceFolders[0].uri,
+						`${sessionName.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.json`,
+					)
+				: undefined,
+		};
+		const fileUri = await vscode.window.showSaveDialog(options);
+		if (fileUri) {
+			try {
+				const saveableHistory: ChatMessage[] = historyToSave.map((entry) => {
+					const textContent = entry.parts
+						.filter((p): p is { text: string } => "text" in p)
+						.map((p) => p.text)
+						.join("\n");
+					return {
+						sender: entry.role === "user" ? "User" : "Model",
+						text: textContent,
+						className: entry.role === "user" ? "user-message" : "ai-message",
+						...(entry.diffContent && { diffContent: entry.diffContent }),
+						...(entry.relevantFiles && {
+							relevantFiles: entry.relevantFiles,
+						}),
+						...(entry.isPlanExplanation && {
+							isPlanExplanation: entry.isPlanExplanation,
+						}),
+						...(entry.isPlanStepUpdate && {
+							isPlanStepUpdate: entry.isPlanStepUpdate,
+						}),
+					};
+				});
+				const contentString = JSON.stringify(saveableHistory, null, 2);
+				await vscode.workspace.fs.writeFile(
+					fileUri,
+					Buffer.from(contentString, "utf-8"),
+				);
+				this.postMessageToWebview({
+					type: "statusUpdate",
+					value: "Chat saved successfully.",
+				});
+			} catch (error) {
+				console.error("Error saving chat:", error);
+				const message = error instanceof Error ? error.message : String(error);
+				vscode.window.showErrorMessage(`Failed to save chat: ${message}`);
+				this.postMessageToWebview({
+					type: "statusUpdate",
+					value: "Error: Failed to save chat.",
+					isError: true,
+				});
+			}
+		} else {
+			this.postMessageToWebview({
+				type: "statusUpdate",
+				value: "Chat save cancelled.",
+			});
+		}
 	}
 
 	public async clearChat(): Promise<void> {
@@ -225,7 +566,7 @@ export class ChatHistoryManager {
 			index >= this._chatHistory.length
 		) {
 			console.warn(
-				`Invalid index provided for deleteHistoryEntry: ${index}. History length: ${this._chatHistory.length}`
+				`Invalid index provided for deleteHistoryEntry: ${index}. History length: ${this._chatHistory.length}`,
 			);
 			return;
 		}
@@ -245,7 +586,7 @@ export class ChatHistoryManager {
 				this._chatHistory[prevIndex].isContextAgentLog === true
 			) {
 				console.log(
-					`Cascade backward deleting Context Agent log at index ${prevIndex}.`
+					`Cascade backward deleting Context Agent log at index ${prevIndex}.`,
 				);
 				this._chatHistory.splice(prevIndex, 1);
 				backwardDeletedCount++;
@@ -267,7 +608,7 @@ export class ChatHistoryManager {
 			this._chatHistory[index].isContextAgentLog === true
 		) {
 			console.log(
-				`Cascade forward deleting Context Agent log at index ${index}.`
+				`Cascade forward deleting Context Agent log at index ${index}.`,
 			);
 			this._chatHistory.splice(index, 1);
 			totalDeleted++;
@@ -280,11 +621,11 @@ export class ChatHistoryManager {
 
 	public updateMessageRelevantFilesExpandedState(
 		index: number,
-		isExpanded: boolean
+		isExpanded: boolean,
 	): void {
 		if (index < 0 || index >= this._chatHistory.length) {
 			console.warn(
-				`Invalid index for updateMessageRelevantFilesExpandedState: ${index}. History length: ${this._chatHistory.length}`
+				`Invalid index for updateMessageRelevantFilesExpandedState: ${index}. History length: ${this._chatHistory.length}`,
 			);
 			return;
 		}
@@ -304,7 +645,7 @@ export class ChatHistoryManager {
 			}
 		} else {
 			console.warn(
-				`No relevantFiles found for entry at index ${index}, cannot update expanded state.`
+				`No relevantFiles found for entry at index ${index}, cannot update expanded state.`,
 			);
 		}
 	}
@@ -361,79 +702,12 @@ export class ChatHistoryManager {
 		// 5. Call saveHistoryToStorage() to persist the changes.
 		this.saveHistoryToStorage();
 		console.log(
-			`[ChatHistoryManager] Message at index ${index} edited and history truncated successfully.`
+			`[ChatHistoryManager] Message at index ${index} edited and history truncated successfully.`,
 		);
 		this.postMessageToWebview({
 			type: "statusUpdate",
 			value: "Message edited. AI response will be regenerated.",
 		});
-	}
-
-	public async saveChat(): Promise<void> {
-		const options: vscode.SaveDialogOptions = {
-			saveLabel: "Save Chat History",
-			filters: { "JSON Files": ["json"] },
-			defaultUri: vscode.workspace.workspaceFolders
-				? vscode.Uri.joinPath(
-						vscode.workspace.workspaceFolders[0].uri,
-						`minovative-mind-chat-${
-							new Date().toISOString().split("T")[0]
-						}.json`
-				  )
-				: undefined,
-		};
-		const fileUri = await vscode.window.showSaveDialog(options);
-		if (fileUri) {
-			try {
-				const saveableHistory: ChatMessage[] = this._chatHistory.map(
-					(entry) => {
-						// For saving, we only extract text content as ChatMessage on disk doesn't support images currently.
-						const textContent = entry.parts
-							.filter((p): p is { text: string } => "text" in p)
-							.map((p) => p.text)
-							.join("\n");
-						return {
-							sender: entry.role === "user" ? "User" : "Model",
-							text: textContent,
-							className: entry.role === "user" ? "user-message" : "ai-message",
-							...(entry.diffContent && { diffContent: entry.diffContent }),
-							...(entry.relevantFiles && {
-								relevantFiles: entry.relevantFiles,
-							}),
-							...(entry.isPlanExplanation && {
-								isPlanExplanation: entry.isPlanExplanation,
-							}),
-							...(entry.isPlanStepUpdate && {
-								isPlanStepUpdate: entry.isPlanStepUpdate,
-							}),
-						};
-					}
-				);
-				const contentString = JSON.stringify(saveableHistory, null, 2);
-				await vscode.workspace.fs.writeFile(
-					fileUri,
-					Buffer.from(contentString, "utf-8")
-				);
-				this.postMessageToWebview({
-					type: "statusUpdate",
-					value: "Chat saved successfully.",
-				});
-			} catch (error) {
-				console.error("Error saving chat:", error);
-				const message = error instanceof Error ? error.message : String(error);
-				vscode.window.showErrorMessage(`Failed to save chat: ${message}`);
-				this.postMessageToWebview({
-					type: "statusUpdate",
-					value: "Error: Failed to save chat.",
-					isError: true,
-				});
-			}
-		} else {
-			this.postMessageToWebview({
-				type: "statusUpdate",
-				value: "Chat save cancelled.",
-			});
-		}
 	}
 
 	public async loadChat(): Promise<void> {
@@ -468,7 +742,7 @@ export class ChatHistoryManager {
 							(item.isPlanExplanation === undefined ||
 								typeof item.isPlanExplanation === "boolean") &&
 							(item.isPlanStepUpdate === undefined ||
-								typeof item.isPlanStepUpdate === "boolean")
+								typeof item.isPlanStepUpdate === "boolean"),
 					)
 				) {
 					this._chatHistory = loadedData.map(
@@ -484,7 +758,7 @@ export class ChatHistoryManager {
 								: undefined,
 							isPlanExplanation: item.isPlanExplanation,
 							isPlanStepUpdate: item.isPlanStepUpdate,
-						})
+						}),
 					);
 					this.restoreChatHistoryToWebview();
 					this.saveHistoryToStorage();
@@ -535,14 +809,14 @@ export class ChatHistoryManager {
 					sender: isContextAgentLog
 						? "Context Agent"
 						: entry.role === "user"
-						? "User"
-						: "Model",
+							? "User"
+							: "Model",
 					text: concatenatedText.trim(), // Use the accumulated text
 					className: isContextAgentLog
 						? "context-agent-log"
 						: entry.role === "user"
-						? "user-message"
-						: "ai-message",
+							? "user-message"
+							: "ai-message",
 					...(entry.diffContent && { diffContent: entry.diffContent }),
 					...(entry.relevantFiles && { relevantFiles: entry.relevantFiles }),
 					...(entry.relevantFiles &&

@@ -63,6 +63,11 @@ If you are a developer looking to build from source or contribute, please refer 
 - **Message Interaction**: Refine AI context or regenerate responses by editing your previous messages.
 - **Context Summarization**: For long conversations, the AI automatically summarizes previous discussions to maintain a clear focus on the current task.
 - **Organized Sidebar**: The sidebar features **collapsible sections** for "empty chat" placeholders, keeping your workspace clean and focused during inactivity.
+- **Dynamic Session Management**:
+  - **New Chat**: Click the **`+` icon** in the sidebar to immediately start a fresh conversation.
+  - **Auto-Naming**: Sessions are automatically named based on your first message, making it easy to find specific conversations later.
+  - **Integrated Management**: Use the **Load Chat** button to open a modal where you can switch between sessions, rename them, or delete them.
+  - **Exporting**: Save any individual session to a JSON file using the **Save** icon located directly within the session picker modal.
 - **Token Usage**: A display feature shows current token usage, including request counts and failed requests, optimized for scannability.
 
 ### 4.2 Code Explanation

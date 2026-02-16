@@ -30,8 +30,8 @@ Minovative Mind offers an intuitive chat interface for direct interaction with A
 - **Slash Command Suggestions**: Utilize intelligent suggestions for commands like `/plan`, `/fix`, and `/commit` to streamline actions.
 - **Editable History**: Edit previous messages to re-evaluate conversations with updated context.
 - **Convert to Plans**: AI-generated responses can be seamlessly converted into actionable `/plan` commands for structured execution.
-- **Plan & Agent Logs**: AI-generated plan explanations display a "Generated Plan" badge. Context Agent logs feature **terminal-like styling** and **collapsible code blocks** (Show Code/Hide Code) to keep detailed output compact. The sidebar UI includes **collapsible sections** for organized navigation during inactivity.
-- **Interactive File Selector**: A dedicated "Open File List" button provides a dynamic, searchable, and navigable popup. Users can efficiently select workspace files to insert their paths directly into the chat input, complete with search, keyboard navigation, and visual enhancements.
+- **Plan & Agent Logs**: AI-generated plan explanations display a "Generated Plan" badge. Context Agent logs feature **terminal-like styling** and **collapsible code blocks** (Show Code/Hide Code) to keep detailed output compact by default.
+- **Interactive File Selector & New Chat**: A dedicated "Open File List" button provides a dynamic, searchable, and navigable popup. The sidebar also features a quick **New Chat (`+`)** button for immediate session creation.
 
 ### 1.3 Code Explanation
 
@@ -166,6 +166,8 @@ Tailor Minovative Mind to your specific needs and preferences.
 
 ### 5.3 Enhanced Chat History Management
 
+- **Modal Session Management**: Replaced the persistent TreeView with a clean VS Code QuickPick modal for switching, renaming, deleting, and exporting sessions.
+- **Intelligent Auto-Naming**: Automatically renames new sessions based on the user's first message for effortless organization.
 - **Persistent Chat & Diff Storage**: Chat conversations, including associated file diffs, can be saved and loaded as JSON for continuity.
 - **Session Restoration**: Restores conversation context and file states after VS Code reloads, maintaining workflow consistency.
 - **Flexible History Management**: Provides options to clear/reset the entire conversation or delete individual messages.

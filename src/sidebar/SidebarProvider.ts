@@ -286,6 +286,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			this.workspaceState,
 			this.postMessageToWebview.bind(this),
 		);
+
 		this.chatHistoryManager = new ChatHistoryManager(
 			this.workspaceState,
 			this.postMessageToWebview.bind(this),

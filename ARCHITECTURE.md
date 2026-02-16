@@ -143,6 +143,8 @@ The management and utilization of chat history are handled through a coordinated
 The primary responsibility for storing, loading, and managing the raw conversation turns lies with **`src/sidebar/managers/chatHistoryManager.ts`**.
 
 - **Storage:** History is persisted across VS Code sessions using the workspace state via the key `CHAT_HISTORY_STORAGE_KEY`. This ensures the conversation context survives window restarts.
+- **Modal Session Picker:** Session loading and management have been refactored from a persistent TreeView to a VS Code QuickPick modal interface. `pickSessionAndLoad()` orchestrates the display of sessions, handling activation, renaming, deletion, and file export (`saveSessionToFile`) from a single integrated UI.
+- **Intelligent Auto-Naming:** Implements logic within `addHistoryEntry()` to detect the first user message in a new session and automatically update the session name, ensuring organized history without user intervention.
 - **Data Structure:** The history is stored as an array of `HistoryEntry` objects. Each entry captures:
   - `role`: (`user` or `model`).
   - `parts`: An array detailing the content, which can contain text or image data (`HistoryEntryPart`).

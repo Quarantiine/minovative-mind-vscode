@@ -416,11 +416,11 @@ export async function handleWebviewMessage(
 				break;
 
 			case "saveChatRequest":
-				await provider.chatHistoryManager.saveChat();
+				await provider.chatHistoryManager.createNewSession();
 				break;
 
 			case "loadChatRequest":
-				await provider.chatHistoryManager.loadChat();
+				await provider.chatHistoryManager.pickSessionAndLoad();
 				break;
 
 			case "deleteSpecificMessage":

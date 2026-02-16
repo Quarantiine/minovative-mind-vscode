@@ -24,6 +24,9 @@ import {
 	faChartLine,
 	faProjectDiagram,
 	faFastForward,
+	faPlus,
+	faFolderOpen,
+	faTrashCan,
 } from "./utils/iconHelpers";
 import { hideSuggestions } from "./ui/commandSuggestions";
 
@@ -605,6 +608,11 @@ function initializeWebview(): void {
 
 	setIconForButton(elements.skipPlanConfirmationToggle, faFastForward);
 	// --- End Skip Plan Confirmation Toggle Initialization ---
+
+	// --- Chat Control Icons ---
+	setIconForButton(elements.saveChatButton, faPlus);
+	setIconForButton(elements.loadChatButton, faFolderOpen);
+	setIconForButton(elements.clearChatButton, faTrashCan);
 
 	// Perform initial UI setup for dynamically created components or visibility
 	createPlanConfirmationUI(

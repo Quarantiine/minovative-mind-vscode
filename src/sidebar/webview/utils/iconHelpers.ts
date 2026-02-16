@@ -107,4 +107,6 @@ export {
 	faProjectDiagram, // Export faProjectDiagram for heuristic context toggle button
 	faTerminal, // Export faTerminal
 	faFastForward, // Export faFastForward
+	faPlus,
+	faFolderOpen,
 };

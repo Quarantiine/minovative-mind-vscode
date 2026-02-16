@@ -80,9 +80,29 @@
 				"command": "antigravity.getChromeDevtoolsMcpUrl",
 				"title": "Get Chrome DevTools MCP URL",
 				"category": "Minovative Mind"
+			},
+			{
+				"command": "minovative-mind.newSession",
+				"title": "New Session",
+				"icon": "$(add)",
+				"category": "Minovative Mind"
+			},
+			{
+				"command": "minovative-mind.deleteSession",
+				"title": "Delete Session",
+				"icon": "$(trash)",
+				"category": "Minovative Mind"
+			},
+			{
+				"command": "minovative-mind.renameSession",
+				"title": "Rename Session",
+				"icon": "$(edit)",
+				"category": "Minovative Mind"
 			}
 		],
 		"menus": {
+			"view/title": [],
+			"view/item/context": [],
 			"editor/context": [
 				{
 					"submenu": "minovativeMindSubmenu",

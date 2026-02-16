@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.57.0] - February 16, 2026
+
+### Modal Session Management & Auto-Naming
+
+This update overhauls how chat sessions are managed, moving away from the sidebar TreeView to a more streamlined VS Code modal system and introducing several intelligent UI refinements.
+
+- **Modal Session Picker**:
+  - Replaced the persistent "Chat Sessions" sidebar TreeView with a transient VS Code QuickPick modal.
+  - Integrated full session management (switching, renaming, deleting) directly into the loading modal for a cleaner sidebar interface.
+  - Added a "Save to File" feature within the session picker, allowing users to export individual chat histories to JSON.
+- **Intelligent Auto-Naming**:
+  - New chat sessions are now automatically named based on the content of the user's first message, improving organization without manual effort.
+- **UI Refinements**:
+  - Repurposed the sidebar "Save Chat" button as a **"New Chat" (`+`)** button for immediate session creation.
+  - Added unified icons for "Load Chat" and "Clear Chat" buttons for better visual consistency.
+  - Streamlined `ChatHistoryManager` and `SidebarProvider` by removing legacy TreeView coordination logic and deleting `ChatSessionsProvider.ts`.
+
 ## [2.56.0] - February 15, 2026
 
 ### AI Tool Calling for Project Intelligence & Entity Extraction
