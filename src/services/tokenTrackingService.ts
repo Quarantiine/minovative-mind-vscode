@@ -57,10 +57,20 @@ export class TokenTrackingService {
 		context?: string,
 		status: "success" | "failed" | "cancelled" = "success",
 	): void {
+		// Ensure inputTokens and outputTokens are valid numbers, defaulting to 0 if NaN or undefined
+		const sanitizedInputTokens =
+			isNaN(inputTokens) || inputTokens === undefined || inputTokens === null
+				? 0
+				: inputTokens;
+		const sanitizedOutputTokens =
+			isNaN(outputTokens) || outputTokens === undefined || outputTokens === null
+				? 0
+				: outputTokens;
+
 		const usage: TokenUsage = {
-			inputTokens,
-			outputTokens,
-			totalTokens: inputTokens + outputTokens,
+			inputTokens: sanitizedInputTokens,
+			outputTokens: sanitizedOutputTokens,
+			totalTokens: sanitizedInputTokens + sanitizedOutputTokens,
 			timestamp: Date.now(),
 			requestType,
 			modelName,
@@ -196,11 +206,12 @@ export class TokenTrackingService {
 		}
 
 		const totalInputTokens = this.tokenUsageHistory.reduce(
-			(sum, usage) => sum + usage.inputTokens,
+			(sum, usage) => sum + (isNaN(usage.inputTokens) ? 0 : usage.inputTokens),
 			0,
 		);
 		const totalOutputTokens = this.tokenUsageHistory.reduce(
-			(sum, usage) => sum + usage.outputTokens,
+			(sum, usage) =>
+				sum + (isNaN(usage.outputTokens) ? 0 : usage.outputTokens),
 			0,
 		);
 		const totalTokens = totalInputTokens + totalOutputTokens;

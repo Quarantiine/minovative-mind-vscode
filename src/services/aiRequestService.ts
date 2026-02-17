@@ -713,8 +713,8 @@ ${content.substring(0, 20000)}`,
 						totalInputTokensConsumed =
 							totalInputTokensConsumed -
 							finalInputTokensPerAttempt +
-							usageMetadata.promptTokenCount;
-						finalOutputTokensCount = usageMetadata.candidatesTokenCount;
+							(usageMetadata.promptTokenCount ?? 0);
+						finalOutputTokensCount = usageMetadata.candidatesTokenCount ?? 0;
 						console.log(
 							`[AIRequestService] Accurate usage from metadata: Input=${usageMetadata.promptTokenCount}, Output=${usageMetadata.candidatesTokenCount}`,
 						);
@@ -1063,8 +1063,8 @@ ${content.substring(0, 20000)}`,
 			// 2. Extract token usage from metadata or fallback to counting/estimation
 			const anyResult = result as any;
 			if (anyResult.usageMetadata) {
-				inputTokensCount = anyResult.usageMetadata.promptTokenCount;
-				outputTokensCount = anyResult.usageMetadata.candidatesTokenCount;
+				inputTokensCount = anyResult.usageMetadata.promptTokenCount ?? 0;
+				outputTokensCount = anyResult.usageMetadata.candidatesTokenCount ?? 0;
 			} else {
 				// Fallback: If metadata is not available, count/estimate
 				// Count input tokens

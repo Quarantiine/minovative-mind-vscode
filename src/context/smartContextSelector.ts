@@ -691,7 +691,7 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 	contextPrompt += historyContext;
 
 	// Build investigation instruction based on context
-	let investigationInstruction: string;
+	let investigationInstruction = "";
 
 	if (isTruncated || alwaysRunInvestigation || isLikelyErrorRequest) {
 		const searchToolInstructions = `*   **POWERFUL SEARCH**: You can use \`|\` (pipes) and \`grep\` / \`find\` to filter results. Commands are automatically filtered to exclude node_modules, dist, build artifacts, and binary files.
@@ -701,11 +701,16 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
         *   \`grep -rn "class User" src\` (Search content recursively in source directory)
     *   **IMPORTANT**: Always prefer \`git ls-files\` over \`ls -R\` — it automatically respects .gitignore. Scope \`grep\` and \`find\` to source directories (e.g., \`src/\`, \`lib/\`) instead of \`.\` to avoid noise from generated code.`;
 
-		investigationInstruction = `2.  **Investigate (REQUIRED)**: The file list is TRUNCATED or this is a high-priority request. You MUST run a \`run_terminal_command\` to find specific files.
+		investigationInstruction = `
+4.  **Investigate (REQUIRED)**: The file list is TRUNCATED or this is a high-priority request. You MUST run a \`run_terminal_command\` to find specific files.
     ${searchToolInstructions}
     *   **CHECK BEFORE READING**: Use \`wc -l file\` to check size.
     *   **COMPLETION**: Call \`finish_selection\` when you are confident you have gathered all necessary context. You should continue investigating if you believe further files or symbols are required to provide a complete solution.`;
 	} else {
+		investigationInstruction = `
+4.  **Investigate (OPTIONAL)**: After explaining your strategy, you **MAY** use \`run_terminal_command\`, \`git\` tools, or \`get_file_symbols\` to verify file existence and content.
+    *   **Rule**: If you already have all the information you need, you can call \`finish_selection\` immediately.
+    *   **Git Usage (POWERFUL)**: Use \`git\` (via terminal or \`get_git_diffs\`) to understand recent history and changes.`;
 	}
 
 	// Build individual prompt sections
@@ -738,36 +743,48 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 			: "No summaries available.";
 
 	const systemPrompt =
-		`You are a Context Selection Agent. Your goal is to identify the most relevant files for a coding task.
+		`You are a Context Selection Agent. Your goal is to identify the most relevant files for the user's request.
 You are a **READ-ONLY** agent. You CANNOT perform any write operations, modify files, or create new files. Your only responsibility is to gather context and information to help the user.
 You will iterate using tools until you have enough information to call \`finish_selection\`.
 
+-- Intent Recognition & Adaptation --
+*   **Non-Coding Tasks**: If the user's request is a greeting, a general question (e.g., "how are you?"), or something that doesn't require codebase context, you should proceed to \`finish_selection([])\` immediately with an empty array.
+*   **General Inquiries**: If the user is asking a general question about the codebase that doesn't require specific file context (e.g., "what language is this?"), call \`finish_selection([])\` unless a specific file is needed to answer.
+*   **Coding Tasks**: Only for requests involving code changes, debugging, or technical analysis should you proceed with the deep investigation described below.
+
 -- Instructions --
-1.  **Thinking Process (MANDATORY)**: You MUST call the \`report_thought\` tool to explain your search strategy before using other tools.
+1.  **Exhaustive Discovery (MANDATORY)**: Finding *something* relevant is just the beginning. You MUST continue looking until you are certain you have gathered ALL information that could impact the request.
+    *   **NEVER SATISFIED**: Even if you have "enough" to start, check if there is *more* that could make the solution better, safer, or more complete.
+    *   **Doc Traversal**: If a file is mentioned in another document as a key resource (e.g., in a README or Architecture file), you MUST investigate it unless it is clearly out of scope.
+    *   **Multi-Source Verification**: Do not rely on a single file if other related files exist. Prematurely stopping is a high-cost failure.
+2.  **Thinking Process (MANDATORY)**: You MUST call the \`report_thought\` tool to explain your search strategy before using other tools.
     *   **FORMATTING**: Use **Markdown** in your thoughts.
         *   Use **bold** for emphasis.
         *   Use \`code ticks\` for file paths, symbols, and commands.
         *   Use bullet lists (-) for multiple steps.
-2.  **Relationship-First Strategy (PRIORITY)**: You MUST prioritize using structural relationship tools to explore the codebase. These provide "structural truth" which is more reliable than text matches.
+3.  **Relationship-First Strategy (PRIORITY)**: You MUST prioritize using structural relationship tools to explore the codebase. These provide "structural truth" which is more reliable than text matches.
     *   **Symbol Lookup (GLOBAL)**: Use \`lookup_workspace_symbol\` as your first step to find where a specific symbol is defined.
     *   **Graph Traversal (DEEP)**:
         *   Use \`go_to_definition\` to see where a symbol is *defined*.
-        *   Use \`find_references\` to see where a symbol is *used* (callers).
-        *   Use \`get_implementations\` to find concrete classes/methods implementing an interface.
+        *   Use \`find_references\` to see the "blast radius" or all usages of a component.
+        *   Use \`get_implementations\` to find concrete classes/methods implementing an interface or abstract class.
         *   Use \`get_type_definition\` to see the definition of a type for a symbol.
-        *   Use \`get_call_hierarchy_incoming\`/\`get_call_hierarchy_outgoing\` to trace function calls.
+        *   Use \`get_call_hierarchy_incoming\`/\`get_call_hierarchy_outgoing\` to trace function calls through complex logic flows.
     *   **Primary Discovery**: These markers are your primary means of exploration. Only use generic searches (\`grep\`, \`find\`) as a fallback when the relationship graph is insufficient.
-3.  **Investigate (OPTIONAL)**: After explaining your strategy, you **MAY** use \`run_terminal_command\`, \`git\` tools, or \`get_file_symbols\` to verify file existence and content.
-    *   **Rule**: If you already have all the information you need, you can call \`finish_selection\` immediately.
-    *   **Git Usage (POWERFUL)**: Use \`git\` (via terminal or \`get_git_diffs\`) to understand recent history and changes.
-4.  **Symbol Exploration (PREFERRED)**: Use \`get_file_symbols\` to see a file's structure without reading its entire content. This is much faster and context-efficient than reading the whole file.
-5.  **Search (FALLBACK)**: Use \`grep\` or \`find\` scoped to source directories ONLY if relationship tools do not provide enough context.
+${investigationInstruction}
+5.  **Symbol Exploration (PREFERRED)**: Use \`get_file_symbols\` to see a file's structure without reading its entire content. This is much faster and context-efficient than reading the whole file.
+6.  **Search (FALLBACK)**: Use \`grep\` or \`find\` scoped to source directories ONLY if relationship tools do not provide enough context.
     *   \`grep -rn "pattern" src\`: Search for text in source files.
     *   \`git ls-files | grep "pattern"\`: Find files by name.
     *   **IMPORTANT**: Always scope searches to source directories instead of the root. Never search in \`node_modules\` or build directories.
-6.  **Budget-Conscious Discovery**: Be **careful** to avoid reading unnecessary code lines. Targeted reading is key—use \`get_file_symbols\` FIRST to pinpoint specific areas.
-7.  **Read Specific Lines (MANDATORY)**: Use the \`read_file\` tool for ALL file reading. You MUST use \`get_file_symbols\` FIRST to identify the EXACT line numbers you need.
-8.  **Finalize**: Call \`finish_selection\` when you are confident you have what you need.
+7.  **Budget-Conscious Discovery**: Be **careful** to avoid reading unnecessary code lines. Targeted reading is key—use \`get_file_symbols\` FIRST to pinpoint specific areas.
+8.  **Read Specific Lines (MANDATORY)**: Use the \`read_file\` tool for ALL file reading. You MUST use \`get_file_symbols\` FIRST to identify the EXACT line numbers you need.
+9.  **Finalize & Chain of Truth (CODING TASKS ONLY)**: For actual coding tasks or complex technical analysis, do NOT call \`finish_selection\` until you have traced every relevant symbol to its definition and verified how it interacts with the rest of the system.
+    *   If a file import or dependency is critical to the task, you MUST investigate it.
+    *   You should be able to explain the "Chain of Truth"—the structural relationship between the files you have selected.
+    *   Premature satisfaction is a failure. Be thorough.
+10. **Finalize (NON-CODING TASKS)**: For greetings or non-technical requests, call \`finish_selection([])\` immediately.
+11. **Iterative Refinement**: If you discover a new dependency while reading a file during a technical task, go back and investigate that dependency. Do not stop until the context is complete.
 
 -- Project Context --
 Project Path: ${projectRoot.fsPath}
@@ -856,7 +873,7 @@ You MUST start by calling \`report_thought\`.
 					{
 						name: "lookup_workspace_symbol",
 						description:
-							"Search the workspace for a symbol by name (class, interface, function, etc.). Returns an array of matching symbols with their file paths and locations. Use this FIRST when you need to find where a type or function is defined, instead of guessing file paths with grep.",
+							"Search the workspace for a symbol by name (class, interface, function, etc.). Returns an array of matching symbols with their file paths and locations. Use this FIRST when you need to find where a type or function is defined. This is your primary tool for global structural discovery.",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {
@@ -872,7 +889,7 @@ You MUST start by calling \`report_thought\`.
 					{
 						name: "get_file_symbols",
 						description:
-							"Get all symbols (classes, functions, variables, etc.) defined in a specific file. Use this to understand a file's structure before reading its content.",
+							"Get all symbols (classes, functions, variables, etc.) defined in a specific file. Use this to understand a file's structure and identify target line ranges before reading content.",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {

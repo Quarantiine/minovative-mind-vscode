@@ -111,7 +111,8 @@ Command Usage Guidelines:
 - **Noise Reduction**: Use \`grep ... | uniq\` to remove duplicate matches and save context window.
 - **Canonical Paths**: Use \`realpath <path>\` to resolve relative paths (e.g., \`../\`) before performing file modifications, ensuring accuracy.
 - **Git Context**: If the request involves recent work or history, use \`git log\`, \`git status\`, or \`git diff\` (recent changes in this workspace) to gather context before planning.
-- **Targeted Reading**: When reading files, prefer small, targeted ranges (300-500 lines) over reading entire large files. Use symbols to find specific logic.
+- **Exhaustive Analysis**: You MUST scan for all potential points of interaction, side effects, and edge cases. Do not stop at the first obvious solution. Consider how your changes impact other parts of the system.
+- **Completeness**: Your plan must be exhaustive and leave NO stone unturned. If there is even the slightest doubt about an interaction, you must state it in the plan.
 - **Dependencies**: Prefer \`npm install <pkg>\` (no shell) over shell scripts for reliability.
 ${
 	editorContext && diagnosticsString
@@ -252,6 +253,7 @@ Crucial Rules for \`generateExecutionPlan\` Tool:
 - **Allowed Command List**: For 'run_command' steps, you are strictly limited to the following commands: [${SafeCommandExecutor.getAllowedCommands().join(", ")}]. Ensure any command you use is in this list.
 - **Git for Context**: You are encouraged to use \`git log\`, \`git status\`, and \`git diff\` (recent changes in this workspace) to understand the current state and history of the project when needed for context.
 - **Robustness**: Use \`find . -iname ...\` for searches to avoid case-sensitivity issues (e.g., \`find src -name "*service.ts"\` will fail to find \`planService.ts\` on many systems).
+- **NON-NEGOTIABLE COMPLETENESS**: The plan must be 100% complete and exhaustive. You are RESPONSIBLE for identifying all files and symbols that need to be read or modified. If you need more information to be certain, you MUST use the \`use_context_agent\` or instructions to find it. Do not guess.
 - **PATH ACCURACY**: You MUST use the EXACT relative paths provided in the diagnostics or project context. Do not truncate paths or assume files are in the root if they are in subdirectories.
 
 Goal: Ensure all relevant information is passed accurately and comprehensively to the \`generateExecutionPlan\` function. 

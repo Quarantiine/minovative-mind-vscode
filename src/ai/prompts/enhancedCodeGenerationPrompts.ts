@@ -144,7 +144,7 @@ export function getEnhancedGenerationSystemInstruction(
 		"**Style Consistency**: Adhere * rigorously* to the project's existing coding patterns, conventions, and formatting. Maintain current indentation, naming, and structural choices.",
 	);
 	requirementsList.push(
-		"**Error Prevention**: Generate code that will compile and run *without any errors or warnings*. Proactively anticipate and guard against common pitfalls beyond just the immediate task, such as null/undefined checks, any types in typescript, input validations, edge cases, or off-by-one errors.",
+		"**Error Prevention & Exhaustive Consideration**: Generate code that will compile and run *without any errors or warnings*. Proactively anticipate and guard against ALL potential pitfalls, edge cases, and secondary impacts. Consider null/undefined checks, input validations, and how this change affects related components or state.",
 	);
 	requirementsList.push(
 		"**Best Practices**: Employ modern language features, established design patterns, and industry best practices to ensure high-quality, efficient, and robust code that is production-ready, maintainable, and clean.",
@@ -264,6 +264,9 @@ export function getEnhancedModificationSystemInstruction(
 	);
 	requirementsList.push(
 		"**Deletions**: Leave the `REPLAC#E` section empty for deletions.",
+	);
+	requirementsList.push(
+		"**Never Satisfied / Exhaustive Impact**: Do not settle for the most obvious change. Analyze the entire file and related snippets to ensure your modification accounts for ALL side effects, edge cases, and secondary components. Completeness is non-negotiable.",
 	);
 
 	if (isRewrite) {
