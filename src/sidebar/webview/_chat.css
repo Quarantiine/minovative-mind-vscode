@@ -559,8 +559,8 @@
 }
 
 .message.context-agent-log .message-text-content {
-	line-height: 1.5;
 	/* Removed white-space: pre-wrap to let markdown renderer handle formatting */
+	line-height: 1.5;
 }
 
 /* Compact margins for markdown elements inside context logs */

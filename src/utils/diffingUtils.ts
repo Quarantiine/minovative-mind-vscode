@@ -2,6 +2,7 @@
 import * as vscode from "vscode";
 import { diff_match_patch } from "diff-match-patch";
 import { DiffAnalysis } from "../types/codeGenerationTypes";
+import { DEFAULT_FLASH_LITE_MODEL } from "../sidebar/common/sidebarConstants";
 
 export async function generatePreciseTextEdits(
 	originalContent: string,
@@ -62,6 +63,7 @@ export async function generateFileChangeSummary(
 	newContent: string,
 	filePath: string,
 	aiRequestService?: any,
+	modelName?: string,
 ): Promise<{
 	summary: string;
 	addedLines: string[];
@@ -172,6 +174,7 @@ export async function generateFileChangeSummary(
 	const collectEntities = async (
 		content: string,
 		targetMap: Map<string, string[]>,
+		modelNameForExtraction?: string,
 	) => {
 		if (content.trim().length === 0) {
 			return;
@@ -182,7 +185,7 @@ export async function generateFileChangeSummary(
 			try {
 				const entities = await aiRequestService.extractEntitiesViaTool(
 					content,
-					filePath,
+					modelNameForExtraction || DEFAULT_FLASH_LITE_MODEL,
 				);
 				for (const entity of entities) {
 					if (!targetMap.has(entity.type)) {
@@ -305,8 +308,8 @@ export async function generateFileChangeSummary(
 		exportLineRegex.lastIndex = 0;
 	};
 
-	await collectEntities(addedContentFlat, addedEntities);
-	await collectEntities(removedContentFlat, removedEntities);
+	await collectEntities(addedContentFlat, addedEntities, modelName);
+	await collectEntities(removedContentFlat, removedEntities, modelName);
 
 	const summaries: string[] = [];
 

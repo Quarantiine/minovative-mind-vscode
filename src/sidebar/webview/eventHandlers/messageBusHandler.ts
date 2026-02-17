@@ -1115,7 +1115,16 @@ export function initializeMessageBusHandler(
 				break;
 			}
 			case "updateLoadingState": {
-				setLoadingState(message.value as boolean, elements);
+				const loadingState = message.value as boolean;
+				setLoadingState(loadingState, elements);
+				if (loadingState && message.operationId) {
+					// Check if loading is starting/active
+					appState.currentActiveOperationId = message.operationId;
+					console.log(
+						"[Webview] Restored currentActiveOperationId from updateLoadingState:",
+						appState.currentActiveOperationId,
+					);
+				}
 				break;
 			}
 			case "updateJsonLoadingState": {

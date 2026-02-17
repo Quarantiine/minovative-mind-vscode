@@ -196,6 +196,7 @@ export interface AiResponseEndMessage {
 export interface UpdateLoadingStateMessage {
 	type: "updateLoadingState";
 	value: boolean;
+	operationId?: string;
 }
 
 export interface ReenableInputMessage {

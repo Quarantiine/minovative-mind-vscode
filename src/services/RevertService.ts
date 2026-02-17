@@ -4,6 +4,7 @@ import { ProjectChangeLogger } from "../workflow/ProjectChangeLogger";
 import { FileChangeEntry } from "../types/workflow";
 import { showErrorNotification } from "../utils/notificationUtils";
 import { generateFileChangeSummary, applyPatch } from "../utils/diffingUtils";
+import { DEFAULT_FLASH_LITE_MODEL } from "../sidebar/common/sidebarConstants";
 
 export class RevertService {
 	private readonly workspaceRootUri: vscode.Uri;
@@ -183,6 +184,8 @@ export class RevertService {
 												"",
 												change.originalContent,
 												change.filePath,
+												undefined,
+												DEFAULT_FLASH_LITE_MODEL,
 											);
 										this.projectChangeLogger.logChange({
 											filePath: change.filePath,
@@ -246,6 +249,8 @@ export class RevertService {
 										currentContent,
 										finalContent,
 										change.filePath,
+										undefined,
+										DEFAULT_FLASH_LITE_MODEL,
 									);
 								revertSummary = `Reverted modification: Restored original content for '${relativePath}'`;
 
@@ -315,6 +320,8 @@ export class RevertService {
 												"",
 												contentToRecreate,
 												change.filePath,
+												undefined,
+												DEFAULT_FLASH_LITE_MODEL,
 											);
 										this.projectChangeLogger.logChange({
 											filePath: change.filePath,

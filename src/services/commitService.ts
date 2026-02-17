@@ -122,6 +122,7 @@ export class CommitService {
 					newContent,
 					filePath,
 					this.provider.aiRequestService,
+					DEFAULT_FLASH_LITE_MODEL,
 				);
 				fileSummaries.push(summary);
 			}

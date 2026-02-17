@@ -1201,6 +1201,7 @@ export class PlanExecutorService {
 					newContentAfterApply,
 					step.step.path,
 					this.provider.aiRequestService,
+					this.provider.settingsManager.getSelectedModelName(),
 				);
 
 				const narrativeSummary = await generateNarrativeDiffSummary(
@@ -1256,6 +1257,7 @@ export class PlanExecutorService {
 					cleanedDesiredContent,
 					step.step.path,
 					this.provider.aiRequestService,
+					this.provider.settingsManager.getSelectedModelName(),
 				);
 
 				const narrativeSummary = await generateNarrativeDiffSummary(
@@ -1690,6 +1692,7 @@ export class PlanExecutorService {
 				newContentAfterApply,
 				step.step.path,
 				this.provider.aiRequestService,
+				this.provider.settingsManager.getSelectedModelName(),
 			);
 
 			const narrativeSummary = await generateNarrativeDiffSummary(

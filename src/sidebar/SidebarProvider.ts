@@ -709,7 +709,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			console.log(
 				"[SidebarProvider] Detected active operation without streaming content. Restoring 'Loading' state.",
 			);
-			this.postMessageToWebview({ type: "updateLoadingState", value: true });
+			this.postMessageToWebview({
+				type: "updateLoadingState",
+				value: true,
+				operationId: this.currentActiveChatOperationId ?? undefined,
+			});
 			// Ensure inputs are disabled
 			// No need to send reenableInput
 		} else {
@@ -741,7 +745,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 		console.log(
 			"[SidebarProvider] Detected active plan execution. Restoring UI state.",
 		);
-		this.postMessageToWebview({ type: "updateLoadingState", value: true });
+		this.postMessageToWebview({
+			type: "updateLoadingState",
+			value: true,
+			operationId: this.currentActiveChatOperationId ?? undefined,
+		});
 		this.postMessageToWebview({ type: "planExecutionStarted" });
 
 		// Restore the timeline

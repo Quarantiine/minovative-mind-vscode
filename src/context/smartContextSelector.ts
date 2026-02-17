@@ -104,6 +104,19 @@ interface AISelectionCache {
 // Cache storage
 const aiSelectionCache = new Map<string, AISelectionCache>();
 
+/**
+ * Categories of user requests to tailor the AI's selection strategy.
+ */
+enum RequestCategory {
+	BUG_FIX = "BUG_FIX",
+	NEW_FEATURE = "NEW_FEATURE",
+	REFACTOR = "REFACTOR",
+	DOCUMENTATION = "DOCUMENTATION",
+	ARCHITECTURE_ANALYSIS = "ARCHITECTURE_ANALYSIS",
+	QUERY_EXPLANATION = "QUERY_EXPLANATION",
+	GENERAL_INQUIRY = "GENERAL_INQUIRY",
+}
+
 // Configuration for AI selection
 interface AISelectionOptions {
 	useCache?: boolean;
@@ -604,18 +617,36 @@ export async function selectRelevantFilesAI(
 		options.fileLineCounts,
 	);
 
-	// Detect if the user request appears to be about fixing an error
-	// Use AI classification if available, otherwise fallback to regex
+	// Detect request category
+	// Default to general unless AI classifies it otherwise or regex matches
 	const errorKeywordsRegex =
 		/\b(error|bug|fix|issue|exception|crash|fail|broken|undefined|null|cannot|warning|problem)\b/i;
+	const refactorKeywordsRegex =
+		/\b(refactor|cleanup|simplify|restructure|rename)\b/i;
+	const featureKeywordsRegex =
+		/\b(add|new|implement|create|feature|support)\b/i;
 
-	let isLikelyErrorRequest = errorKeywordsRegex.test(userRequest);
+	let requestCategory = RequestCategory.GENERAL_INQUIRY;
+	if (errorKeywordsRegex.test(userRequest))
+		requestCategory = RequestCategory.BUG_FIX;
+	else if (refactorKeywordsRegex.test(userRequest))
+		requestCategory = RequestCategory.REFACTOR;
+	else if (featureKeywordsRegex.test(userRequest))
+		requestCategory = RequestCategory.NEW_FEATURE;
 
 	if (aiRequestService) {
 		try {
-			const classificationPrompt = `Analyze the following user request and determine if it is asking to fix a bug, error, or issue.
+			const classificationPrompt = `Analyze the following user request and categorize it into exactly one of these categories:
+- BUG_FIX: Fixing an error, bug, or unexpected behavior.
+- NEW_FEATURE: Adding new functionality or components.
+- REFACTOR: Improving existing code structure without changing behavior.
+- DOCUMENTATION: Asking about or adding documentation/comments.
+- ARCHITECTURE_ANALYSIS: Asking about system design, patterns, or high-level structure.
+- QUERY_EXPLANATION: Asking how a specific piece of code works.
+- GENERAL_INQUIRY: Simple greetings or non-technical questions.
+
 User Request: "${userRequest}"
-Return ONLY a JSON object: { "isErrorFix": boolean }`;
+Return ONLY a JSON object: { "category": "CATEGORY_NAME" }`;
 
 			const response = await aiRequestService.generateWithRetry(
 				[{ text: classificationPrompt }],
@@ -626,26 +657,33 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 				undefined,
 				undefined, // token
 				false, // isMergeOperation
-				"You are an intelligent intent classifier. Your job is to determine if a user request indicates a software bug, error, or issue that requires investigation. Output strict JSON.", // systemInstruction
+				"You are an intelligent intent classifier. Your job is to categorize a user request to help tailor the investigation strategy. Output strict JSON.", // systemInstruction
 			);
 
 			const jsonMatch = response.match(/\{.*\}/s);
 			if (jsonMatch) {
 				const parsed = JSON.parse(jsonMatch[0]);
-				if (typeof parsed.isErrorFix === "boolean") {
-					isLikelyErrorRequest = parsed.isErrorFix;
+				if (
+					parsed.category &&
+					Object.values(RequestCategory).includes(
+						parsed.category as RequestCategory,
+					)
+				) {
+					requestCategory = parsed.category as RequestCategory;
 					console.log(
-						`[SmartContextSelector] AI classified intent: isErrorFix=${isLikelyErrorRequest}`,
+						`[SmartContextSelector] AI categorized request: ${requestCategory}`,
 					);
 				}
 			}
 		} catch (error) {
 			console.warn(
-				"[SmartContextSelector] AI intent classification failed, using regex fallback:",
+				"[SmartContextSelector] AI intent categorization failed, using regex fallback:",
 				error,
 			);
 		}
 	}
+
+	const isLikelyErrorRequest = requestCategory === RequestCategory.BUG_FIX;
 
 	// Build diagnostics context if available
 	let diagnosticsContext = "";
@@ -742,12 +780,47 @@ Return ONLY a JSON object: { "isErrorFix": boolean }`;
 					.join("\n\n")
 			: "No summaries available.";
 
+	const CATEGORY_INSTRUCTIONS: Record<RequestCategory, string> = {
+		[RequestCategory.BUG_FIX]: `
+*   **Focus on Diagnostics**: Prioritize VS Code Diagnostics (Errors/Warnings) and recent log files.
+*   **Trace the Error**: Use \`find_references\` and \`go_to_definition\` to trace where the error originated and how it propagates.
+*   **Check Recent Changes**: Use \`git\` tools (if available via terminal) to see what changed recently in the failing modules.`,
+		[RequestCategory.NEW_FEATURE]: `
+*   **Identify Patterns**: Search for similar existing features to understand the project's design patterns and architectural style.
+*   **Find Extension Points**: Look for interfaces, abstract classes, or registration logic where the new feature should be integrated.
+*   **Check Dependencies**: Identify what existing services or utilities the new feature will need to interact with.`,
+		[RequestCategory.REFACTOR]: `
+*   **Analyze Blast Radius**: Use \`find_references\` extensively to understand how many components will be affected by the refactor.
+*   **Trace Call Hierarchies**: Use \`get_call_hierarchy_incoming\` and \`outgoing\` to ensure no logical flows are broken.
+*   **Verify Tests**: Ensure you find all corresponding test files to maintain behavior parity.`,
+		[RequestCategory.DOCUMENTATION]: `
+*   **Read for Context**: Focus on reading existing comments, docstrings, and \`.md\` files.
+*   **Identify Gaps**: Look for complex logic that lacks explanation.
+*   **Trace Logic for Clarity**: Read the code to ensure the documentation accurately reflects the implementation.`,
+		[RequestCategory.ARCHITECTURE_ANALYSIS]: `
+*   **Map the System**: Focus on top-level services, providers, and entry points.
+*   **Analyze Dependencies**: Use \`lookup_workspace_symbol\` to find key architectural components and their relationships.
+*   **Check Config**: Review root-level configuration files (\`package.json\`, \`tsconfig.json\`, etc.) for global settings.`,
+		[RequestCategory.QUERY_EXPLANATION]: `
+*   **Deep Dive**: Read the specific symbols and files mentioned in the user's query.
+*   **Trace Data Flow**: Use \`go_to_definition\` and call hierarchies to explain how data moves through the code.
+*   **Connect the Dots**: Explain how the specific code relates to the broader system.`,
+		[RequestCategory.GENERAL_INQUIRY]: `
+*   **Be Concise**: If the request is a greeting or non-technical, don't over-investigate.
+*   **Context Only if Needed**: Only select files if they are directly relevant to answering the user's general question.`,
+	};
+
+	const categorySpecificPrompt = CATEGORY_INSTRUCTIONS[requestCategory] || "";
+
 	const systemPrompt =
 		`You are a Context Selection Agent. Your goal is to identify the most relevant files for the user's request.
 You are a **READ-ONLY** agent. You CANNOT perform any write operations, modify files, or create new files. Your only responsibility is to gather context and information to help the user.
 You will iterate using tools until you have enough information to call \`finish_selection\`.
 
 -- Intent Recognition & Adaptation --
+*   **Request Category**: This request has been categorized as **${requestCategory}**.
+${categorySpecificPrompt}
+
 *   **Non-Coding Tasks**: If the user's request is a greeting, a general question (e.g., "how are you?"), or something that doesn't require codebase context, you should proceed to \`finish_selection([])\` immediately with an empty array.
 *   **General Inquiries**: If the user is asking a general question about the codebase that doesn't require specific file context (e.g., "what language is this?"), call \`finish_selection([])\` unless a specific file is needed to answer.
 *   **Coding Tasks**: Only for requests involving code changes, debugging, or technical analysis should you proceed with the deep investigation described below.
@@ -755,6 +828,11 @@ You will iterate using tools until you have enough information to call \`finish_
 -- Instructions --
 1.  **Exhaustive Discovery (MANDATORY)**: Finding *something* relevant is just the beginning. You MUST continue looking until you are certain you have gathered ALL information that could impact the request.
     *   **NEVER SATISFIED**: Even if you have "enough" to start, check if there is *more* that could make the solution better, safer, or more complete.
+    *   **Related Files Discovery (CRITICAL)**: Actively search for:
+        *   **Tests**: Search for corresponding test files (e.g., \`*.test.ts\`, \`*.spec.ts\`) in \`__tests__\` or sibling/corresponding directories.
+        *   **Docs**: Check \`README.md\`, \`ARCHITECTURE.md\`, or any \`.md\` file that might explain the logic or domain.
+        *   **Configuration**: Check relevant config files (\`package.json\`, \`tsconfig.json\`, etc.) if dependencies or project settings are involved.
+        *   **Indirect Relationships (DEEP DISCOVERY)**: Look for files that share similar naming patterns, feature prefixes, or architectural roles even if they lack direct imports (e.g., a \`LoginService\` in \`services/\` and a \`LoginButton\` in \`components/\`).
     *   **Doc Traversal**: If a file is mentioned in another document as a key resource (e.g., in a README or Architecture file), you MUST investigate it unless it is clearly out of scope.
     *   **Multi-Source Verification**: Do not rely on a single file if other related files exist. Prematurely stopping is a high-cost failure.
 2.  **Thinking Process (MANDATORY)**: You MUST call the \`report_thought\` tool to explain your search strategy before using other tools.
