@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.58.0] - February 17, 2026
+
+### AI-Driven Request Categorization & Optimized Discovery View
+
+This update introduces AI-driven request classification to tailor the Context Agent's exploration strategy and refines project structure visualization for enhanced discovery in large codebases.
+
+- **AI-Driven Request Categorization**:
+  - Introduced `RequestCategory` enumeration (`BUG_FIX`, `NEW_FEATURE`, `REFACTOR`, etc.) in `smartContextSelector.ts`.
+  - Implemented AI-powered intent classification to automatically detect the user's goal and generate category-specific investigation instructions.
+  - Tailored agent behavior: bug fixes prioritize diagnostics, while new features focus on identifying patterns and extension points.
+- **Optimized Discovery View**:
+  - Enhanced `buildOptimizedProjectStructure` to provide a high-level "Discovery View" for large projects, forcing the agent to use specialized tools for finding specific files.
+  - Improved display of priority files and relationships within the optimized view to reduce context noise.
+- **System-Wide Consistency**:
+  - Updated `RevertService`, `CommitService`, `PlanExecutorService`, and `diffingUtils` to pass `modelName` during AI interactions, ensuring consistent model behavior across all background tasks.
+  - Integrated `operationId` into sidebar loading states for better synchronization and UX transparency.
+
 ## [2.57.0] - February 16, 2026
 
 ### Modal Session Management & Auto-Naming

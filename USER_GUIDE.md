@@ -118,8 +118,8 @@ The protocol utilizes unique markers (`SEARC#H` / `REPLAC#E` / `===#===`) anchor
     - **Error (Red Text)**: Indicates a step has failed and requires manual intervention or self-correction.
 - **Active Exploration**: For complex queries, the **Context Agent** will automatically spring into action. It "investigates" your codebase by running safe terminal commands (`git ls-files`, `grep`, `find`, `sed`, `head`) to find relevant files that static analysis might miss. It prioritizes a **Relationship-First strategy**, following the "structural graph" of your code (calling functions, checking types) to ensure absolute precision. All search commands are automatically filtered to respect `.gitignore` rules and exclude build artifacts, dependencies, and binary files.
 - **Transparent Logs**: You'll see "Context Agent" logs in the chat showing exactly what commands are being run (e.g., `grep -r "auth" src/`) and what they returned.
-- **Progressive Discovery**: In large projects, the Context Agent uses a "Progressive Discovery" strategy, starting with a truncated view of your project structure and discovering files on-the-fly to save tokens and improve performance.
-- **Error Awareness**: If you ask about an error or bug, the Context Agent automatically enters "Investigation Mode" to hunt down the root cause using the error message and real-time diagnostics.
+- **Progressive Discovery**: In large projects, the Context Agent uses a "Progressive Discovery" strategy, starting with an optimized **Discovery View** of your project structure and discovering files on-the-fly to save tokens and improve performance.
+- **Intent-Aware Investigation**: If you ask about an error or bug, the Context Agent automatically enters "Investigation Mode" to hunt down the root cause using AI-driven request categorization and real-time diagnostics.
 
 ---
 
