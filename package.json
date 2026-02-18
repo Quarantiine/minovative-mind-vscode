@@ -171,7 +171,7 @@
 		"diff-match-patch": "^1.0.5",
 		"highlight.js": "^11.11.1",
 		"ignore": "^7.0.4",
-		"markdown-it": "^14.1.0",
+		"markdown-it": "^14.1.1",
 		"mime": "^4.1.0",
 		"uuid": "^13.0.0",
 		"vscode-uri": "^3.1.0",
