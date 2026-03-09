@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.59.2] - March 9, 2026
+
+### Context Agent Intelligence & Completeness Enforcement
+
+This update dramatically improves the Context Agent's ability to gather complete, actionable context for user requests and refines the AI system's understanding of its own capabilities.
+
+- **AI-Powered Entity Extraction**:
+  - Replaced regex-based extraction in `chatHistoryAnalyzer.ts` with AI using `DEFAULT_FLASH_LITE_MODEL` for file paths, code identifiers, and implicit assumptions via structured function calling (`CONVERSATION_ENTITY_EXTRACTION_TOOL`, `IMPLICIT_ASSUMPTION_DETECTION_TOOL`).
+  - Replaced regex-based file name classification in `crossFileInference.ts` with AI-powered classification for `coreName` and `architecturalRole`, limited to target files only for cost efficiency.
+- **Zero Deferred Research Enforcement**:
+  - Added the "ZERO DEFERRED RESEARCH" rule as the #1 instruction in the Context Agent's system prompt — the agent must never finish with gaps that would force the downstream AI to say "I need to look at..."
+  - Raised the confidence threshold from 7 to 8 in `validate_selection`, requiring stronger certainty before finishing.
+  - Added completeness enforcement on `finish_selection`: the agent is now bounced back if it self-reported `missingAreas` during validation but didn't investigate them.
+- **In-File Context Clue Tracking**:
+  - New instruction (Rule 13) explicitly directs the agent to scan file content for textual references — comments, string literals, TODO/FIXME, error messages, config keys, and type assertions — and follow them to related files.
+- **Variable Initialization Priority**:
+  - Added explicit Priority 3.5 for top-level variable/constant initializations in `fileContentProcessor.ts`, preventing the "I cannot see the original initialization" problem where state setup was previously falling to the lowest fallback tier.
+- **AI System Instruction Updates**:
+  - Clarified `/plan` workflow in `systemInstructions.ts`: the AI cannot offer to generate plans itself. Plans are user-initiated only via the 💡 button or `/plan` command.
+- **Cost Optimization**:
+  - Cross-file inference AI classification is now limited to target file names only (5-15 files) with lightweight string-prefix scan for sibling discovery.
+  - Priority files capped at 5 and relabeled as "Environmental Hints" in the context prompt.
+- **UI Improvements**:
+  - Context agent log (`<details>`) is now expanded by default with `max-height: 200px` and `overflow-y: auto`.
+  - Auto-scrolls to latest entry when new logs are appended.
+- **Model Updates**:
+  - Updated model names to `gemini-3.1-pro-preview` and `gemini-3.1-flash-lite-preview` in `sidebarConstants.ts`.
+
 ## [2.58.0] - February 17, 2026
 
 ### AI-Driven Request Categorization & Optimized Discovery View
