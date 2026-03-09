@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { SidebarProvider } from "./sidebar/SidebarProvider";
 import { ERROR_QUOTA_EXCEEDED, resetClient } from "./ai/gemini"; // Import necessary items
 import { cleanCodeOutput } from "./utils/codeUtils";
+import { DiffContentProvider } from "./providers/diffContentProvider";
 import { CodeSelectionService } from "./services/codeSelectionService";
 import {
 	getSymbolsInDocument,
@@ -219,6 +220,15 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.window.registerWebviewViewProvider(
 			SidebarProvider.viewType,
 			sidebarProvider,
+		),
+	);
+
+	// --- Register Diff Content Provider (for Before/After diff views) ---
+	const diffProvider = DiffContentProvider.getInstance();
+	context.subscriptions.push(
+		vscode.workspace.registerTextDocumentContentProvider(
+			DiffContentProvider.scheme,
+			diffProvider,
 		),
 	);
 

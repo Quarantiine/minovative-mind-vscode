@@ -225,6 +225,9 @@ export function appendMessage(
 			addCodeToggleToContextLog(logEntryContainer);
 			detailsElement.appendChild(logEntryContainer);
 
+			// Auto-scroll the details container to show the latest entry
+			detailsElement.scrollTop = detailsElement.scrollHeight;
+
 			// Scroll to bottom
 			scrollToBottomIfAtBottom(elements.chatContainer);
 			return; // Exit after appending to existing group
@@ -233,7 +236,7 @@ export function appendMessage(
 		// Create a new details element for the FIRST log in a potential sequence
 		const detailsElementNew = document.createElement("details");
 		detailsElementNew.classList.add("context-agent-details");
-		detailsElementNew.open = false; // Collapsed by default
+		detailsElementNew.open = true; // Expanded by default
 
 		const summaryElement = document.createElement("summary");
 		summaryElement.classList.add("context-agent-summary");

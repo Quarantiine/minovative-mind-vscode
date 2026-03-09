@@ -62,7 +62,7 @@ export function intelligentlySummarizeFileContent(
 	fileContent: string,
 	documentSymbols: vscode.DocumentSymbol[] | undefined,
 	activeSymbolDetailedInfo: ActiveSymbolDetailedInfo | undefined,
-	maxAllowedLength: number
+	maxAllowedLength: number,
 ): string {
 	let currentLength = 0;
 	const collectedParts: { content: string; startLine: number }[] = [];
@@ -76,7 +76,7 @@ export function intelligentlySummarizeFileContent(
 	 * @returns True if there's a substantial overlap, false otherwise.
 	 */
 	const isSubstantiallyOverlapping = (
-		candidateRange: vscode.Range
+		candidateRange: vscode.Range,
 	): boolean => {
 		const candidateLineCount =
 			candidateRange.end.line - candidateRange.start.line + 1;
@@ -114,7 +114,7 @@ export function intelligentlySummarizeFileContent(
 		sourceRange: vscode.Range,
 		markerType: string,
 		description: string = "",
-		desiredBlockLength?: number
+		desiredBlockLength?: number,
 	): boolean => {
 		if (currentLength >= maxAllowedLength) {
 			return false;
@@ -154,7 +154,7 @@ export function intelligentlySummarizeFileContent(
 				combinedContent =
 					contentToUse.substring(
 						0,
-						availableContentLength - truncationMessage.length
+						availableContentLength - truncationMessage.length,
 					) + truncationMessage;
 			} else {
 				// Too small to be meaningful after reserving space
@@ -191,7 +191,7 @@ export function intelligentlySummarizeFileContent(
 	// Helper to check if a location is within the current file being summarized
 	const isLocationInCurrentFile = (
 		location: vscode.Location | undefined,
-		currentFilePath: string // This should be activeSymbolDetailedInfo.filePath
+		currentFilePath: string, // This should be activeSymbolDetailedInfo.filePath
 	): boolean => {
 		if (!location || !location.uri || !currentFilePath) {
 			return false;
@@ -238,7 +238,7 @@ export function intelligentlySummarizeFileContent(
 				0,
 				0,
 				preambleEndLine,
-				fileLines[preambleEndLine]?.length || 0
+				fileLines[preambleEndLine]?.length || 0,
 			),
 			marker: MARKERS.PREAMBLE, // 4c. Use MARKERS
 			description: "High-level description",
@@ -254,7 +254,7 @@ export function intelligentlySummarizeFileContent(
 	for (let i = 0; i < fileLines.length; i++) {
 		const line = fileLines[i].trim();
 		const isImportLike = importKeywords.some((keyword) =>
-			line.startsWith(keyword)
+			line.startsWith(keyword),
 		);
 		const isCommentOrEmpty =
 			line === "" || line.startsWith("//") || line.startsWith("/*");
@@ -276,7 +276,7 @@ export function intelligentlySummarizeFileContent(
 					startLineForImports,
 					0,
 					importAndSetupEndLine,
-					fileLines[importAndSetupEndLine]?.length || 0
+					fileLines[importAndSetupEndLine]?.length || 0,
 				),
 				marker: MARKERS.IMPORTS, // 4c. Use MARKERS
 				description: "Module Setup",
@@ -291,7 +291,7 @@ export function intelligentlySummarizeFileContent(
 			.filter(
 				(symbol) =>
 					EXPORTED_SYMBOL_KINDS.includes(symbol.kind) &&
-					symbol.range.start.line > importAndSetupEndLine
+					symbol.range.start.line > importAndSetupEndLine,
 			)
 			.forEach((symbol) => {
 				const kindName = vscode.SymbolKind[symbol.kind];
@@ -346,7 +346,7 @@ export function intelligentlySummarizeFileContent(
 	if (activeSymbolDetailedInfo?.filePath) {
 		const currentFileNormalizedPath = activeSymbolDetailedInfo.filePath.replace(
 			/\\/g,
-			"/"
+			"/",
 		);
 
 		activeSymbolDetailedInfo.incomingCalls?.forEach((call) => {
@@ -386,7 +386,7 @@ export function intelligentlySummarizeFileContent(
 			.filter(
 				(symbol) =>
 					MAJOR_SYMBOL_KINDS.includes(symbol.kind) &&
-					!EXPORTED_SYMBOL_KINDS.includes(symbol.kind)
+					!EXPORTED_SYMBOL_KINDS.includes(symbol.kind),
 			)
 			.forEach((symbol) => {
 				const kindName = vscode.SymbolKind[symbol.kind];
@@ -407,7 +407,8 @@ export function intelligentlySummarizeFileContent(
 
 	// Sort candidates: highest priority first, then by line number
 	candidates.sort(
-		(a, b) => b.priority - a.priority || a.range.start.line - b.range.start.line
+		(a, b) =>
+			b.priority - a.priority || a.range.start.line - b.range.start.line,
 	);
 
 	// --- Process Candidates ---
@@ -426,7 +427,7 @@ export function intelligentlySummarizeFileContent(
 				candidate.range,
 				candidate.marker,
 				candidate.description,
-				candidate.desiredBlockLength
+				candidate.desiredBlockLength,
 			);
 		}
 	}
@@ -439,10 +440,10 @@ export function intelligentlySummarizeFileContent(
 				currentLine,
 				0,
 				currentLine,
-				fileLines[currentLine].length
+				fileLines[currentLine].length,
 			);
 			const isLineCovered = includedRanges.some((r) =>
-				r.contains(lineRange.start)
+				r.contains(lineRange.start),
 			);
 
 			if (!isLineCovered) {
@@ -458,11 +459,11 @@ export function intelligentlySummarizeFileContent(
 					currentLine,
 					0,
 					blockEndLine,
-					fileLines[blockEndLine].length
+					fileLines[blockEndLine].length,
 				);
 				const snippetContent = extractContentForRange(
 					fileContent,
-					snippetRange
+					snippetRange,
 				);
 
 				// 4f. Refactor Fallback Logic
@@ -472,7 +473,7 @@ export function intelligentlySummarizeFileContent(
 						snippetRange,
 						MARKERS.CONTEXT,
 						`Lines ${currentLine + 1}-${blockEndLine + 1}`,
-						maxAllowedLength - currentLength
+						maxAllowedLength - currentLength,
 					);
 				}
 				currentLine = blockEndLine + 1;
@@ -497,7 +498,7 @@ export function intelligentlySummarizeFileContent(
 		// Edge case: If nothing was collected but the file isn't empty
 		return `// File content could not be summarized. Snippet: ${fileContent.substring(
 			0,
-			Math.min(fileContent.length, 100)
+			Math.min(fileContent.length, 100),
 		)}...`;
 	}
 

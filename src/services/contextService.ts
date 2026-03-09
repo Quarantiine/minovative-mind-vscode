@@ -854,7 +854,33 @@ export class ContextService {
 				);
 			}
 
-			// 3. Add Diagnostic Files (Errors/Warnings)
+			// 3. Enhancement #4: Workspace Activity Awareness
+			// Include files from visible editor tabs as implicit context signals
+			try {
+				const tabGroups = vscode.window.tabGroups;
+				if (tabGroups && tabGroups.all) {
+					for (const group of tabGroups.all) {
+						for (const tab of group.tabs) {
+							const tabInput = tab.input as any;
+							if (tabInput?.uri && tabInput.uri.fsPath) {
+								// Only include workspace files
+								if (tabInput.uri.fsPath.startsWith(rootFolder.uri.fsPath)) {
+									priorityFilesSet.add(tabInput.uri.fsPath);
+								}
+							}
+						}
+					}
+				}
+				console.log(
+					`[ContextService] Added ${priorityFilesSet.size} files from workspace activity (tabs, active, uncommitted).`,
+				);
+			} catch (e) {
+				console.warn(
+					`[ContextService] Failed to read editor tabs: ${(e as any).message}`,
+				);
+			}
+
+			// 4. Add Diagnostic Files (Errors/Warnings)
 			correctionUris.forEach((uriStr) => {
 				try {
 					priorityFilesSet.add(vscode.Uri.parse(uriStr).fsPath);

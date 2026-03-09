@@ -375,3 +375,115 @@ export async function getGitAllUncommittedFiles(
 		return [];
 	}
 }
+
+/**
+ * Represents a staged file with its Git status code.
+ */
+export interface StagedFileWithStatus {
+	/** Git status: 'A' (added), 'M' (modified), 'D' (deleted), 'R' (renamed), 'C' (copied), or other git status codes. */
+	status: string;
+	/** The file path relative to the repository root. */
+	filePath: string;
+	/** For renames/copies, the original file path. */
+	originalPath?: string;
+}
+
+/**
+ * Retrieves staged files with their Git status codes (A/M/D/R/C).
+ * Uses `git diff --cached --name-status` to get both the status and filename.
+ *
+ * @param rootPath The root path of the Git repository.
+ * @returns An array of StagedFileWithStatus objects.
+ */
+export async function getGitStagedFilesWithStatus(
+	rootPath: string,
+): Promise<StagedFileWithStatus[]> {
+	try {
+		const { stdout } = await execPromise("git diff --cached --name-status", {
+			cwd: rootPath,
+		});
+		return stdout
+			.trim()
+			.split("\n")
+			.filter((line) => line.length > 0)
+			.map((line) => {
+				// Format: "M\tpath/to/file" or "R100\told/path\tnew/path"
+				const parts = line.split("\t");
+				const statusCode = parts[0].trim();
+				// Renames have a format like R100 (with a similarity percentage)
+				const status = statusCode.charAt(0);
+
+				if ((status === "R" || status === "C") && parts.length >= 3) {
+					return {
+						status,
+						filePath: parts[2],
+						originalPath: parts[1],
+					};
+				}
+
+				return {
+					status,
+					filePath: parts[1] || "",
+				};
+			})
+			.filter((entry) => entry.filePath.length > 0);
+	} catch (error: any) {
+		console.error(
+			`Error getting staged files with status for ${rootPath}: ${
+				error.message || error
+			}`,
+		);
+		return [];
+	}
+}
+
+/**
+ * Retrieves the current Git branch name.
+ * Falls back to "HEAD" if on a detached HEAD.
+ *
+ * @param rootPath The root path of the Git repository.
+ * @returns The current branch name, or "HEAD" if detached.
+ */
+export async function getGitCurrentBranch(rootPath: string): Promise<string> {
+	try {
+		const { stdout } = await execPromise("git branch --show-current", {
+			cwd: rootPath,
+		});
+		const branchName = stdout.trim();
+		if (branchName) {
+			return branchName;
+		}
+		// If empty, we're on a detached HEAD — try to get a useful ref
+		const { stdout: refStdout } = await execPromise(
+			"git rev-parse --abbrev-ref HEAD",
+			{ cwd: rootPath },
+		);
+		return refStdout.trim() || "HEAD";
+	} catch (error: any) {
+		console.error(
+			`Error getting current branch for ${rootPath}: ${error.message || error}`,
+		);
+		return "HEAD";
+	}
+}
+
+/**
+ * Retrieves the staged diff stat summary (compact line-change overview).
+ * Uses `git diff --cached --stat` for a concise per-file summary.
+ *
+ * @param rootPath The root path of the Git repository.
+ * @returns The diff stat summary string, or empty string if no changes.
+ */
+export async function getGitDiffStat(rootPath: string): Promise<string> {
+	try {
+		const { stdout } = await execPromise("git diff --cached --stat", {
+			cwd: rootPath,
+		});
+		return stdout.trim();
+	} catch (error: any) {
+		console.error(
+			`Error getting diff stat for ${rootPath}: ${error.message || error}`,
+		);
+		return "";
+	}
+}

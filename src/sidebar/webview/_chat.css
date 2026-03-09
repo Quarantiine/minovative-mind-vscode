@@ -578,6 +578,8 @@
 
 .context-agent-details[open] {
 	margin-bottom: 15px;
+	max-height: 270px;
+	overflow-y: auto;
 }
 
 .context-agent-summary {

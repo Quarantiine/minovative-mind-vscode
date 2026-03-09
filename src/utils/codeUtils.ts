@@ -1,6 +1,8 @@
 // src/utils/codeUtils.ts
 import * as vscode from "vscode";
+import * as path from "path";
 import { generatePreciseTextEdits } from "../utils/diffingUtils";
+import { DiffContentProvider } from "../providers/diffContentProvider";
 
 export function cleanCodeOutput(codeString: string): string {
 	if (!codeString) {
@@ -44,6 +46,11 @@ export async function applyAITextEdits(
 		return;
 	}
 
+	// --- Store original content for diff view BEFORE applying edits ---
+	const filePath = editor.document.uri.fsPath;
+	const diffProvider = DiffContentProvider.getInstance();
+	diffProvider.setOriginalContent(filePath, originalContent);
+
 	// --- Visual Feedback Implementation ---
 
 	// 1. Setup Decoration Type for the "Flash" effect
@@ -78,7 +85,7 @@ export async function applyAITextEdits(
 
 			// 2. Determine the start line in the FINAL document
 			// It is the original start line + all accumulated shifts from previous edits
-			const finalStartLine = edit.range.start.line + lineDelta; // Use 'let' variable if needed, but here it's read-only for this step
+			const finalStartLine = edit.range.start.line + lineDelta;
 
 			// 3. Determine the end line in the FINAL document
 			const finalEndLine =
@@ -95,14 +102,12 @@ export async function applyAITextEdits(
 
 	// 3. Reveal Changes and Apply Flash Effect
 	if (modifiedRanges.length > 0) {
-		const rangeToReveal = modifiedRanges[modifiedRanges.length - 1]; // This is actually the top-most edit now
+		const rangeToReveal = modifiedRanges[modifiedRanges.length - 1];
 		editor.revealRange(rangeToReveal, vscode.TextEditorRevealType.InCenter);
 
 		// Deduplicate lines to prevent opacity stacking
 		const distinctLines = new Set<number>();
 		for (const r of modifiedRanges) {
-			// Because we set isWholeLine: true, we just need to know which lines to highlight.
-			// We don't want to add the same line multiple times.
 			for (let l = r.start.line; l <= r.end.line; l++) {
 				distinctLines.add(l);
 			}
@@ -123,7 +128,6 @@ export async function applyAITextEdits(
 		}, 30000);
 
 		// Smart Flash Removal: Only remove if user edits the flashed lines
-		// We need to track the flashed lines as they might shift due to edits above them.
 		let currentFlashedLines = Array.from(distinctLines).sort((a, b) => a - b);
 
 		const changeSubscription = vscode.workspace.onDidChangeTextDocument(
@@ -132,13 +136,10 @@ export async function applyAITextEdits(
 					return;
 				}
 
-				// Process changes to check for intersection and update line numbers
 				for (const change of event.contentChanges) {
 					const rangeStartLine = change.range.start.line;
 					const rangeEndLine = change.range.end.line;
 
-					// Check intersection: If any flashed line is within the changed range, remove flash
-					// Logic: if flashedLine >= startLine AND flashedLine <= endLine
 					const touchesFlash = currentFlashedLines.some(
 						(line) => line >= rangeStartLine && line <= rangeEndLine,
 					);
@@ -148,17 +149,15 @@ export async function applyAITextEdits(
 						flashDecorationType.dispose();
 						clearTimeout(timeoutId);
 						changeSubscription.dispose();
-						return; // Stop processing
+						return;
 					}
 
-					// If no overlap, we must shift the flashed lines for NEXT comparison
 					const linesRemoved = rangeEndLine - rangeStartLine;
 					const linesAdded = change.text.split("\n").length - 1;
 					const netChange = linesAdded - linesRemoved;
 
 					if (netChange !== 0) {
 						currentFlashedLines = currentFlashedLines.map((line) => {
-							// Only shifts lines that are physically below the change
 							if (line > rangeEndLine) {
 								return line + netChange;
 							}
@@ -168,5 +167,48 @@ export async function applyAITextEdits(
 				}
 			},
 		);
+	}
+
+	// --- 4. Open Native Diff Editor (Before vs After) ---
+	if (!token.isCancellationRequested) {
+		try {
+			const originalUri = diffProvider.getOriginalUri(filePath);
+			const modifiedUri = editor.document.uri;
+			const fileName = path.basename(filePath);
+			const diffTitle = `${fileName} (Before AI Edit ↔ After AI Edit)`;
+
+			await vscode.commands.executeCommand(
+				"vscode.diff",
+				originalUri,
+				modifiedUri,
+				diffTitle,
+				{ preview: true } as vscode.TextDocumentShowOptions,
+			);
+
+			// Auto-close diff after 60 seconds and clean up stored content
+			const diffCleanupTimeout = setTimeout(() => {
+				diffProvider.clearOriginalContent(filePath);
+				diffChangeSubscription.dispose();
+			}, 60000);
+
+			// Also clean up if user starts editing the file (diff becomes stale)
+			const diffChangeSubscription = vscode.workspace.onDidChangeTextDocument(
+				(event) => {
+					if (
+						event.document.uri.fsPath === filePath &&
+						event.contentChanges.length > 0
+					) {
+						diffProvider.clearOriginalContent(filePath);
+						clearTimeout(diffCleanupTimeout);
+						diffChangeSubscription.dispose();
+					}
+				},
+			);
+		} catch (error) {
+			// Non-critical: log but don't interrupt the edit workflow
+			console.warn(
+				`[Minovative Mind] Failed to open diff editor: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
 	}
 }

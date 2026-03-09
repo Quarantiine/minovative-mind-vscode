@@ -34,6 +34,19 @@ import {
 	gatherProjectConfigContext,
 	formatProjectConfigForPrompt,
 } from "./configContextProvider";
+import {
+	decomposeUserIntent,
+	formatIntentDecompositionForPrompt,
+	IntentDecomposition,
+} from "./intentDecomposer";
+import {
+	extractConversationContext,
+	formatConversationContextForPrompt,
+} from "./chatHistoryAnalyzer";
+import {
+	inferCrossFileRelationships,
+	formatInferredRelationshipsForPrompt,
+} from "./crossFileInference";
 
 const MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION = 10000;
 export { MAX_FILE_SUMMARY_LENGTH_FOR_AI_SELECTION };
@@ -511,6 +524,117 @@ export async function selectRelevantFilesAI(
 	const projectConfig = await gatherProjectConfigContext(projectRoot);
 	const projectConfigPrompt = formatProjectConfigForPrompt(projectConfig);
 
+	// --- Enhancement #1: Deep Intent Decomposition ---
+	// Break the user request into structured sub-intents before any file searching
+	let intentDecomposition: IntentDecomposition | undefined;
+	if (aiRequestService) {
+		if (postMessageToWebview) {
+			postMessageToWebview({
+				type: "contextAgentLog",
+				value: {
+					text: `<span class="thinking-prefix">[Analyzing Intent]</span> Decomposing request into sub-intents...`,
+				},
+			});
+		}
+		if (addContextAgentLogToHistory) {
+			addContextAgentLogToHistory(
+				`<span class="thinking-prefix">[Analyzing Intent]</span> Decomposing request into sub-intents...`,
+			);
+		}
+
+		try {
+			intentDecomposition = await decomposeUserIntent(
+				userRequest,
+				projectConfig,
+				activeEditorContext,
+				options.chatHistory,
+				aiRequestService,
+				modelName,
+				cancellationToken,
+			);
+
+			// Log decomposition insights
+			if (postMessageToWebview && intentDecomposition) {
+				const decompSummary = [
+					`**Intent**: ${intentDecomposition.primaryIntent}`,
+					`**Sub-intents**: ${intentDecomposition.subIntents.length}`,
+					`**Keywords**: ${intentDecomposition.searchKeywords.slice(0, 6).join(", ")}`,
+					`**Ambiguity**: ${intentDecomposition.ambiguityLevel}`,
+				].join(" | ");
+
+				postMessageToWebview({
+					type: "contextAgentLog",
+					value: {
+						text: `<span class="thinking-prefix">[Intent Decomposed]</span> ${decompSummary}`,
+					},
+				});
+			}
+			if (addContextAgentLogToHistory && intentDecomposition) {
+				addContextAgentLogToHistory(
+					`[Intent Decomposed] Primary: ${intentDecomposition.primaryIntent} | Sub-intents: ${intentDecomposition.subIntents.length} | Keywords: ${intentDecomposition.searchKeywords.join(", ")} | Ambiguity: ${intentDecomposition.ambiguityLevel}`,
+				);
+			}
+
+			// --- Enhancement #7: Clarification Gate ---
+			if (
+				intentDecomposition.ambiguityLevel === "high" &&
+				intentDecomposition.clarifyingQuestions.length > 0
+			) {
+				if (postMessageToWebview) {
+					postMessageToWebview({
+						type: "contextAgentClarification",
+						value: {
+							questions: intentDecomposition.clarifyingQuestions,
+							originalRequest: userRequest,
+							ambiguityLevel: intentDecomposition.ambiguityLevel,
+						},
+					});
+
+					// Log clarification attempt
+					postMessageToWebview({
+						type: "contextAgentLog",
+						value: {
+							text: `<span class="thinking-prefix">[Ambiguity Detected]</span> Request is ambiguous. Suggested questions: ${intentDecomposition.clarifyingQuestions.join(" | ")}. Proceeding with best-effort investigation.`,
+						},
+					});
+				}
+			}
+		} catch (decompositionError: any) {
+			console.warn(
+				`[SmartContextSelector] Intent decomposition failed, proceeding without: ${decompositionError.message}`,
+			);
+		}
+	}
+
+	// --- Enhancement #6: Cross-File Relationship Inference ---
+	const inferredRelationships = await inferCrossFileRelationships(
+		preSelectedPriorityFiles || [],
+		allScannedFiles,
+		projectRoot,
+		intentDecomposition?.searchKeywords,
+		aiRequestService,
+		cancellationToken,
+	);
+	const inferredRelationshipsPrompt = formatInferredRelationshipsForPrompt(
+		inferredRelationships,
+	);
+
+	if (inferredRelationships.length > 0) {
+		if (postMessageToWebview) {
+			postMessageToWebview({
+				type: "contextAgentLog",
+				value: {
+					text: `<span class="thinking-prefix">[Cross-File Analysis]</span> Discovered ${inferredRelationships.length} structurally related files via naming patterns, feature folders, and test pairing.`,
+				},
+			});
+		}
+		if (addContextAgentLogToHistory) {
+			addContextAgentLogToHistory(
+				`[Cross-File Analysis] Discovered ${inferredRelationships.length} structurally related files.`,
+			);
+		}
+	}
+
 	let contextPrompt = `User Request: "${userRequest}"\n`;
 
 	// Add project configuration context if available
@@ -518,11 +642,19 @@ export async function selectRelevantFilesAI(
 		contextPrompt += `\n${projectConfigPrompt}\n`;
 	}
 
+	// Add intent decomposition to context
+	if (intentDecomposition) {
+		contextPrompt += `\n${formatIntentDecompositionForPrompt(intentDecomposition)}\n`;
+	}
+
 	if (preSelectedPriorityFiles && preSelectedPriorityFiles.length > 0) {
-		const priorityPaths = preSelectedPriorityFiles.map((uri) =>
-			path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/"),
-		);
-		contextPrompt += `\nPriority Files (strong candidates, but critically evaluate them): ${priorityPaths.join(
+		// Cap at 5 to keep prompt cost-effective (open tabs can grow unbounded)
+		const priorityPaths = preSelectedPriorityFiles
+			.slice(0, 5)
+			.map((uri) =>
+				path.relative(projectRoot.fsPath, uri.fsPath).replace(/\\/g, "/"),
+			);
+		contextPrompt += `\nEnvironmental Hints (user's active files — starting points, not answers): ${priorityPaths.join(
 			", ",
 		)}\n`;
 	}
@@ -694,14 +826,29 @@ Return ONLY a JSON object: { "category": "CATEGORY_NAME" }`;
 		)}\n--- End Diagnostics ---\n`;
 	}
 
-	// Build Chat History Context
+	// --- Enhancement #3: Structured Chat History Context ---
+	// Replace raw 3000-char truncated history with intelligent topic extraction
 	let historyContext = "";
 	if (options.chatHistory && options.chatHistory.length > 0) {
-		const MAX_HISTORY_LENGTH = 3000;
-		// Filter out context agent logs and non-text parts if needed, keep last 5 turns
+		// Use the conversation context from intent decomposition if available,
+		// otherwise extract it directly
+		const conversationContext =
+			intentDecomposition?.conversationContext ||
+			(await extractConversationContext(
+				options.chatHistory,
+				userRequest,
+				aiRequestService,
+				cancellationToken,
+			));
+
+		const structuredHistoryPrompt =
+			formatConversationContextForPrompt(conversationContext);
+
+		// Still include recent raw history for direct context, but shorter (last 3 turns)
+		const MAX_HISTORY_LENGTH = 2000;
 		const recentHistory = [...options.chatHistory]
-			.filter((entry) => !entry.isContextAgentLog) // Exclude internal agent logs
-			.slice(-5);
+			.filter((entry) => !entry.isContextAgentLog)
+			.slice(-3);
 
 		const historyString = recentHistory
 			.map((entry) => {
@@ -714,14 +861,25 @@ Return ONLY a JSON object: { "category": "CATEGORY_NAME" }`;
 			})
 			.join("\n");
 
-		if (historyString.length > 0) {
-			const truncatedHistory =
-				historyString.length > MAX_HISTORY_LENGTH
-					? "...(older history truncated)\n" +
-						historyString.substring(historyString.length - MAX_HISTORY_LENGTH)
-					: historyString;
+		// Combine structured analysis with raw context
+		if (structuredHistoryPrompt || historyString.length > 0) {
+			historyContext = "\n";
+			if (structuredHistoryPrompt) {
+				historyContext += `${structuredHistoryPrompt}\n\n`;
+			}
+			if (historyString.length > 0) {
+				const truncatedHistory =
+					historyString.length > MAX_HISTORY_LENGTH
+						? "...(older history truncated)\n" +
+							historyString.substring(historyString.length - MAX_HISTORY_LENGTH)
+						: historyString;
+				historyContext += `--- Recent Conversation (Last 3 Turns) ---\n${truncatedHistory}\n--- End Recent Conversation ---\n`;
+			}
 
-			historyContext = `\n--- Recent Conversation History ---\n${truncatedHistory}\n--- End Conversation History ---\n`;
+			// Add files from conversation history as additional priority candidates
+			if (conversationContext.recentlyMentionedFiles.length > 0) {
+				contextPrompt += `\nFiles from recent conversation: ${conversationContext.recentlyMentionedFiles.join(", ")}\n`;
+			}
 		}
 	}
 
@@ -861,7 +1019,8 @@ ${investigationInstruction}
     *   If a file import or dependency is critical to the task, you MUST investigate it.
     *   You should be able to explain the "Chain of Truth"—the structural relationship between the files you have selected.
     *   Premature satisfaction is a failure. Be thorough.
-10. **Finalize (NON-CODING TASKS)**: For greetings or non-technical requests, call \`finish_selection([])\` immediately.
+9b. **MANDATORY: Self-Assessment (Enhancement #5)**: Before calling \`finish_selection\`, you MUST call \`validate_selection\` to rate your investigation confidence (1-10). If confidence is below 7, you MUST investigate the \`missingAreas\` you identified before finishing. Skipping validation is a critical failure.
+10. **Finalize (NON-CODING TASKS)**: For greetings or non-technical requests, call \`finish_selection([])\` immediately (validation not required).
 11. **Iterative Refinement**: If you discover a new dependency while reading a file during a technical task, go back and investigate that dependency. Do not stop until the context is complete.
 
 -- Project Context --
@@ -873,6 +1032,8 @@ ${fileListString}
 
 -- File Summaries (Reference only) --
 ${summariesPrompt}
+
+${inferredRelationshipsPrompt}
 `.trim();
 
 	const userPrompt = `
@@ -930,9 +1091,50 @@ You MUST start by calling \`report_thought\`.
 						},
 					},
 					{
+						name: "validate_selection",
+						description:
+							"REQUIRED before finish_selection for coding tasks. Self-assess your investigation completeness. Rate confidence 1-10 and explain what might be missing. If confidence < 7, you MUST continue investigating the missing areas.",
+						parameters: {
+							type: SchemaType.OBJECT,
+							properties: {
+								confidence: {
+									type: SchemaType.NUMBER,
+									description:
+										"1-10 confidence score for how complete your investigation is. 10 = absolutely certain all relevant files are found. 1 = barely started.",
+								},
+								reasoning: {
+									type: SchemaType.STRING,
+									description:
+										"Explain WHY you gave this confidence level. What have you verified? What assumptions are you making?",
+								},
+								missingAreas: {
+									type: SchemaType.ARRAY,
+									description:
+										"Areas that might still be missing from your investigation. Empty array ONLY if confidence >= 9.",
+									items: {
+										type: SchemaType.STRING,
+									},
+								},
+								selectedFiles: {
+									type: SchemaType.ARRAY,
+									description: "Your current file selection at this point.",
+									items: {
+										type: SchemaType.STRING,
+									},
+								},
+							},
+							required: [
+								"confidence",
+								"reasoning",
+								"missingAreas",
+								"selectedFiles",
+							],
+						},
+					},
+					{
 						name: "finish_selection",
 						description:
-							"Call this when you have found what you need to answer acording to the user's needs. Supports optional line ranges OR symbol names. Returns the final list.",
+							"Call this AFTER validate_selection to finalize your file selection. For non-coding tasks, you may call this directly. Supports optional line ranges OR symbol names. Returns the final list.",
 						parameters: {
 							type: SchemaType.OBJECT,
 							properties: {
@@ -941,7 +1143,7 @@ You MUST start by calling \`report_thought\`.
 									description:
 										"JSON Array of file paths. Supports line ranges: 'path/file.ts' (full), 'path/file.ts:10-50' (lines), OR symbols: 'path/file.ts#symbolName' (e.g. 'auth.ts#login'). If no files are needed to fulfill the request, provide an empty array [].",
 									items: {
-										type: SchemaType.STRING, // Use STRING to avoid enum errors, rely on string parsing
+										type: SchemaType.STRING,
 									},
 								},
 							},
@@ -1192,6 +1394,9 @@ You MUST start by calling \`report_thought\`.
 
 			const MAX_TURNS = 50;
 			let consecutiveTextOnlyCount = 0;
+			let hasValidated = false; // Enhancement #5: Track if validate_selection was called
+			let lastConfidenceScore = 0; // Enhancement #5: Track confidence score
+			let lastMissingAreas: string[] = []; // Enhancement #5: Track reported missing areas
 
 			for (let turn = 0; turn < MAX_TURNS; turn++) {
 				if (cancellationToken?.isCancellationRequested) {
@@ -1325,10 +1530,77 @@ You MUST start by calling \`report_thought\`.
 							},
 						],
 					});
-				} else if (functionCall.name === "finish_selection") {
+				} else if (functionCall.name === "validate_selection") {
+					// --- Enhancement #5: Confidence-Gated Multi-Pass Investigation ---
+					const args = functionCall.args as any;
+					const confidence =
+						typeof args["confidence"] === "number" ? args["confidence"] : 5;
+					const reasoning =
+						typeof args["reasoning"] === "string" ? args["reasoning"] : "";
+					const missingAreas = Array.isArray(args["missingAreas"])
+						? args["missingAreas"]
+						: [];
+
+					hasValidated = true;
+					lastConfidenceScore = confidence;
+					lastMissingAreas = missingAreas;
+
+					const confidenceEmoji =
+						confidence >= 8 ? "🟢" : confidence >= 6 ? "🟡" : "🔴";
+					const validationLogText = `${confidenceEmoji} **Confidence: ${confidence}/10** — ${reasoning}`;
+
 					console.log(
-						`[SmartContextSelector] Agent finished selection used tool.`,
+						`[SmartContextSelector] Agent self-assessment: confidence=${confidence}/10, missing=${missingAreas.length} areas`,
 					);
+
+					if (postMessageToWebview) {
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: {
+								text: `<span class="thinking-prefix">[Self-Assessment]</span> ${validationLogText}`,
+							},
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(
+							`[Self-Assessment] Confidence: ${confidence}/10. ${reasoning}`,
+						);
+					}
+
+					// Determine response based on confidence
+					let validationResponse: string;
+					if (confidence < 7 && missingAreas.length > 0) {
+						validationResponse = `Confidence is ${confidence}/10, which is below the threshold of 7. You MUST investigate these missing areas before calling finish_selection: ${missingAreas.join(", ")}. Continue investigating.`;
+					} else if (confidence >= 7) {
+						validationResponse = `Confidence ${confidence}/10 is acceptable. You may now call finish_selection with your file list.`;
+					} else {
+						validationResponse = `Validation recorded. Consider investigating further if you have remaining concerns.`;
+					}
+
+					// Update History
+					const modelParts: any[] = [];
+					if (thought) {
+						modelParts.push({ text: thought });
+					}
+					modelParts.push({ functionCall: functionCall });
+
+					currentHistory.push({
+						role: "model",
+						parts: modelParts,
+					});
+					currentHistory.push({
+						role: "function",
+						parts: [
+							{
+								functionResponse: {
+									name: "validate_selection",
+									response: { result: validationResponse },
+								},
+							},
+						],
+					});
+				} else if (functionCall.name === "finish_selection") {
+					// --- Enhancement #5: Confidence enforcement on finish ---
 					const args = functionCall.args as any;
 					let selectedPaths = args["selectedFiles"];
 
@@ -1341,6 +1613,48 @@ You MUST start by calling \`report_thought\`.
 						selectedPaths = [];
 					}
 
+					// If this is a coding task and validate_selection wasn't called, nudge the agent
+					const isNonCodingTask =
+						requestCategory === RequestCategory.GENERAL_INQUIRY ||
+						selectedPaths.length === 0;
+
+					if (!hasValidated && !isNonCodingTask && turn < MAX_TURNS - 2) {
+						// Redirect: ask agent to validate first
+						console.log(
+							`[SmartContextSelector] Agent tried to finish without validation. Redirecting.`,
+						);
+
+						const modelParts: any[] = [];
+						if (thought) {
+							modelParts.push({ text: thought });
+						}
+						modelParts.push({ functionCall: functionCall });
+
+						currentHistory.push({
+							role: "model",
+							parts: modelParts,
+						});
+						currentHistory.push({
+							role: "function",
+							parts: [
+								{
+									functionResponse: {
+										name: "finish_selection",
+										response: {
+											error:
+												"HOLD: You must call `validate_selection` before `finish_selection` for coding tasks. Please call `validate_selection` first with your confidence score, reasoning, and any missing areas.",
+										},
+									},
+								},
+							],
+						});
+						continue;
+					}
+
+					console.log(
+						`[SmartContextSelector] Agent finished selection. Validated: ${hasValidated}, Confidence: ${lastConfidenceScore}/10`,
+					);
+
 					const result = _processSelectedPaths(
 						selectedPaths,
 						allScannedFiles,
@@ -1348,6 +1662,35 @@ You MUST start by calling \`report_thought\`.
 						relativeFilePaths,
 						activeEditorContext,
 					);
+
+					// --- Enhancement #8: Log quality scoring ---
+					if (postMessageToWebview) {
+						const qualityEmoji =
+							lastConfidenceScore >= 8
+								? "🟢"
+								: lastConfidenceScore >= 6
+									? "🟡"
+									: "🔴";
+						const qualityMessage = hasValidated
+							? `${qualityEmoji} Context gathering complete. Confidence: **${lastConfidenceScore}/10** | Files selected: **${result.length}**${
+									lastMissingAreas.length > 0
+										? ` | Known gaps: ${lastMissingAreas.join(", ")}`
+										: ""
+								}`
+							: `Context gathering complete. Files selected: **${result.length}**`;
+
+						postMessageToWebview({
+							type: "contextAgentLog",
+							value: {
+								text: `<span class="thinking-prefix">[Complete]</span> ${qualityMessage}`,
+							},
+						});
+					}
+					if (addContextAgentLogToHistory) {
+						addContextAgentLogToHistory(
+							`[Complete] Files: ${result.length}, Confidence: ${hasValidated ? lastConfidenceScore + "/10" : "unvalidated"}`,
+						);
+					}
 
 					// Cache result
 					if (useCache) {

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import { SidebarProvider } from "../sidebar/SidebarProvider";
 import {
 	getGitStagedDiff,
@@ -6,13 +7,17 @@ import {
 	getGitFileContentFromIndex,
 	getGitFileContentFromHead,
 	stageAllChanges,
+	getGitStagedFilesWithStatus,
+	getGitCurrentBranch,
+	getGitDiffStat,
+	type StagedFileWithStatus,
 } from "../sidebar/services/gitService";
 import { ERROR_OPERATION_CANCELLED } from "../ai/gemini";
 import { ChildProcess } from "child_process";
 import { generateFileChangeSummary } from "../utils/diffingUtils";
 import { DEFAULT_FLASH_LITE_MODEL } from "../sidebar/common/sidebarConstants";
 import { executeCommand } from "../utils/commandExecution";
-import { Logger } from "../utils/logger"; // Import Logger
+import { Logger } from "../utils/logger";
 
 export class CommitService {
 	private minovativeMindTerminal: vscode.Terminal | undefined;
@@ -101,8 +106,15 @@ export class CommitService {
 				throw new Error(ERROR_OPERATION_CANCELLED);
 			}
 
-			const diff = await getGitStagedDiff(rootPath);
-			const stagedFiles = await getGitStagedFiles(rootPath);
+			// --- Gather all git context in parallel where possible ---
+			const [diff, stagedFiles, stagedFilesWithStatus, branchName, diffStat] =
+				await Promise.all([
+					getGitStagedDiff(rootPath),
+					getGitStagedFiles(rootPath),
+					getGitStagedFilesWithStatus(rootPath),
+					getGitCurrentBranch(rootPath),
+					getGitDiffStat(rootPath),
+				]);
 
 			if (!diff || diff.trim() === "") {
 				success = true;
@@ -110,6 +122,32 @@ export class CommitService {
 				return;
 			}
 
+			if (token.isCancellationRequested) {
+				throw new Error(ERROR_OPERATION_CANCELLED);
+			}
+
+			// --- Improvement #5: Change Type Classification ---
+			const categoryCounts = new Map<string, number>();
+			const fileClassifications: string[] = [];
+			for (const fileInfo of stagedFilesWithStatus) {
+				const statusLabel = this._getStatusLabel(fileInfo.status);
+				const category = this._classifyFileCategory(fileInfo.filePath);
+				const label = `${statusLabel} ${category}`;
+				categoryCounts.set(label, (categoryCounts.get(label) || 0) + 1);
+				fileClassifications.push(
+					`  - [${fileInfo.status}] ${fileInfo.filePath} (${category})${
+						fileInfo.originalPath
+							? ` ← renamed from ${fileInfo.originalPath}`
+							: ""
+					}`,
+				);
+			}
+
+			const categoryOverview = Array.from(categoryCounts.entries())
+				.map(([label, count]) => `${count} ${label}`)
+				.join(", ");
+
+			// --- Pass 1 (existing): Per-file change summaries ---
 			const fileSummaries: string[] = [];
 			for (const filePath of stagedFiles) {
 				if (token.isCancellationRequested) {
@@ -127,32 +165,101 @@ export class CommitService {
 				fileSummaries.push(summary);
 			}
 
+			if (token.isCancellationRequested) {
+				throw new Error(ERROR_OPERATION_CANCELLED);
+			}
+
+			// --- Pass 2 (NEW): Cross-File Intent Analysis ---
+			let overallIntent = "";
+			if (fileSummaries.length > 0) {
+				const intentPrompt = `You are analyzing a set of code changes across multiple files to determine the overall intent.
+
+Branch: ${branchName}
+Change Categories: ${categoryOverview}
+
+Per-file summaries:
+${fileSummaries.map((s) => `- ${s}`).join("\n")}
+
+In 1-2 concise sentences, describe the OVERALL PURPOSE and INTENT of these changes as a whole.
+Focus on WHAT was accomplished and WHY, not individual file details.
+Do not use code fences, quotes, or any formatting — just plain text.`;
+
+				try {
+					overallIntent =
+						await this.provider.aiRequestService.generateWithRetry(
+							[{ text: intentPrompt }],
+							modelName,
+							undefined,
+							"cross-file intent analysis",
+							undefined,
+							undefined,
+							token,
+						);
+					overallIntent = overallIntent.trim();
+					this.logger.log(
+						undefined,
+						`Cross-file intent analysis result: ${overallIntent}`,
+					);
+				} catch (error: any) {
+					this.logger.warn(
+						undefined,
+						`Cross-file intent analysis failed, proceeding without it: ${error.message}`,
+					);
+					overallIntent = "";
+				}
+			}
+
+			if (token.isCancellationRequested) {
+				throw new Error(ERROR_OPERATION_CANCELLED);
+			}
+
+			// --- Improvement #4: Intelligent Diff Truncation ---
+			const smartDiffContext = this._buildSmartDiffContext(
+				diff,
+				diffStat,
+				fileSummaries,
+			);
+
+			// --- Build the enriched commit message prompt ---
 			const detailedSummaries =
 				fileSummaries.length > 0
-					? "Summary of File Changes:\n" +
-						fileSummaries.map((s) => `- ${s}`).join("\n") +
-						"\n\n"
+					? fileSummaries.map((s) => `- ${s}`).join("\n")
 					: "";
 
-			const commitMessagePrompt = `
-You are an expert Git author. Produce one commit message only — nothing else, no commentary, no headings, no code fences.
+			const commitMessagePrompt = `You are an expert Git author. Produce one SHORT commit message only — nothing else, no commentary, no headings, no code fences.
 
 FORMAT REQUIREMENTS (strict):
-1) First non-empty line = SUBJECT (imperative mood, e.g., "feat: Added feature X", "fix: Fixed bug Y", etc...).
-   - SUBJECT must NOT begin with '-', '*', or any punctuation that could look like a CLI flag.
-   - SUBJECT must be <= 72 characters (50 chars recommended). If longer, shorten to <=72.
-2) OPTIONAL: blank line, then BODY. Wrap lines at ~72 chars. Body may include short markdown-style lists for clarity but do not use code fences.
-3) DO NOT USE double quotes (\\"), backticks (\`), or backslashes (\\). Replace them with plain text. Do not include shell-like constructs such as $(), &&, ||, or ';'.
-4) Output only the commit message text (subject and optional body). Do not prepend "Commit Message:" or any metadata.
+1) SUBJECT LINE ONLY in most cases. Use conventional commit format (e.g., "feat: Add OAuth2 support", "fix: Handle null user profile").
+   - Keep the SUBJECT to 50 characters or fewer. Hard max: 72 characters.
+   - Choose the prefix based on the change categories and overall intent below.
+   - SUBJECT must NOT begin with '-', '*', or any punctuation.
+   - Do NOT list individual files or functions in the subject.
+2) BODY is OPTIONAL — include ONLY if 5+ files changed AND changes span multiple unrelated concerns. Max 2-3 bullet points. No paragraphs.
+3) DO NOT USE double quotes (\\"), backticks (\`), or backslashes (\\). No shell constructs like $(), &&, ||, or ';'.
+4) Output ONLY the commit message. No metadata prefix.
+5) Prefer brevity. A good commit message is ONE line. Err on the side of shorter.
 
-Context (file-level summaries follow). Use them to craft a concise, accurate subject and an optional explanatory body.
+--- BRANCH CONTEXT ---
+Current branch: ${branchName}
+${branchName !== "HEAD" && branchName !== "main" && branchName !== "master" ? `The branch name may hint at the purpose of these changes. Consider it when choosing the commit type prefix.` : ""}
+
+--- CHANGE OVERVIEW ---
+Change Categories: ${categoryOverview}
+Diff Stat:
+${diffStat}
+
+File Classifications:
+${fileClassifications.join("\n")}
+
+${overallIntent ? `--- OVERALL INTENT ---\n${overallIntent}\n` : ""}
+--- PER-FILE SUMMARIES ---
 ${detailedSummaries}
-Overall Staged Diff:
-\`\`\`diff
-${diff}
-\`\`\`
+
+--- CODE DIFF (may be truncated for large changes) ---
+${smartDiffContext}
 `;
 
+			// --- Pass 3: Final commit message generation ---
 			let commitMessage =
 				await this.provider.aiRequestService.generateWithRetry(
 					[{ text: commitMessagePrompt }],
@@ -401,6 +508,175 @@ ${diff}
 		this._finalUnicodeCheck(sanitized);
 
 		return sanitized;
+	}
+
+	/**
+	 * Maps a Git status code to a human-readable label.
+	 * @param status The single-character Git status code (A, M, D, R, C, etc.).
+	 * @returns A descriptive label for the status.
+	 */
+	private _getStatusLabel(status: string): string {
+		switch (status) {
+			case "A":
+				return "new";
+			case "M":
+				return "modified";
+			case "D":
+				return "deleted";
+			case "R":
+				return "renamed";
+			case "C":
+				return "copied";
+			default:
+				return "changed";
+		}
+	}
+
+	/**
+	 * Classifies a file into a category based on its path and extension.
+	 * Used to help the AI choose appropriate conventional-commit prefixes.
+	 * @param filePath The file path relative to the repository root.
+	 * @returns A category string (e.g., "test", "docs", "config", "style", "source").
+	 */
+	private _classifyFileCategory(filePath: string): string {
+		const lowerPath = filePath.toLowerCase();
+		const ext = path.extname(lowerPath);
+		const basename = path.basename(lowerPath);
+
+		// Test files
+		if (
+			lowerPath.includes(".test.") ||
+			lowerPath.includes(".spec.") ||
+			lowerPath.includes("__tests__/") ||
+			lowerPath.includes("/test/") ||
+			lowerPath.includes("/tests/")
+		) {
+			return "test";
+		}
+
+		// Documentation
+		if (
+			ext === ".md" ||
+			ext === ".mdx" ||
+			ext === ".txt" ||
+			ext === ".rst" ||
+			lowerPath.startsWith("docs/") ||
+			lowerPath.startsWith("doc/")
+		) {
+			return "docs";
+		}
+
+		// Configuration files
+		const configFiles = new Set([
+			"package.json",
+			"package-lock.json",
+			"tsconfig.json",
+			"webpack.config.js",
+			"vite.config.ts",
+			"jest.config.js",
+			"jest.config.ts",
+			".eslintrc",
+			".eslintrc.js",
+			".eslintrc.json",
+			".prettierrc",
+			".prettierrc.json",
+			".gitignore",
+			".npmrc",
+			".env",
+			".env.example",
+			"yarn.lock",
+			"pnpm-lock.yaml",
+		]);
+		if (
+			configFiles.has(basename) ||
+			basename.startsWith("tsconfig") ||
+			basename.startsWith(".eslintrc") ||
+			basename.startsWith(".prettierrc")
+		) {
+			return "config";
+		}
+
+		// Style/UI files
+		if (
+			ext === ".css" ||
+			ext === ".scss" ||
+			ext === ".sass" ||
+			ext === ".less" ||
+			ext === ".html" ||
+			ext === ".svg"
+		) {
+			return "style";
+		}
+
+		return "source";
+	}
+
+	/**
+	 * Builds an intelligently truncated diff context for the commit message prompt.
+	 * Files with fewer than MAX_LINES_PER_FILE changed lines include their full diff.
+	 * Larger files are represented by their stat summary and per-file AI summary only.
+	 * @param fullDiff The full staged diff output.
+	 * @param diffStat The `git diff --stat` summary.
+	 * @param fileSummaries The per-file AI-generated summaries.
+	 * @returns A string containing the smart diff context for the prompt.
+	 */
+	private _buildSmartDiffContext(
+		fullDiff: string,
+		diffStat: string,
+		fileSummaries: string[],
+	): string {
+		const MAX_LINES_PER_FILE = 200;
+		const MAX_TOTAL_DIFF_LINES = 1500;
+
+		// Split the full diff into per-file sections
+		const fileDiffs = fullDiff.split(/^(?=diff --git )/m).filter(Boolean);
+
+		const totalChangedLines = fullDiff.split("\n").length;
+
+		// If the entire diff is small enough, include it all
+		if (totalChangedLines <= MAX_TOTAL_DIFF_LINES) {
+			return fullDiff;
+		}
+
+		// Otherwise, apply per-file truncation
+		const includedDiffs: string[] = [];
+		const truncatedFiles: string[] = [];
+
+		for (const fileDiff of fileDiffs) {
+			const lines = fileDiff.split("\n");
+			// Count only actual change lines (+/-), not headers or context
+			const changedLineCount = lines.filter(
+				(l) =>
+					(l.startsWith("+") && !l.startsWith("+++")) ||
+					(l.startsWith("-") && !l.startsWith("---")),
+			).length;
+
+			if (changedLineCount <= MAX_LINES_PER_FILE) {
+				includedDiffs.push(fileDiff);
+			} else {
+				// Extract the filename from the diff header
+				const headerMatch = fileDiff.match(/^diff --git a\/(.+?) b\//);
+				const fileName = headerMatch ? headerMatch[1] : "unknown file";
+				truncatedFiles.push(
+					`[${fileName}: ${changedLineCount} changed lines — diff truncated, see summary above]`,
+				);
+			}
+		}
+
+		let result = "";
+		if (includedDiffs.length > 0) {
+			result += includedDiffs.join("\n");
+		}
+		if (truncatedFiles.length > 0) {
+			result +=
+				"\n\n--- TRUNCATED FILES (too large for full diff) ---\n" +
+				truncatedFiles.join("\n") +
+				"\n\nRefer to the diff stat and per-file summaries above for these files.\n" +
+				"Diff Stat for reference:\n" +
+				diffStat;
+		}
+
+		return result;
 	}
 
 	/**
