@@ -984,7 +984,12 @@ ${categorySpecificPrompt}
 *   **Coding Tasks**: Only for requests involving code changes, debugging, or technical analysis should you proceed with the deep investigation described below.
 
 -- Instructions --
-1.  **Exhaustive Discovery (MANDATORY)**: Finding *something* relevant is just the beginning. You MUST continue looking until you are certain you have gathered ALL information that could impact the request.
+1.  **ZERO DEFERRED RESEARCH (MOST CRITICAL RULE)**: Your job is to gather ALL context the user needs BEFORE finishing. The downstream AI that receives your context CANNOT do its own research — it only sees what you provide.
+    *   **NEVER** finish with gaps that would force the AI to say "I need to look at...", "I would need to examine...", or "I cannot see the initialization of...".
+    *   **If you identify something as relevant during investigation, you MUST investigate it NOW** — not defer it.
+    *   **Ask yourself before finishing**: "Does the downstream AI have EVERYTHING it needs to fully answer this request without asking for more information?" If the answer is no, KEEP INVESTIGATING.
+    *   **This is a hard requirement**: Finishing with known gaps is a critical failure, regardless of confidence score.
+2.  **Exhaustive Discovery (MANDATORY)**: Finding *something* relevant is just the beginning. You MUST continue looking until you are certain you have gathered ALL information that could impact the request.
     *   **NEVER SATISFIED**: Even if you have "enough" to start, check if there is *more* that could make the solution better, safer, or more complete.
     *   **Related Files Discovery (CRITICAL)**: Actively search for:
         *   **Tests**: Search for corresponding test files (e.g., \`*.test.ts\`, \`*.spec.ts\`) in \`__tests__\` or sibling/corresponding directories.
@@ -993,12 +998,13 @@ ${categorySpecificPrompt}
         *   **Indirect Relationships (DEEP DISCOVERY)**: Look for files that share similar naming patterns, feature prefixes, or architectural roles even if they lack direct imports (e.g., a \`LoginService\` in \`services/\` and a \`LoginButton\` in \`components/\`).
     *   **Doc Traversal**: If a file is mentioned in another document as a key resource (e.g., in a README or Architecture file), you MUST investigate it unless it is clearly out of scope.
     *   **Multi-Source Verification**: Do not rely on a single file if other related files exist. Prematurely stopping is a high-cost failure.
-2.  **Thinking Process (MANDATORY)**: You MUST call the \`report_thought\` tool to explain your search strategy before using other tools.
+    *   **State & Initialization**: Always include files containing the initialization, state setup, and configuration of key objects referenced in the request. Missing an initialization is a common failure mode.
+3.  **Thinking Process (MANDATORY)**: You MUST call the \`report_thought\` tool to explain your search strategy before using other tools.
     *   **FORMATTING**: Use **Markdown** in your thoughts.
         *   Use **bold** for emphasis.
         *   Use \`code ticks\` for file paths, symbols, and commands.
         *   Use bullet lists (-) for multiple steps.
-3.  **Relationship-First Strategy (PRIORITY)**: You MUST prioritize using structural relationship tools to explore the codebase. These provide "structural truth" which is more reliable than text matches.
+4.  **Relationship-First Strategy (PRIORITY)**: You MUST prioritize using structural relationship tools to explore the codebase. These provide "structural truth" which is more reliable than text matches.
     *   **Symbol Lookup (GLOBAL)**: Use \`lookup_workspace_symbol\` as your first step to find where a specific symbol is defined.
     *   **Graph Traversal (DEEP)**:
         *   Use \`go_to_definition\` to see where a symbol is *defined*.
@@ -1019,9 +1025,10 @@ ${investigationInstruction}
     *   If a file import or dependency is critical to the task, you MUST investigate it.
     *   You should be able to explain the "Chain of Truth"—the structural relationship between the files you have selected.
     *   Premature satisfaction is a failure. Be thorough.
-9b. **MANDATORY: Self-Assessment (Enhancement #5)**: Before calling \`finish_selection\`, you MUST call \`validate_selection\` to rate your investigation confidence (1-10). If confidence is below 7, you MUST investigate the \`missingAreas\` you identified before finishing. Skipping validation is a critical failure.
+9b. **MANDATORY: Self-Assessment (Enhancement #5)**: Before calling \`finish_selection\`, you MUST call \`validate_selection\` to rate your investigation confidence (1-10). If confidence is below 8, you MUST investigate the \`missingAreas\` you identified before finishing. Skipping validation is a critical failure.
 10. **Finalize (NON-CODING TASKS)**: For greetings or non-technical requests, call \`finish_selection([])\` immediately (validation not required).
 11. **Iterative Refinement**: If you discover a new dependency while reading a file during a technical task, go back and investigate that dependency. Do not stop until the context is complete.
+12. **Completeness Check**: Before finishing, mentally answer: "If I were the AI receiving this context, could I fully solve the user's problem without saying 'I need to look at X'?" If not, investigate X now.
 
 -- Project Context --
 Project Path: ${projectRoot.fsPath}
@@ -1569,12 +1576,12 @@ You MUST start by calling \`report_thought\`.
 
 					// Determine response based on confidence
 					let validationResponse: string;
-					if (confidence < 7 && missingAreas.length > 0) {
-						validationResponse = `Confidence is ${confidence}/10, which is below the threshold of 7. You MUST investigate these missing areas before calling finish_selection: ${missingAreas.join(", ")}. Continue investigating.`;
-					} else if (confidence >= 7) {
-						validationResponse = `Confidence ${confidence}/10 is acceptable. You may now call finish_selection with your file list.`;
+					if (confidence < 8 && missingAreas.length > 0) {
+						validationResponse = `Confidence is ${confidence}/10, which is below the threshold of 8. You MUST investigate these missing areas before calling finish_selection: ${missingAreas.join(", ")}. Remember: the downstream AI CANNOT do its own research — if you don't gather it now, the user gets an incomplete answer. Continue investigating.`;
+					} else if (confidence >= 8) {
+						validationResponse = `Confidence ${confidence}/10 is acceptable. You may now call finish_selection with your file list. Reminder: ensure ZERO deferred research — the downstream AI must have everything it needs.`;
 					} else {
-						validationResponse = `Validation recorded. Consider investigating further if you have remaining concerns.`;
+						validationResponse = `Confidence ${confidence}/10 is below 8. Even without specific missing areas, consider whether the downstream AI has everything it needs to answer without saying "I need to look at...". If not, keep investigating.`;
 					}
 
 					// Update History
@@ -1618,11 +1625,29 @@ You MUST start by calling \`report_thought\`.
 						requestCategory === RequestCategory.GENERAL_INQUIRY ||
 						selectedPaths.length === 0;
 
-					if (!hasValidated && !isNonCodingTask && turn < MAX_TURNS - 2) {
-						// Redirect: ask agent to validate first
+					// Block finish if validation wasn't done OR if agent reported missing areas but didn't investigate them
+					const hasUnresolvedGaps =
+						hasValidated &&
+						lastMissingAreas.length > 0 &&
+						lastConfidenceScore < 8;
+					const shouldBlock =
+						(!hasValidated || hasUnresolvedGaps) &&
+						!isNonCodingTask &&
+						turn < MAX_TURNS - 2;
+
+					if (shouldBlock) {
+						const blockReason = !hasValidated
+							? "HOLD: You must call `validate_selection` before `finish_selection` for coding tasks. Please call `validate_selection` first with your confidence score, reasoning, and any missing areas."
+							: `HOLD: You reported missing areas (${lastMissingAreas.join(", ")}) with confidence ${lastConfidenceScore}/10 but didn't investigate them. The downstream AI CANNOT research on its own — it will say "I need to look at..." which is a critical failure. Investigate these areas NOW, then call validate_selection again.`;
+
 						console.log(
-							`[SmartContextSelector] Agent tried to finish without validation. Redirecting.`,
+							`[SmartContextSelector] Agent tried to finish ${!hasValidated ? "without validation" : "with unresolved gaps"}. Redirecting.`,
 						);
+
+						// Reset validation state so agent must re-validate after investigating
+						if (hasUnresolvedGaps) {
+							hasValidated = false;
+						}
 
 						const modelParts: any[] = [];
 						if (thought) {
@@ -1640,10 +1665,7 @@ You MUST start by calling \`report_thought\`.
 								{
 									functionResponse: {
 										name: "finish_selection",
-										response: {
-											error:
-												"HOLD: You must call `validate_selection` before `finish_selection` for coding tasks. Please call `validate_selection` first with your confidence score, reasoning, and any missing areas.",
-										},
+										response: { error: blockReason },
 									},
 								},
 							],
