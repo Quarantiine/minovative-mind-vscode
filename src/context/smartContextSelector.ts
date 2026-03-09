@@ -1029,6 +1029,14 @@ ${investigationInstruction}
 10. **Finalize (NON-CODING TASKS)**: For greetings or non-technical requests, call \`finish_selection([])\` immediately (validation not required).
 11. **Iterative Refinement**: If you discover a new dependency while reading a file during a technical task, go back and investigate that dependency. Do not stop until the context is complete.
 12. **Completeness Check**: Before finishing, mentally answer: "If I were the AI receiving this context, could I fully solve the user's problem without saying 'I need to look at X'?" If not, investigate X now.
+13. **In-File Context Clue Tracking (MANDATORY)**: When reading any file, actively scan its content for textual clues that reference other files or components. These are NOT captured by import analysis or symbol tools — you must spot them yourself:
+    *   **Comments**: Look for \`// See also:\`, \`// Related:\`, \`// Depends on:\`, \`// Used by:\` or any comment mentioning another file, class, or module.
+    *   **String Literals \u0026 Routes**: Strings like \`navigate('/dashboard')\`, \`require('module')\`, or \`handler: 'authMiddleware'\` reference components you should investigate.
+    *   **TODO/FIXME/HACK**: These often reference other areas of the codebase that are incomplete or coupled. Follow them.
+    *   **Error Messages**: Error strings mentioning specific components or services hint at related files.
+    *   **Configuration Keys**: Config objects often reference handler names, middleware, plugins, or modules by string name — trace these to their implementations.
+    *   **Type Assertions \u0026 Casts**: \`as SomeType\` or generic parameters reference types defined elsewhere — investigate the type definition file.
+    *   When you find any such clue, use \`lookup_workspace_symbol\`, \`grep\`, or \`git ls-files | grep\` to locate the referenced file and investigate it.
 
 -- Project Context --
 Project Path: ${projectRoot.fsPath}
