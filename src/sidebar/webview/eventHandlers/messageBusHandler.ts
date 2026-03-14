@@ -1314,13 +1314,24 @@ export function initializeMessageBusHandler(
 					requestAnimationFrame(() => {
 						setTimeout(() => {
 							chatInput.focus();
+
+							// Automatically trigger sendMessage if it's a /plan command
+							if (text.trim().toLowerCase().startsWith("/plan ")) {
+								console.log(
+									"[MessageBusHandler] Auto-executing pre-filled /plan command."
+								);
+								const { sendMessage } = require("../messageSender");
+								sendMessage(elements, setLoadingState);
+							}
 						}, 50);
 					});
 					// Update the status bar message to inform the user
-					updateStatus(
-						elements,
-						"Context loaded into chat input. Review and send.",
-					);
+					if (!text.trim().toLowerCase().startsWith("/plan ")) {
+						updateStatus(
+							elements,
+							"Context loaded into chat input. Review and send."
+						);
+					}
 					// Ensure the UI controls are enabled (e.g., send button)
 					setLoadingState(false, elements);
 				}

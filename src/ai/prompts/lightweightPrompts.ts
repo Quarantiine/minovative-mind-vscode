@@ -110,17 +110,14 @@ export async function generateLightweightPlanPrompt(
 You are an expert technical planner.
 
 TASK:
-Create a high-level, structured plan based on the AI's response, BUT strictly aligned with the User's Request.
+Create a high-level, structured plan based on the AI's response, BUT strictly aligned with the User's Request. Concise, actionable, high-level. Structure: Use numbered/bulleted lists on how you will address the user's request.
 
 CRITICAL INTENT CHECK:
 - If the User's Request was about UPDATING DOCUMENTATION, the plan MUST focus on documentation.
 - If it's about REFACTORING or CODING, the plan should focus on code changes.
 - Ensure the plan actually addresses what the user asked for.
 
-GUIDELINES:
-- Concise, actionable, high-level.
-- Structure: Use numbered/bulleted lists.
-- Format the output to begin EXACTLY with: "/plan Plan: "
+IMPORTANT: Format the output to ALWAYS begin EXACTLY with: "/plan Plan: "
 `;
 
 	const userPrompt = `
