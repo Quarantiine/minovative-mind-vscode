@@ -226,18 +226,20 @@ Do not use code fences, quotes, or any formatting — just plain text.`;
 					? fileSummaries.map((s) => `- ${s}`).join("\n")
 					: "";
 
-			const commitMessagePrompt = `You are an expert Git author. Produce one SHORT commit message only — nothing else, no commentary, no headings, no code fences.
+			const commitMessagePrompt = `You are an expert Git author. Produce one commit message that clearly explains the changes.
 
 FORMAT REQUIREMENTS (strict):
-1) SUBJECT LINE ONLY in most cases. Use conventional commit format (e.g., "feat: Add OAuth2 support", "fix: Handle null user profile").
-   - Keep the SUBJECT to 50 characters or fewer. Hard max: 72 characters.
+1) USE CONVENTIONAL COMMIT FORMAT (e.g., "feat: Add OAuth2 support", "fix: Handle null user profile").
+   - Keep the SUBJECT line concise (50-72 chars).
    - Choose the prefix based on the change categories and overall intent below.
    - SUBJECT must NOT begin with '-', '*', or any punctuation.
-   - Do NOT list individual files or functions in the subject.
-2) BODY is OPTIONAL — include ONLY if 5+ files changed AND changes span multiple unrelated concerns. Max 2-3 bullet points. No paragraphs.
-3) DO NOT USE double quotes (\\"), backticks (\`), or backslashes (\\). No shell constructs like $(), &&, ||, or ';'.
+2) INCLUDE A DESCRIPTIVE BODY when changes are significant, logic-heavy, or non-obvious.
+   - Explain the "WHY" and "WHAT" of the changes in a few concise sentences or bullet points.
+   - Provide enough detail for a reviewer to understand the impact without reading every line of the diff.
+   - Do NOT just list files or repeat the file summaries.
+3) DO NOT USE double quotes ("), backticks (\`), or backslashes (\\). No shell constructs like $(), &&, ||, or ';'.
 4) Output ONLY the commit message. No metadata prefix.
-5) Prefer brevity. A good commit message is ONE line. Err on the side of shorter.
+5) Focus on quality over extreme brevity. Ensure the message is helpful for future developers.
 
 --- BRANCH CONTEXT ---
 Current branch: ${branchName}
